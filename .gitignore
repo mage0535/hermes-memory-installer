@@ -1,0 +1,9 @@
+*.pyc
+__pycache__/
+*.log
+.env
+.DS_Store
+*.backup
+*.pre-memory-*
+.vscode/
+.idea/
