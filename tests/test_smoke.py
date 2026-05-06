@@ -1,34 +1,23 @@
 #!/usr/bin/env python3
-"""
-Smoke Test - 验证安装是否成功
-快速检查关键文件和目录是否存在。
-"""
-
+"""Smoke tests for Memory 2.0"""
 import sys
 from pathlib import Path
 
+HERMES_HOME = Path.home() / '.hermes'
+REPO = Path('/tmp/memory-repo')
+all_ok = True
 
-def test():
-    hermes_dir = Path.home() / ".hermes"
-    checks = [
-        ("config.yaml", hermes_dir / "config.yaml"),
-        ("archives dir", hermes_dir / "archives"),
-        ("pool.db", hermes_dir / "pool.db"),
-        ("memory-starter-kit", hermes_dir / "skills" / "memory-starter-kit"),
-        ("memory-archivist", hermes_dir / "skills" / "memory-archivist"),
-    ]
-    
-    all_ok = True
-    for name, path in checks:
-        exists = path.exists()
-        status = "✅" if exists else "❌"
-        print(f"{status} {name}: {path}")
-        if not exists:
-            all_ok = False
-    
-    return all_ok
+def check(desc, cond):
+    print(f'{"✅" if cond else "❌"} {desc}')
+    return cond
 
+all_ok &= check('Hermes home', HERMES_HOME.exists())
+all_ok &= check('config.yaml', (HERMES_HOME / 'config.yaml').exists())
+all_ok &= check('pool.db', (HERMES_HOME / 'pool.db').exists())
+all_ok &= check('archives/', (HERMES_HOME / 'archives').exists())
+all_ok &= check('memory-starter-kit', (HERMES_HOME / 'skills/memory-starter-kit').exists())
+all_ok &= check('install.sh', (REPO / 'install.sh').exists())
+all_ok &= check('install.py', (REPO / 'installer/install.py').exists())
+all_ok &= check('archive_sessions.py', (REPO / 'scripts/archive_sessions.py').exists())
 
-if __name__ == "__main__":
-    ok = test()
-    sys.exit(0 if ok else 1)
+sys.exit(0 if all_ok else 1)

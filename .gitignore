@@ -1,9 +1,19 @@
-*.pyc
+# Python
 __pycache__/
-*.log
-.env
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
 .DS_Store
-*.backup
-*.pre-memory-*
+Thumbs.db
+
+# IDE
 .vscode/
 .idea/
+
+# Hermes local
+.env
+*.db
+archives/

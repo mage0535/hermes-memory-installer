@@ -1,102 +1,51 @@
 ---
 name: memory-proactive
-description: Hermes 记忆体系上下文路由器。分析对话主题、自动检索相关档案、预加载到 memory。选装。
+description: "上下文路由、主题检测、语义召回注入 — 让 AI 主动回忆"
+tags: [memory, proactive, context, routing, semantic]
 ---
 
 # Memory Proactive
 
-让 Hermes 在对话中"好像记得"一切。
+## Overview
 
----
+The **memory-proactive** skill enables Hermes to actively recall relevant context:
 
-## 它做什么
+1. **Topic Detection**: Analyzes current conversation for key topics
+2. **Semantic Recall**: Searches embeddings for related past conversations
+3. **Context Injection**: Injects relevant memory into the conversation flow
 
-传统模式：
+## How It Works
+
+### Dual-Path Search
 ```
-用户：Alice 最近怎么样？
-Hermes：谁是 Alice？  ← 不知道，需要用户先说明
-用户：就是之前那个...
-```
-
-路由器模式：
-```
-用户：Alice 最近怎么样？
-Hermes：（已通过路由器自动加载 Alice 档案）
-      "看档案里记录她上次报备了感冒，低能量期..."
+User message
+  -> Layer 1: FTS5 (state.db, ms-level, precise keyword)
+  -> Layer 2: Semantic (embeddings, agent-local first)
+  -> Layer 3: gbrain (knowledge graph, fallback)
 ```
 
----
+### Recall Pipeline
+1. Clean user query (strip system markers)
+2. Search local agent memory (source:user_id filtered)
+3. Fall back to cross-platform global search if < 2 results
+4. Apply time decay (adjusted_score = sim * exp(-age_days / 30))
 
-## 工作原理
+## Configuration
 
-```
-┌────────────────────────────────────────────────────────┐
-│  Step 1: 提取主题                               │
-│  分析最近 N 条消息，提取关键词                   │
-├────────────────────────────────────────────────────────┤
-│  Step 2: 检索档案                               │
-│  在 FTS5 索引中匹配关键词                     │
-│  按 BM25 相关性排序                       │
-├────────────────────────────────────────────────────────┤
-│  Step 3: 预加载到 memory                         │
-│  将匹配档案的摘要写入临时 memory                │
-│  下一轮对话时自动注入                        │
-└────────────────────────────────────────────────────────┘
-```
-
----
-
-## 限制
-
-| 项目 | 说明 |
-|------|------|
-| **延迟** | 当前分析上一轮，延迟 1 轮对话 |
-| **准确度** | 关键词提取是简化版，可能误匹配 |
-| **覆盖率** | 只能加载已有档案，无法创建新档案 |
-
-**未来升级**：如果 Hermes 核心支持实时意图识别，可实现零延迟。
-
----
-
-## 配置
-
-在 `~/.hermes/config.yaml` 中：
-
+Add to config.yaml:
 ```yaml
-memory_proactive:
-  enabled: true
-  check_interval: 300      # 检查间隔（秒）
-  max_keywords: 10         # 最多提取多少关键词
-  max_results: 3           # 最多加载多少档案
-  min_score: 0.5           # 最低相关性阈值
+skills:
+  - memory-proactive
 ```
 
----
+The skill auto-triggers on recall keywords:
+- Chinese: "还记得", "之前", "上次", "记得吗"
+- English: "remember", "earlier", "before", "last time"
 
-## 手动测试
+## Performance Notes
 
-```bash
-# 测试路由器
-python3 ~/.hermes/skills/memory-proactive/scripts/context_router.py
+- Layer 1: < 10ms (FTS5 index)
+- Layer 2: ~50-200ms (embedding search)
+- Layer 3: ~500ms-3s (gbrain vector + graph, optional)
 
-# 模拟对话，看会加载哪些档案
-python3 ~/.hermes/skills/memory-proactive/scripts/test_router.py \
-    --message "Alice 最近怎么样了"
-```
-
----
-
-## 常见问题
-
-**Q: 为什么有时候没加载到正确的档案？**
-A: 关键词提取是简化版本，如果你的消息不包含档案标题中的词，可能匹配失败。可以在档案中添加更多 tags。
-
-**Q: 会不会加载太多内容撑爆 memory？**
-A: 默认只加载 top 3 档案摘要，每条不超过 200 字。可在配置中调整。
-
-**Q: 和 Skill 自动挂载有什么区别？**
-A: Skill 挂载是"根据对话意图命中 Skill"，路由器是"根据对话内容检索档案"。两者可以配合使用。
-
----
-
-*版本：0.1.0 | 依赖：memory-starter-kit, memory-archivist*
+All layers are best-effort and non-blocking.

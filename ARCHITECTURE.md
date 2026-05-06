@@ -1,245 +1,253 @@
-# Hermes Memory Installer — 架构设计文档
+# Hermes Memory Installer 2.0 --- Architecture Document
 
-*版本：v0.1形态定稿 | 目标读者：开发者 / 产品决策者*
-
----
-
-## 1. 产品定位
-
-让任何 Hermes 用户（包括完全的新手）在 5 分钟内搭建与我们迭代优化后同等级的综合记忆管理体系。
-
-**不是**：
-- 一个替换 Hermes 原生记忆机制的系统
-- 一个需要改变 Hermes 核心代码的方案
-- 一个需要外部服务器或 API Key 的云服务
-
-**是**：
-- 一套利用 Hermes 已有能力的使用范式
-- 一个一键化的环境搭建工具
-- 一组自动化维护工具
+*Version: v2.0.0 | Target: Developers / Technical Decision Makers*
 
 ---
 
-## 2. 三层 Skill 架构
+## 1. Product Positioning
+
+Empower any Hermes user to deploy a production-grade memory management system in under 5 minutes.
+
+**Not**:
+- A replacement for Hermes' native memory mechanisms
+- A system requiring core code modifications
+- A cloud service needing external API keys
+
+**Is**:
+- A three-layer architecture leveraging Hermes' existing capabilities
+- A one-click environment setup tool
+- An automated pipeline for memory maintenance
+
+---
+
+## 2. Three-Layer Architecture
+
+### Dialog Layer (Gateway)
+
+The Hermes Gateway handles all user interactions. Every message triggers the memory recall pipeline before reaching the LLM:
+
+1. **Layer 1 (FTS5)**: Search state.db session transcripts using FTS5 full-text index --- millisecond latency, precise keyword matching
+2. **Layer 2 (Semantic)**: Embedding similarity search using `paraphrase-multilingual-MiniLM-L12-v2` --- agent-local first, cross-platform fallback
+3. **Layer 3 (Graph)**: gbrain knowledge graph vector search --- semantic and graph traversal, triggered when Layer 1-2 results are insufficient
+
+### Skill Layer (Hermes Skills)
+
+| Skill | Required | Function |
+|-------|----------|----------|
+| **memory-starter-kit** | Yes Required | Archive templates, directory structure, usage guide |
+| **memory-archivist** | Yes Recommended | Auto-archive cron jobs, FTS5 indexing, retention management |
+| **memory-proactive** | No Optional | Context routing, topic detection, semantic recall injection |
+| **curator** | Self-evolve | Knowledge governance, insight extraction, skill refinement |
+
+### Data Layer
+
+| Store | Technology | Purpose |
+|-------|-----------|---------|
+| `state.db` | SQLite + FTS5 | Real-time session store with full-text search |
+| `pool.db` | SQLite + FTS5 | Archive index for long-term reference |
+| `archives/` | Markdown files | Human-readable archive library |
+| `semantics.db` | SQLite + vectors | Embedding storage for semantic search |
+| **gbrain** (new) | Postgres/PGlite + pgvector | Knowledge graph with vector + keyword search |
+
+---
+
+## 3. Data Flow
 
 ```
-┌────────────────────────────────────────────────────────┐
-│  Skill 1: memory-starter-kit【必装】                       │
-│  作用：初始化环境 + 提供模板 + 使用指南            │
-│  启动时间：仅安装时执行一次                         │
-├────────────────────────────────────────────────────────┤
-│  Skill 2: memory-archivist【推荐安装】                       │
-│  作用：自动归档旧会话 + 定期清理 + 备份              │
-│  启动时间：每日/每周 cron 自动运行                    │
-├────────────────────────────────────────────────────────┤
-│  Skill 3: memory-proactive【选装】                           │
-│  作用：对话中主动识别主题 → 预加载档案                  │
-│  启动时间：每 5 分钟 cron + 对话触发副本              │
-└────────────────────────────────────────────────────────┘
++-----------------------------------------------------------+
+|                    Online Path                             |
+|  User Message                                              |
+|     |                                                      |
+|  +-----------------------------------------------+        |
+|  | Layer 1: FTS5 Recall (state.db, ms level)     |        |
+|  | - Full-text search across all past sessions   |        |
+|  | - Returns exact keyword matches               |        |
+|  +------------------+----------------------------+        |
+|                     |                                      |
+|  +-----------------------------------------------+        |
+|  | Layer 2: Semantic Recall (embeddings)          |        |
+|  | - Agent-local: filter by source:user_id        |        |
+|  | - Cross-platform: global fallback              |        |
+|  | - Time decay: adjusted_score = sim x exp(-d/30)|       |
+|  +------------------+----------------------------+        |
+|                     |                                      |
+|  +-----------------------------------------------+        |
+|  | Layer 3: gbrain Knowledge Graph (fallback)    |        |
+|  | - Vector similarity search                     |        |
+|  | - Graph traversal for related entities         |        |
+|  | - Hybrid: vector + keyword                     |        |
+|  +------------------+----------------------------+        |
+|                     |                                      |
+|  AI Response with memory context                           |
++-------------------+---------------------------------------+
+|                   |                                        |
+|                    Offline Pipeline                         |
+|                                                              |
+|  Finished Sessions                                           |
+|     |                                                        |
+|  +--------------------------------------------+             |
+|  | auto_session_summary.py (every 12h)        |             |
+|  | - Batch process 2 sessions per run         |             |
+|  | - LLM-generated concise summaries          |             |
+|  | - Writes to sessions.summary column        |             |
+|  +------------------+-------------------------+             |
+|                     |                                        |
+|  +--------------------------------------------+             |
+|  | archive_sessions.py (daily 3AM)            |             |
+|  | - Reads state.db finished sessions         |             |
+|  | - Creates gbrain pages + timeline          |             |
+|  | - Watermark-based incremental              |             |
+|  | - Configurable batch (15/run)              |             |
+|  +------------------+-------------------------+             |
+|                     |                                        |
+|  +--------------------------------------------+             |
+|  | curator_runner.py (daily)                  |             |
+|  | - Knowledge governance and refactoring     |             |
+|  | - Insight extraction from archives         |             |
+|  | - Skill improvement recommendations        |             |
+|  +--------------------------------------------+             |
++-----------------------------------------------------------+
 ```
 
 ---
 
-## 3. 数据流动全图
+## 4. Dual-Path Search Engine
 
+### Path A: SQLite FTS5 (state.db)
+- **Latency**: < 10ms
+- **Strengths**: Exact keyword match, handles Chinese names/projects well
+- **Trigger**: Session search tool, auto-loaded by session-search-tool skill
+- **Scales to**: Millions of messages
+
+### Path B: gbrain Vector + Hybrid
+- **Latency**: ~500ms - 3s
+- **Strengths**: Semantic understanding, graph traversal, cross-entity discovery
+- **Trigger**: Fallback when Path A returns < 3 relevant results
+- **Storage**: Postgres/PGlite + pgvector
+
+### Fallback Chain
 ```
-┌────────────────────────────────────────────────────────┐
-│  对话发生时                                    │
-│  用户说: "Alice 最近怎么样"                    │
-├────────────────────────────────────────────────────────┤
-│  ┌──────────────────────────────────────┐ │
-│  │  Step 1: 原生层自动操作（Hermes 内置）      │ │
-│  │  • session_search 提取对话上下文          │ │
-│  │  • memory 注入已有持久化记忆           │ │
-│  │  • Skill 被命中时自动加载 Skill 内容    │ │
-│  └──────────────────────────────────────┘ │
-├────────────────────────────────────────────────────────┤
-│  ┌──────────────────────────────────────┐ │
-│  │  Step 2: memory-proactive 层（我们实现）   │ │
-│  │  • 分析当前对话主题【"Alice"】           │ │
-│  │  • 在档案库 FTS5 检索相关档案        │ │
-│  │  • 将档案摘要写入 memory（临时注入）   │ │
-│  └──────────────────────────────────────┘ │
-├────────────────────────────────────────────────────────┤
-│  ┌──────────────────────────────────────┐ │
-│  │  Step 3: 数据持久化（archivist 层）     │ │
-│  │  • 对话结束后自动归档到 pool.db        │ │
-│  │  • 每周扫描目录更新索引              │ │
-│  │  • 清理过期会话释放空间                │ │
-│  └──────────────────────────────────────┘ │
-├────────────────────────────────────────────────────────┤
-│  输出：Hermes 回复带着档案中的背景信息        │
-└────────────────────────────────────────────────────────┘
+User query -> Path A (FTS5) -> results >= 3? -> YES -> return
+                                           -> NO  -> Path B (gbrain) -> return merged results
 ```
 
 ---
 
-## 4. 与 Hermes 原生能力的界限
+## 5. Pipeline Components
 
-```
-┌────────────────────────────────────────────────────────┐
-│  我们能做的（Skill 层）                           │
-│  ✅ 创建目录结构                                   │
-│  ✅ 初始化数据库                                   │
-│  ✅ 提供档案模板                                   │
-│  ✅ 自动归档会话                                   │
-│  ✅ 定期更新索引                                   │
-│  ✅ 对话后事分析 + memory 注入（延迟 1 轮）    │
-├────────────────────────────────────────────────────────┤
-│  我们做不了的（需要改核心）                       │
-│  ❌ 实时意图识别（对话中立即解析用户输入）           │
-│  ❌ 修改系统 Prompt 组装逻辑                      │
-│  ❌ 新增原生 @tool 减少对话开销                  │
-└────────────────────────────────────────────────────────┘
-```
+### archive_sessions.py
+Reads finished sessions from Hermes' `state.db`, creates structured pages in gbrain with timeline entries. Uses a watermark cursor for incremental processing --- each run picks up where the last left off.
+
+### auto_session_summary.py
+Generates LLM-powered summaries for finished sessions. Runs every 12 hours, processes 2 sessions per batch with 45s timeout each. ThreadPoolExecutor + asyncio in a fresh event loop per call.
+
+### sync_embeddings.py
+Bidirectional sync between `semantics.db` and `state.db` embedding tables. Two independent models: `all-MiniLM-L6-v2` (384-dim, English) and `text2vec-base-chinese` (768-dim, Chinese).
+
+### curator_runner.py
+Daily self-evolution cycle. Triggers the curator skill to review recent archives, extract insights, refactor knowledge, and improve the skill library.
 
 ---
 
-## 5. 安装器算法
+## 6. Self-Evolution Cycle
 
-```python
-# 简化伪代码
-
-def install():
-    # 1. 检测
-    assert_hermes_installed()
-    assert_python_version(">=3.9")
-    
-    # 2. 备份
-    backup_config_yaml()
-    
-    # 3. 创建目录
-    create_directories(ARCHIVE_DIRS)
-    
-    # 4. 初始化数据库
-    init_sqlite_db("pool.db", SCHEMA_SQL)
-    
-    # 5. 安装 Skills
-    install_skills(["memory-starter-kit", "memory-archivist"])
-    
-    # 6. 修改配置（安全）
-    safe_patch_config(add_skill_entries, add_cron_entries)
-    
-    # 7. 验证
-    run_smoke_tests()
-    
-    # 8. 报告
-    print_install_report()
+```
+Collect -> Summarize -> Archive -> Curate -> Learn -> Repeat
+   |             |              |            |           |
+   v             v              v            v           v
+ sessions    summaries      gbrain      knowledge    skill
+ harvested    generated     pages       refactored   improved
 ```
 
-**config.yaml 修改原则**
-- 使用 YAML 解析器读写，不做文本替换
-- 保留现有配置，只追加
-- 先写临时文件，验证通过后原子替换
+The cycle runs daily via cron. Each phase feeds into the next, creating a continuous improvement loop.
 
 ---
 
-## 6. 目录结构规范
+## 7. Directory Structure
 
 ```
 ~/.hermes/
-├── config.yaml                    # 原有
-├── hermes.db                      # 原有（会话记录）
-├── archives/                      # 【新建】主档案目录
-│   ├── people/                    # 人物档案
-│   │   └── alice/
-│   │       ├── profile.md         # 基础信息
-│   │       ├── chronology.md      # 时间线
-│   │       ├── analysis.md        # 分析结论
-│   │       └── raw_logs/          # 原始记录
-│   ├── projects/                  # 项目档案
-│   │   └── project-a/
-│   │       ├── overview.md
-│   │       └── specs/
-│   ├── knowledge/                 # 知识档案
-│   │   └── topic-x.md
-│   └── _index/                    # 索引元数据
-│       ├── manifest.json          # 档案清单
-│       └── tags.yaml              # 标签体系
-├── pool.db                        # 【新建】归档数据库
-└── skills/                        # 原有
-    └── memory-starter-kit/        # 【新安装】
-    └── memory-archivist/          # 【新安装】
+|-- config.yaml              # Main config (with skills added)
+|-- state.db                 # Session store (Hermes native + Memory 2.0 enhancements)
+|-- pool.db                  # Archive index (FTS5)
+|-- semantics.db             # Embedding storage
+|-- archives/                # Markdown archive library
+|   |-- people/              # People profiles
+|   |-- projects/            # Project archives
+|   |-- knowledge/           # Knowledge base
+|   |-- _index/              # Index metadata
+|-- skills/
+|   |-- memory-starter-kit/  # Required: templates + guide
+|   |-- memory-archivist/    # Recommended: auto archive
+|   |-- memory-proactive/    # Optional: context routing
+|-- scripts/                 # Automation scripts
+    |-- archive_sessions.py
+    |-- auto_session_summary.py
+    |-- sync_embeddings.py
+    |-- archive_daily.sh
+    |-- curator_runner.py
 ```
 
 ---
 
-## 7. 文件总览（本项目内）
+## 8. Memory 2.0 vs Memory 1.0
 
-```
-hermes-memory-installer/
-├── installer/
-│   ├── install.py              # 主安装器
-│   ├── check_env.py            # 环境检测
-│   └── config_patch.py         # config.yaml 安全修改器
-├── skills/
-│   ├── memory-starter-kit/
-│   │   ├── SKILL.md            # 使用指南
-│   │   ├── references/
-│   │   │   ├── writing-guide.md
-│   │   │   └── archive-patterns.md
-│   │   └── templates/
-│   │       ├── person.md.j2
-│   │       ├── project.md.j2
-│   │       └── knowledge.md.j2
-│   ├── memory-archivist/
-│   │   ├── SKILL.md
-│   │   ├── references/
-│   │   └── scripts/
-│   │       ├── daily_archive.py
-│   │       ├── weekly_cleanup.py
-│   │       └── backup.py
-│   └── memory-proactive/
-│       ├── SKILL.md
-│       ├── references/
-│       └── scripts/
-│           ├── context_router.py   # 上下文路由器主脚本
-│           └── topic_extractor.py  # 主题提取模块
-├── templates/                  # 原始模板
-│   ├── person.md.j2
-│   ├── project.md.j2
-│   └── knowledge.md.j2
-├── scripts/                    # 独立运行脚本
-│   ├── init_db.py
-│   ├── daily_archive.py
-│   └── context_router.py
-├── tests/
-│   ├── test_install.py
-│   ├── test_router.py
-│   └── test_smoke.py
-├── docs/
-│   ├── quickstart.md           # 10 分钟上手
-│   └── advanced.md             # 高级配置
-├── ARCHITECTURE.md             # 本文件
-├── DESIGN.md                   # 设计决策记录
-└── README.md
-```
+| Aspect | Memory 1.0 | Memory 2.0 |
+|--------|-----------|-----------|
+| Search | FTS5 only | FTS5 + Vector + Graph (triple path) |
+| Knowledge Engine | None | gbrain (pgvector) |
+| Summarization | None | auto_session_summary.py (LLM) |
+| Self-Evolution | None | curator + skill autopilot |
+| Cross-Platform | Same platform only | Agent-local + cross-platform recall |
+| Automation | Basic cron | Cron + watermark + incremental |
+| Embedding | None | sentence-transformers dual model |
+| Observability | File system | gbrain health + dashboard |
 
 ---
 
-## 8. 风险与缓解
+## 9. Risks and Mitigations
 
-| 风险 | 影响 | 缓解方案 |
-|------|------|----------|
-| config.yaml 被修坏 | Hermes 无法启动 | 安装前自动备份，验证后原子替换 |
-| 已有 Skill 冲突 | 命名空间冲突 | 使用 `memory-kit-` 前缀，检测并询问 |
-| cronjob 与现有任务冲突 | 资源竞争 | 时间窗口可配置，默认随机分布 |
-| 用户不会写档案 | 系统流空 | Skill 模板强制填空，增加模板引导 |
-| Hermes 版本不兼容 | 安装失败 | 版本检测，最低版本门槛 |
-
----
-
-## 9. 里程碑
-
-| 阶段 | 交付物 | 时间估算 |
-|------|--------|----------|
-| M1: 设计确认 | 本文件 + 接口定义 | 1 天 |
-| M2: installer 主体 | install.py + 测试 | 2 天 |
-| M3: Skill 套件 | 3 个 Skill + 模板 | 3 天 |
-| M4: 文档与 QA | quickstart + 高级文档 | 2 天 |
-| M5: 集成测试 | 清环测试 | 2 天 |
-| **合计** | | **~10 天** |
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| gbrain not installed | Layer 3 unavailable | Graceful fallback to FTS5 only |
+| state.db schema migration | Data loss | ALTER TABLE with try/except |
+| Embedding model download | Slow first run | Cached in ~/.cache/huggingface/ |
+| Cron job collision | Resource contention | Configurable time windows |
+| Token exhaustion | Archives fail | Per-session timeout + batch limits |
 
 ---
 
-*最后更新：2026-04-25*
+## 10. Roadmap
+
+| Phase | Deliverable |
+|-------|------------|
+| v1.0 | FTS5 retrieval, 3 skills, one-click install |
+| v2.0 | gbrain integration, dual-path search, auto-summary, curator |
+| v2.1 (upcoming) | Multi-agent shared memory, conflict resolution |
+| v2.2 (upcoming) | Real-time embedding sync, graph visualization |
+| v3.0 (upcoming) | Distributed memory, federation protocol |
+
+---
+
+*Last updated: 2026-05-06*
+
+
+## 11. Credits and References
+
+Memory 2.0 builds upon ideas and code from the following projects:
+
+| Project | What We Used |
+|---------|-------------|
+| **[mem0](https://github.com/mem0ai/mem0)** | Memory layering concept (user/session/system) |
+| **[LangChain Memory](https://python.langchain.com/docs/modules/memory/)** | Hybrid retrieval strategy (buffer + vector store) |
+| **[Obsidian](https://obsidian.md/)** | Local-first Markdown archive philosophy |
+| **[SQLite FTS5](https://sqlite.org/fts5.html)** | Embedded full-text search engine |
+| **[Karpathy's llm-wiki](https://github.com/karpathy/llm-wiki)** | Personal knowledge base organization |
+| **[gbrain](https://github.com/garrytan/gbrain)** | Knowledge graph engine (MCP-based, pgvector) |
+| **[sentence-transformers](https://sbert.net/)** | Embedding models for semantic search |
+
+**Special thanks** to the Hermes Agent team at Nous Research for the native memory,
+skill, and MCP extension APIs that make zero-intrusion deployment possible.
+
+*Memory 2.0 was developed iteratively on a production Hermes Agent instance running
+on Linux, processing 700+ sessions and 10,000+ messages in daily operation.*
