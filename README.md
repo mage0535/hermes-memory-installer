@@ -57,6 +57,34 @@ The #1 pain point of AI assistants — **they forget**. Hermes Agent provides na
 | **Install** | Manual | 30s one-click | 30s one-click + **optinal gbrain setup** |
 | **Resource** | Minimal | ~50MB + SQLite | ~200MB + SQLite + optional Bun/gbrain |
 
+### gbrain Knowledge Graph Engine (v2.0 Core)
+
+Memory 2.0 introduces **gbrain** (Postgres-native knowledge graph) as the Layer 3 retrieval engine:
+
+- **Storage**: PGLite (zero-config, default) or PostgreSQL 16+ + pgvector
+- **Retrieval**: Keyword (tsvector) + Vector semantic (pgvector) + Graph traversal (triple hybrid)
+- **Integration**: Via Hermes MCP protocol, Gateway auto-starts gbrain sidecar
+- **Automation**: Daily session archiving to gbrain pages + timeline entries
+
+```
+User Query -> FTS5 (state.db, ms-level)
+          -> Semantic search (embeddings, ~200ms)
+          -> gbrain knowledge graph (vector+keyword+graph, fallback)
+```
+
+### Component Comparison
+
+| Dimension | Memory 1.0 | Memory 2.0 |
+|-----------|-----------|------------|
+| **Retrieval** | FTS5 single path | FTS5 + Vector + Graph triple path |
+| **Knowledge Engine** | None | gbrain (PGLite/Postgres + pgvector) |
+| **Session Archive** | Local files only | Auto-writes to gbrain pages + timeline |
+| **Maintenance** | Manual | gbrain_maintain.sh daily auto |
+| **Search** | Local FTS5 | gbrain query hybrid search |
+| **Observability** | File tree | gbrain doctor + dashboard |
+
+
+
 ### Installation
 
 #### Method A: One-click (Beginner)

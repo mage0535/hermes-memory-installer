@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# gbrain + Postgres 完整初始化脚本
+# 用法: bash scripts/gbrain_init.sh [--pglite|--postgres]
+set -euo pipefail
+
+MODE="${1:---pglite}"
+GBRAIN_DIR="${GBRAIN_DIR:-$HOME/gbrain}"
+BUN_BIN="${BUN_BIN:-$HOME/.bun/bin/bun}"
+GBRAIN_BIN="${GBRAIN_BIN:-$HOME/.bun/bin/gbrain}"
+LOG_FILE="/tmp/gbrain_init.log"
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+info()  { echo -e "${GREEN}[+]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
+err()   { echo -e "${RED}[-]${NC} $*"; }
+
+check_bun() {
+  if ! command -v bun &>/dev/null && [[ ! -f "$BUN_BIN" ]]; then
+    info "安装 Bun..."
+    curl -fsSL https://bun.sh/install | bash
+    export PATH="$HOME/.bun/bin:$PATH"
+  fi
+  info "Bun: $(bun --version 2>/dev/null || echo ok)"
+}
+
+install_gbrain() {
+  if [[ -d "$GBRAIN_DIR" ]]; then
+    info "gbrain 已安装于 $GBRAIN_DIR"
+    return
+  fi
+  info "克隆 gbrain..."
+  git clone https://github.com/garrytan/gbrain.git "$GBRAIN_DIR"
+  cd "$GBRAIN_DIR"
+  info "安装依赖..."
+  bun install
+  info "gbrain 安装完成"
+}
+
+setup_postgres() {
+  if [[ "$MODE" != "--postgres" ]]; then
+    info "使用 PGLite（零配置），跳过 Postgres 安装"
+    return
+  fi
+  info "配置 PostgreSQL..."
+  if ! command -v psql &>/dev/null; then
+    apt-get update -qq && apt-get install -y -qq postgresql postgresql-contrib
+  fi
+  if ! pg_isready -q 2>/dev/null; then
+    pg_ctlcluster $(pg_lsclusters -h | head -1 | awk '{print $1" "$2}') start 2>/dev/null || systemctl start postgresql
+    sleep 2
+  fi
+  if ! sudo -u postgres psql -t -c "SELECT 1 FROM pg_roles WHERE rolname='gbrain'" | grep -q 1; then
+    sudo -u postgres psql -c "CREATE USER gbrain WITH PASSWORD 'gbrain_local_only';"
+    sudo -u postgres psql -c "CREATE DATABASE gbrain OWNER gbrain;"
+    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE gbrain TO gbrain;"
+  fi
+  sudo -u postgres psql -d gbrain -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || true
+  info "PostgreSQL 就绪: postgresql://gbrain:gbrain_local_only@127.0.0.1:5432/gbrain"
+}
+
+init_gbrain_brain() {
+  cd "$GBRAIN_DIR"
+  if gbrain config &>/dev/null; then
+    info "gbrain 已初始化，跳过"
+    return
+  fi
+  if [[ "$MODE" == "--postgres" ]]; then
+    DATABASE_URL="postgresql://gbrain:gbrain_local_only@127.0.0.1:5432/gbrain" gbrain init --url "$DATABASE_URL"
+  else
+    gbrain init  # PGLite, zero-config
+  fi
+  info "gbrain 知识图谱初始化完成"
+}
+
+setup_mcp() {
+  if grep -q "gbrain" "$HOME/.hermes/config.yaml" 2>/dev/null; then
+    info "gbrain MCP 已配置"
+    return
+  fi
+  info "添加 gbrain MCP 到 Gateway..."
+  python3 -c "
+import yaml
+from pathlib import Path
+c = Path.home() / '.hermes' / 'config.yaml'
+d = yaml.safe_load(c.read_text()) or {}
+d.setdefault('mcp_servers', {})['gbrain'] = {
+    'command': str(Path.home() / '.bun' / 'bin' / 'bun'),
+    'args': [str(Path.home() / '.bun' / 'bin' / 'gbrain'), 'serve'],
+    'timeout': 120, 'connect_timeout': 60
+}
+c.write_text(yaml.dump(d, default_flow_style=False, allow_unicode=True))
+print('OK')
+"
+}
+
+verify() {
+  echo ""
+  info "验证..."
+  gbrain doctor --fast 2>/dev/null && info "✅ 健康检查通过" || warn "⚠️ 健康检查异常"
+}
+
+echo "═══════════════════════════════════════════════"
+echo "  gbrain + Postgres 初始化脚本"
+echo "  模式: $MODE"
+echo "═══════════════════════════════════════════════"
+check_bun
+install_gbrain
+setup_postgres
+init_gbrain_brain
+setup_mcp
+verify
+echo ""
+echo "✅ 完成！重启 Gateway 加载 gbrain MCP:"
+echo "   systemctl restart hermes-gateway"

@@ -53,64 +53,82 @@ The Hermes Gateway handles all user interactions. Every message triggers the mem
 
 ## 3. Data Flow
 
+### Online Path (Real-time retrieval)
+
 ```
-+-----------------------------------------------------------+
-|                    Online Path                             |
-|  User Message                                              |
-|     |                                                      |
-|  +-----------------------------------------------+        |
-|  | Layer 1: FTS5 Recall (state.db, ms level)     |        |
-|  | - Full-text search across all past sessions   |        |
-|  | - Returns exact keyword matches               |        |
-|  +------------------+----------------------------+        |
-|                     |                                      |
-|  +-----------------------------------------------+        |
-|  | Layer 2: Semantic Recall (embeddings)          |        |
-|  | - Agent-local: filter by source:user_id        |        |
-|  | - Cross-platform: global fallback              |        |
-|  | - Time decay: adjusted_score = sim x exp(-d/30)|       |
-|  +------------------+----------------------------+        |
-|                     |                                      |
-|  +-----------------------------------------------+        |
-|  | Layer 3: gbrain Knowledge Graph (fallback)    |        |
-|  | - Vector similarity search                     |        |
-|  | - Graph traversal for related entities         |        |
-|  | - Hybrid: vector + keyword                     |        |
-|  +------------------+----------------------------+        |
-|                     |                                      |
-|  AI Response with memory context                           |
-+-------------------+---------------------------------------+
-|                   |                                        |
-|                    Offline Pipeline                         |
-|                                                              |
-|  Finished Sessions                                           |
-|     |                                                        |
-|  +--------------------------------------------+             |
-|  | auto_session_summary.py (every 12h)        |             |
-|  | - Batch process 2 sessions per run         |             |
-|  | - LLM-generated concise summaries          |             |
-|  | - Writes to sessions.summary column        |             |
-|  +------------------+-------------------------+             |
-|                     |                                        |
-|  +--------------------------------------------+             |
-|  | archive_sessions.py (daily 3AM)            |             |
-|  | - Reads state.db finished sessions         |             |
-|  | - Creates gbrain pages + timeline          |             |
-|  | - Watermark-based incremental              |             |
-|  | - Configurable batch (15/run)              |             |
-|  +------------------+-------------------------+             |
-|                     |                                        |
-|  +--------------------------------------------+             |
-|  | curator_runner.py (daily)                  |             |
-|  | - Knowledge governance and refactoring     |             |
-|  | - Insight extraction from archives         |             |
-|  | - Skill improvement recommendations        |             |
-|  +--------------------------------------------+             |
-+-----------------------------------------------------------+
+User Message arrives at Gateway
+  |
+  +- Layer 1: FTS5 (state.db, <10ms)
+  |   Full-text search across all past sessions
+  |   Strengths: exact keyword match, fast
+  |   Trigger: always runs
+  |
+  +- Layer 2: Semantic (embeddings, ~50-200ms)
+  |   paraphrase-multilingual-MiniLM-L12-v2
+  |   Agent-local -> cross-platform fallback
+  |   Time decay: adjusted_score = sim x exp(-age/30)
+  |   Trigger: always runs, non-blocking
+  |
+  +- Layer 3: gbrain Knowledge Graph (~500ms-3s)
+      Hybrid search: vector similarity + keyword + graph traversal
+      Trigger: when Layer 1-2 return < 3 relevant results
+      API: gbrain MCP tools (query, search, get_page)
+      Storage: PGLite (default) or PostgreSQL 16+ + pgvector
+  |
+  v
+AI Response with enriched memory context
 ```
 
----
+### Offline Pipeline (Background processing)
 
+```
+Finished Sessions (state.db)
+  |
+  +-- auto_session_summary.py (every 12h)
+  |   Reads ended_at sessions without summary
+  |   LLM generates concise summary per session
+  |   Writes to state.db sessions.summary column
+  |   Batch: 2 sessions, 45s timeout each
+  |
+  +-- archive_sessions.py (daily 3AM)
+  |   Reads state.db sessions older than 7 days
+  |   Calls gbrain MCP put_page -> creates structured page
+  |   Calls gbrain MCP add_timeline_entry -> adds timeline entry
+  |   Calls gbrain MCP add_tag -> classifies session source
+  |   Watermark-based incremental processing
+  |   Batch: 15 sessions per run, resume from watermark
+  |
+  +-- gbrain_maintain.sh (daily 4AM)
+  |   gbrain extract links -> rebuild link graph
+  |   gbrain extract timeline -> rebuild timelines
+  |   gbrain embed --reindex -> refresh vector indices
+  |   gbrain doctor -> health check
+  |
+  +-- gbrain_search.py (on-demand, concurrent)
+      gbrain call query -> hybrid vector+keyword search
+      Supports multi-query concurrency (3 workers)
+      Returns structured results for context injection
+```
+
+### gbrain Page Architecture
+
+Each archived session becomes a gbrain page with frontmatter + content + tags + timeline:
+
+```
+Page (slug: session-abc123)
+  |-- Frontmatter: title, type, tags, date, source_session_id
+  |-- Content: summary, metadata table, conversation snippets
+  |-- Tags: session, archived, telegram (auto-tagged by source)
+  |-- Timeline: one entry per session with date + summary
+  |-- Links: auto-extracted by gbrain extract links
+  |-- Chunks: auto-generated for vector search indexing
+```
+
+Pages are searchable via:
+- Keyword: \`gbrain search <query>\` (tsvector full-text)
+- Hybrid: \`gbrain query <question>\` (vector + keyword + multi-query expansion)
+- MCP: \`mcp_gbrain_query\`, \`mcp_gbrain_search\`, \`mcp_gbrain_get_page\`
+- Graph: \`mcp_gbrain_traverse_graph\` for related entity discovery
 ## 4. Dual-Path Search Engine
 
 ### Path A: SQLite FTS5 (state.db)

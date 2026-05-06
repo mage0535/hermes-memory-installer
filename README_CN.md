@@ -57,6 +57,34 @@ AI 助理最常见的痛点——**聊着聊着就忘了**。Hermes Agent 原生
 | **安装** | 手动配置 | 30秒一键 | 30秒一键 + **可选 gbrain 配置** |
 | **资源占用** | 极小 | ~50MB + SQLite | ~200MB + SQLite + 可选 Bun/gbrain |
 
+### gbrain 知识图谱引擎（v2.0 核心）
+
+记忆体2.0 引入 **gbrain**（Postgres 原生知识图谱）作为第三层检索引擎：
+
+- **存储**: PGLite（零配置，默认）或 PostgreSQL 16+ + pgvector
+- **检索**: 关键词 (tsvector) + 向量语义 (pgvector) + 图遍历（三路混合）
+- **接入**: 通过 Hermes MCP 协议，Gateway 自动启动 gbrain sidecar
+- **自动化**: 每日自动归档会话到 gbrain 页面 + 时间线条目
+
+```
+用户查询 -> FTS5 全文检索 (state.db, 毫秒级)
+        -> 语义向量检索 (embeddings, ~200ms)
+        -> gbrain 知识图谱 (向量+关键词+图, 兜底)
+```
+
+### 组件对比
+
+| 维度 | 记忆体1.0 | 记忆体2.0 |
+|------|----------|------------|
+| **检索路径** | FTS5 单路 | FTS5 + 向量 + 图 三路 |
+| **知识引擎** | 无 | gbrain (PGLite/Postgres + pgvector) |
+| **会话归档** | 仅本地文件 | 自动写入 gbrain 页面 + 时间线 |
+| **维护** | 手动 | gbrain_maintain.sh 每日自动 |
+| **搜索** | 本地 FTS5 | gbrain query 混合搜索 |
+| **可观测性** | 文件目录 | gbrain doctor + dashboard |
+
+
+
 ### 安装方式
 
 #### 方式 A：一键脚本（推荐小白）

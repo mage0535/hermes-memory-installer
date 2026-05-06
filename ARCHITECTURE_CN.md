@@ -53,29 +53,30 @@ Hermes Gateway handles all user interactions. Each message triggers the memory r
 
 ## 3. Data Flow
 
+### Online Path (Real-time retrieval)
+
 ```
-+-----------------------------------------------------------+
-|                      Online Path                           |
-|  User Message                                              |
-|     |                                                      |
-|  Layer 1: FTS5 Recall (state.db, millisecond level)        |
-|  Layer 2: Semantic Recall (embeddings, local first)        |
-|  Layer 3: gbrain Knowledge Graph (vector + graph, fallback)|
-|     |                                                      |
-|  AI Response with memory context                           |
-+-----------------------------------------------------------+
-|                                                             |
-|                      Offline Pipeline                       |
-|                                                             |
-|  Finished Sessions                                          |
-|     |                                                       |
-|  auto_session_summary.py (every 12h, LLM summary)         |
-|  archive_sessions.py (daily 3AM, gbrain archive)           |
-|  curator_runner.py (daily, knowledge governance)           |
-+-----------------------------------------------------------+
+User Message arrives at Gateway
+  |
+  +- Layer 1: FTS5 (state.db, <10ms)
+  +- Layer 2: Semantic (embeddings, ~50-200ms)
+  +- Layer 3: gbrain Knowledge Graph (~500ms-3s)
+  |
+  v
+AI Response with enriched memory context
 ```
 
----
+### Offline Pipeline (Background processing)
+
+```
+Finished Sessions (state.db)
+  +-- auto_session_summary.py (every 12h)
+  +-- archive_sessions.py (daily 3AM)
+  +-- gbrain_maintain.sh (daily 4AM)
+  +-- gbrain_search.py (on-demand, concurrent)
+```
+
+See ARCHITECTURE.md for full details.
 
 ## 4. Dual-Path Search Engine
 
