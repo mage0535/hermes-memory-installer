@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🧠 Hermes Memory Installer 2.0
+# 🧠 Hermes Memory Installer 2.1
 
 **AI长期记忆系统 — 由 gbrain 知识图谱驱动**
 
 [中文版](README_CN.md) | [English](#)
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)
 
@@ -114,8 +114,52 @@ See [MANUAL_INSTALL.md](MANUAL_INSTALL.md)
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v2.1.0 | 2026-05 | 🔤 BAAI/bge-small-zh-v1.5 multilingual search, 🛠️ 5 new production scripts, 🏠 cross-platform path auto-detection |
 | v2.0.0 | 2026-05 | gbrain integration, dual-path search, auto-summarization, curator, self-evolution |
 | v1.0.0 | 2026-04 | FTS5 retrieval, 3 skills, one-click install, Markdown archives |
+
+## v2.1.0 Changelog
+
+### 🔤 A. Multi-language Search Engine
+
+Upgraded embedding model from English-only `all-MiniLM-L6-v2` (384d) to **BAAI/bge-small-zh-v1.5** (512d, 33MB). A single model now handles both **Chinese and English** search natively — no dual-model split needed.
+
+- New: `scripts/embedding_server.py` — OpenAI-compatible API on port 8766
+- Updated: `scripts/sync_embeddings.py` — uses BAAI/bge-small-zh-v1.5 by default
+- Updated: `scripts/gbrain_init.sh` — `--embed` flag auto-deploys the server
+
+### 🛠️ B. Production Scripts Added
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/daily_archive.py` | Daily session archival to gbrain + DB backup |
+| `scripts/weekly_cleanup.py` | Weekly FTS5 reindex + expired session cleanup + orphan detection |
+| `scripts/backup.py` | Full backup/restore with `backup`/`restore`/`list` subcommands |
+| `scripts/test_router.py` | Validates FTS5 → embedding → gbrain recall pipeline |
+| `bin/hermes-memory` | CLI tool with `new`/`doctor`/`init` commands |
+
+### 🏠 C. Cross-platform Path Support
+
+Fixed critical issue where hard-coded `/root/.hermes` broke installations on machines with different home directories (e.g., `/home/user/.hermes`).
+
+- All scripts now use `$HOME` / `Path.home()` (zero hard-coded paths)
+- `install.sh` includes `detect_hermes_home()` pre-flight check
+- Auto-detects and adjusts paths on first run
+- Non-root users install seamlessly
+
+### 📦 Upgrade from v2.0.0
+
+```bash
+cd /tmp && git clone https://github.com/mage0535/hermes-memory-installer.git
+cd hermes-memory-installer && git checkout v2.1.0
+# Copy new scripts
+cp scripts/daily_archive.py scripts/weekly_cleanup.py scripts/backup.py ~/.hermes/scripts/
+cp scripts/test_router.py scripts/embedding_server.py ~/.hermes/scripts/
+cp bin/hermes-memory ~/.local/bin/
+# Install embedding server
+python3 ~/.hermes/scripts/embedding_server.py &
+```
+
 
 ### License
 

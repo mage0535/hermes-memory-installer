@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🧠 Hermes Memory Installer 2.0
+# 🧠 Hermes Memory Installer 2.1
 
 **为 Hermes AI Agent 注入持久记忆 — 由 gbrain 知识图谱驱动**
 
 [English](README.md) | [中文](#)
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)
 
@@ -114,8 +114,52 @@ curl -fsSL https://raw.githubusercontent.com/mage0535/hermes-memory-installer/ma
 
 | 版本 | 日期 | 亮点 |
 |------|------|------|
+| v2.1.0 | 2026-05 | 🔤 BAAI/bge-small-zh-v1.5 多语言检索引擎，🛠️ 5个生产级脚本，🏠 跨平台路径自动检测 |
 | v2.0.0 | 2026-05 | gbrain 集成、双路搜索、自动摘要、策展人、自进化 |
 | v1.0.0 | 2026-04 | FTS5 检索、3 个 Skill、一键安装、Markdown 档案 |
+
+## v2.1.0 更新日志
+
+### 🔤 A. 多语言检索引擎
+
+嵌入模型从仅支持英文的 `all-MiniLM-L6-v2`（384维）升级为 **BAAI/bge-small-zh-v1.5**（512维，33MB）。单一模型原生支持**中文和英文**检索，无需双模型切换。
+
+- 新增：`scripts/embedding_server.py` — OpenAI 兼容的嵌入服务器（端口 8766）
+- 更新：`scripts/sync_embeddings.py` — 默认使用 BAAI/bge-small-zh-v1.5
+- 更新：`scripts/gbrain_init.sh` — `--embed` 参数自动部署嵌入服务器
+
+### 🛠️ B. 生产级脚本补齐
+
+| 脚本 | 功能 |
+|------|------|
+| `scripts/daily_archive.py` | 每日会话归档 + 数据库备份 |
+| `scripts/weekly_cleanup.py` | 每周 FTS5 索引重建 + 过期数据清理 + 孤立页面检测 |
+| `scripts/backup.py` | 完整备份/恢复，支持 `backup`/`restore`/`list` 子命令 |
+| `scripts/test_router.py` | 验证 FTS5 → 嵌入 → gbrain 全链路召回 |
+| `bin/hermes-memory` | CLI 工具，支持 `new`/`doctor`/`init` 命令 |
+
+### 🏠 C. 跨平台路径支持
+
+修复了硬编码 `/root/.hermes` 导致非 root 用户（如 `/home/keko/.hermes`）安装失败的问题。
+
+- 所有脚本改用 `$HOME` / `Path.home()`（零硬编码路径）
+- `install.sh` 新增 `detect_hermes_home()` 预检测函数
+- 安装时自动检测并调整路径
+- 非 root 用户无缝安装
+
+### 📦 从 v2.0.0 升级
+
+```bash
+cd /tmp && git clone https://github.com/mage0535/hermes-memory-installer.git
+cd hermes-memory-installer && git checkout v2.1.0
+# 复制新脚本
+cp scripts/daily_archive.py scripts/weekly_cleanup.py scripts/backup.py ~/.hermes/scripts/
+cp scripts/test_router.py scripts/embedding_server.py ~/.hermes/scripts/
+cp bin/hermes-memory ~/.local/bin/
+# 安装嵌入服务器
+python3 ~/.hermes/scripts/embedding_server.py &
+```
+
 
 ### 许可证
 
