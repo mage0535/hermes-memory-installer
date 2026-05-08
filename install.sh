@@ -2,7 +2,7 @@
 # Hermes Memory Installer 2.0 — 一键安装脚本（含 gbrain+Postgres 可选部署）
 set -euo pipefail
 
-readonly VERSION="2.0.0"
+readonly VERSION="2.1.0"
 INSTALL_DIR="/tmp/hermes-memory-installer-$$"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -24,6 +24,32 @@ banner() {
                                       |___/                        |___/ |___/
   版本: v${VERSION} | 记忆体2.0 — AI长期记忆系统（含 gbrain 知识图谱）
 BANNER
+}
+
+detect_hermes_home() {
+    # Auto-detect .hermes path (handles /root/ vs /home/user/)
+    if [ -d "$HOME/.hermes" ]; then
+        HERMES_HOME="$HOME/.hermes"
+    elif [ -d "/root/.hermes" ]; then
+        HERMES_HOME="/root/.hermes"
+    else
+        warn "Could not auto-detect .hermes directory."
+        read -p "  Path (default: $HOME/.hermes): " custom_path
+        HERMES_HOME="${custom_path:-$HOME/.hermes}"
+    fi
+    mkdir -p "$HERMES_HOME"
+    export HERMES_HOME
+    if [ ! -d "$HERMES_HOME" ]; then
+        err "Cannot access .hermes at: $HERMES_HOME"
+        exit 1
+    fi
+    ok "Hermes directory: $HERMES_HOME"
+    if [ "$HERMES_HOME" != "/root/.hermes" ]; then
+        for f in scripts/*.sh scripts/*.py; do
+            [ -f "$f" ] && grep -q "/root/.hermes" "$f" 2>/dev/null && sed -i "s|/root/.hermes|$HERMES_HOME|g" "$f" 2>/dev/null || true
+        done
+        ok "Paths adjusted to $HERMES_HOME"
+    fi
 }
 
 check_env() {
@@ -51,8 +77,8 @@ check_env() {
 
 install_memory_base() {
     info "安装记忆体基础组件..."
-    mkdir -p "${HOME}/.hermes/archives/"{people,projects,knowledge,_index}
-    mkdir -p "${HOME}/.hermes/scripts"
+    mkdir -p "${HERMES_HOME}/archives/"{people,projects,knowledge,_index}
+    mkdir -p "${HERMES_HOME}/scripts"
 
     # 初始化 pool.db
     $PYTHON_CMD -c "
@@ -75,7 +101,7 @@ conn.commit(); conn.close()
     local src_skills="/tmp/memory-repo/skills"
     if [[ -d "$src_skills" ]]; then
         for skill in memory-starter-kit memory-archivist memory-proactive; do
-            if [[ -d "$src_skills/$skill" && ! -d "${HOME}/.hermes/skills/$skill" ]]; then
+            if [[ -d "$src_skills/$skill" && ! -d "${HERMES_HOME}/skills/$skill" ]]; then
                 cp -r "$src_skills/$skill" "${HOME}/.hermes/skills/"
                 ok "Skill 已安装: $skill"
             fi
@@ -85,7 +111,7 @@ conn.commit(); conn.close()
     # 安装脚本
     local src_scripts="/tmp/memory-repo/scripts"
     if [[ -d "$src_scripts" ]]; then
-        cp "$src_scripts"/*.py "$src_scripts"/*.sh "${HOME}/.hermes/scripts/" 2>/dev/null || true
+        cp "$src_scripts"/*.py "$src_scripts"/*.sh "${HERMES_HOME}/scripts/" 2>/dev/null || true
         ok "自动化脚本已安装"
     fi
 
@@ -157,9 +183,9 @@ setup_automation() {
         info "使用系统 cron..."
         (crontab -l 2>/dev/null || true) > /tmp/cron.tmp
         echo "# Memory 2.0 automation" >> /tmp/cron.tmp
-        echo "0 3 * * * cd ${HOME}/.hermes/scripts && python3 archive_sessions.py --days 7 --batch 15" >> /tmp/cron.tmp
-        echo "0 4 * * * bash ${HOME}/.hermes/scripts/gbrain_maintain.sh" >> /tmp/cron.tmp
-        echo "0 */12 * * * cd ${HOME}/.hermes/scripts && python3 auto_session_summary.py" >> /tmp/cron.tmp
+        echo "0 3 * * * cd ${HERMES_HOME}/scripts && python3 archive_sessions.py --days 7 --batch 15" >> /tmp/cron.tmp
+        echo "0 4 * * * bash ${HERMES_HOME}/scripts/gbrain_maintain.sh" >> /tmp/cron.tmp
+        echo "0 */12 * * * cd ${HERMES_HOME}/scripts && python3 auto_session_summary.py" >> /tmp/cron.tmp
         crontab /tmp/cron.tmp
         rm /tmp/cron.tmp
         ok "系统 cron 任务已创建"
@@ -172,8 +198,8 @@ verify() {
     local ok_count=0; local total=4
 
     [[ -d "${HOME}/.hermes/archives" ]] && { ok "archive 目录"; ((ok_count++)); } || warn "archive 目录缺失"
-    [[ -f "${HOME}/.hermes/pool.db" ]] && { ok "pool.db"; ((ok_count++)); } || warn "pool.db 缺失"
-    [[ -d "${HOME}/.hermes/skills/memory-starter-kit" ]] && { ok "memory-starter-kit"; ((ok_count++)); } || warn "memory-starter-kit 缺失"
+    [[ -f "${HERMES_HOME}/pool.db" ]] && { ok "pool.db"; ((ok_count++)); } || warn "pool.db 缺失"
+    [[ -d "${HERMES_HOME}/skills/memory-starter-kit" ]] && { ok "memory-starter-kit"; ((ok_count++)); } || warn "memory-starter-kit 缺失"
     if command -v gbrain &>/dev/null; then
         gbrain doctor --fast &>/dev/null && { ok "gbrain 健康"; ((ok_count++)); } || warn "gbrain 异常"
     else
@@ -197,7 +223,7 @@ show_summary() {
     echo "  1. 重启 Gateway: systemctl restart hermes-gateway"
     echo "  2. 创建第一个档案:"
     echo "     cp ~/.hermes/skills/memory-starter-kit/templates/person.md.j2 \\"
-    echo "        ~/.hermes/archives/people/姓名/profile.md"
+    echo "        ${HERMES_HOME}/archives/people/姓名/profile.md"
     echo "  3. 查看完整指南: cat ~/.hermes/skills/memory-starter-kit/SKILL.md"
     echo "  4. 手动运行归档: python3 ~/.hermes/scripts/archive_sessions.py"
     echo ""
@@ -212,11 +238,12 @@ show_summary() {
 
 main() {
     banner
+    detect_hermes_home
     check_env
 
     # 备份
-    if [[ -f "${HOME}/.hermes/config.yaml" ]]; then
-        cp "${HOME}/.hermes/config.yaml" "${HOME}/.hermes/config.yaml.pre-memory-$(date +%Y%m%d)"
+    if [[ -f "${HERMES_HOME}/config.yaml" ]]; then
+        cp "${HERMES_HOME}/config.yaml" "${HOME}/.hermes/config.yaml.pre-memory-$(date +%Y%m%d)"
     fi
 
     install_memory_base

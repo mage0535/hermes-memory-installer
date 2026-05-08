@@ -7,9 +7,10 @@ Runs every 12h, processes 2 sessions per batch with 45s timeout.
 import sys, os, subprocess, logging
 from pathlib import Path
 
-sys.path.insert(0, '/root/.hermes/hermes-agent')
+sys.path.insert(0, str(Path.home() / '.hermes' / 'hermes-agent'))
+from pathlib import Path
 from dotenv import dotenv_values
-env_vals = dotenv_values('/root/.hermes/.env')
+env_vals = dotenv_values(str(Path.home() / '.hermes' / '.env'))
 for k, v in env_vals.items():
     if k.endswith('_API_KEY') or k.endswith('_BASE_URL'):
         os.environ[k] = v
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 BATCH_LIMIT = 2
 PER_SESSION_TIMEOUT = 45
-WORKER_SCRIPT = '/root/.hermes/scripts/_summary_worker.py'
+WORKER_SCRIPT = str(Path.home() / '.hermes' / 'scripts' / '_summary_worker.py')
 
 def get_candidates(db):
     import sqlite3
