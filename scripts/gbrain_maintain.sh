@@ -3,7 +3,7 @@
 # 功能: 提取链接、提取时间轴、健康检查、重新索引
 set -uo pipefail
 
-PATH="/root/.bun/bin:$PATH"
+PATH="$HOME/.bun/bin:$PATH"
 GBRAIN="gbrain"
 LOG_FILE="/tmp/gbrain_maintain.log"
 

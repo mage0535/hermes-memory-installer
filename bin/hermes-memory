@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""hermes-memory CLI — Memory 2.0 template and management commands."""
+import argparse
+import os
+import shutil
+from pathlib import Path
+
+HOME = Path.home()
+HERMES = HOME / '.hermes'
+SKILLS_DIR = HERMES / 'skills' / 'memory-starter-kit' / 'templates'
+ARCHIVE_DIR = HERMES / 'archives'
+
+TEMPLATES = {
+    'person': 'person.md.j2',
+    'project': 'project.md.j2',
+    'knowledge': 'knowledge.md.j2',
+}
+
+def cmd_new(args):
+    """Create a new archive from template."""
+    template_name = args.type
+    target_name = args.name
+    
+    if template_name not in TEMPLATES:
+        print(f"Unknown template type: {template_name}")
+        print(f"Available: {', '.join(TEMPLATES.keys())}")
+        return
+    
+    src = SKILLS_DIR / TEMPLATES[template_name]
+    if not src.exists():
+        print(f"Template not found: {src}")
+        print("Ensure memory-starter-kit skill is installed")
+        return
+    
+    # Determine target path
+    if template_name == 'person':
+        dst = ARCHIVE_DIR / 'people' / target_name / 'profile.md'
+    elif template_name == 'project':
+        dst = ARCHIVE_DIR / 'projects' / target_name / 'README.md'
+    elif template_name == 'knowledge':
+        dst = ARCHIVE_DIR / 'knowledge' / f"{target_name}.md"
+    else:
+        dst = ARCHIVE_DIR / f"{target_name}.md"
+    
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    print(f"Created: {dst}")
+    print(f"Edit this file: {dst}")
+
+def cmd_doctor(args):
+    """Check installation health."""
+    print("=== Memory 2.0 Health Check ===\n")
+    checks = {
+        'Hermes Agent': HERMES.exists(),
+        'Archives dir': ARCHIVE_DIR.exists(),
+        'Pool DB': (HERMES / 'pool.db').exists(),
+        'State DB': (HERMES / 'state.db').exists(),
+        'Starter Kit': (HERMES / 'skills' / 'memory-starter-kit').exists(),
+        'Archivist': (HERMES / 'skills' / 'memory-archivist').exists(),
+        'Proactive': (HERMES / 'skills' / 'memory-proactive').exists(),
+        'gbrain CLI': shutil.which('gbrain') is not None,
+    }
+    
+    ok = 0
+    for name, result in checks.items():
+        icon = 'OK' if result else 'MISSING'
+        print(f"  [{icon:<7}] {name}")
+        if result:
+            ok += 1
+    
+    print(f"\n  Score: {ok}/{len(checks)}")
+
+def cmd_init(args):
+    """Initialize archive directory structure."""
+    for subdir in ['people', 'projects', 'knowledge', '_index']:
+        ARCHIVE_DIR.joinpath(subdir).mkdir(parents=True, exist_ok=True)
+    print(f"Archive structure created at: {ARCHIVE_DIR}")
+    print(f"  {ARCHIVE_DIR}/people/")
+    print(f"  {ARCHIVE_DIR}/projects/")
+    print(f"  {ARCHIVE_DIR}/knowledge/")
+
+def main():
+    parser = argparse.ArgumentParser(description='Hermes Memory 2.0 CLI')
+    sub = parser.add_subparsers(dest='command')
+    
+    new_parser = sub.add_parser('new', help='Create new archive from template')
+    new_parser.add_argument('type', choices=list(TEMPLATES.keys()), help='Template type')
+    new_parser.add_argument('name', help='Archive name')
+    
+    sub.add_parser('doctor', help='Check installation health')
+    sub.add_parser('init', help='Initialize archive directory structure')
+    
+    args = parser.parse_args()
+    
+    if args.command == 'new':
+        cmd_new(args)
+    elif args.command == 'init':
+        cmd_init(args)
+    elif args.command == 'doctor':
+        cmd_doctor(args)
+    else:
+        parser.print_help()
+
+if __name__ == '__main__':
+    main()
