@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🧠 Hermes Memory Installer 2.1
+# 🧠 Hermes Memory Installer 2.1.1
 
 **为 Hermes AI Agent 注入持久记忆 — 由 gbrain 知识图谱驱动**
 
 [English](README.md) | [中文](#)
 
-![Version](https://img.shields.io/badge/version-2.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)
 
@@ -57,7 +57,42 @@ AI 助理最常见的痛点——**聊着聊着就忘了**。Hermes Agent 原生
 | **安装** | 手动配置 | 30秒一键 | 30秒一键 + **可选 gbrain 配置** |
 | **资源占用** | 极小 | ~50MB + SQLite | ~200MB + SQLite + 可选 Bun/gbrain |
 
-## v2.1.0 更新日志
+## v2.1.1 更新日志
+
+### 🌐 多语言嵌入引擎重大升级
+
+嵌入模型从仅支持中文的 `BAAI/bge-small-zh-v1.5`（512维，96MB）升级为 **`intfloat/multilingual-e5-small`**（384维，~470MB），**支持 100+ 种语言**，包括中文、英文、日文、韩文、阿拉伯语、泰语、越南语、印地语及所有主要欧洲语言。
+
+- 新增：安装时模型选择功能（`install.sh` 提示用户选择）
+- 新增：AI 助手自动检测 — 如果由 LLM 运行安装脚本，会提醒 AI 先与用户确认模型选择
+- 更新：`scripts/embedding_server.py` — 默认模型改为 `intfloat/multilingual-e5-small`
+- 更新：`install.sh` — `select_embedding_model()` 函数支持 7 种模型选项
+
+### 🧪 安装时模型选择
+
+安装脚本现在会在部署前展示模型选择器：
+
+```
+📊 选择嵌入引擎模型
+
+  1) intfloat/multilingual-e5-small     ⭐ 推荐
+     384维 | 100+语言 | ~470MB
+  2) BAAI/bge-small-zh-v1.5             轻量中文
+     512维 | 中文优化 | ~96MB
+  3) paraphrase-multilingual-MiniLM-L12-v2
+     384维 | 50+语言 | ~471MB
+  4) Alibaba-NLP/gte-multilingual-base
+     768维 | 75+语言 | ~610MB
+  5) sentence-transformers/LaBSE
+     768维 | 109语言 | ~471MB
+  6) BAAI/bge-m3
+     1024维 | 100+语言 | ~2GB
+  7) 自定义（输入模型ID）
+```
+
+### 🤖 AI 助手自动检测
+
+检测到非交互式 TTY 或 `AI_ASSISTED` 环境变量时，安装脚本会**暂停并提醒 AI 助手**：在继续之前必须向用户确认模型选择。防止静默降级模型或意外的磁盘占用。
 
 ### 🔤 A. 多语言检索引擎
 
@@ -152,11 +187,37 @@ curl -fsSL https://raw.githubusercontent.com/mage0535/hermes-memory-installer/ma
 
 **特别感谢** Hermes Agent 团队提供的原生扩展 API。
 
+
+
+## 📊 嵌入引擎模型详细对比
+
+选择合适的嵌入模型直接影响检索质量和资源消耗。详见下表。  
+**我们的推荐**: `intfloat/multilingual-e5-small`（100+语言，体积精度均衡）。
+
+| # | 模型 | 大小 | 维度 | 语言数 | 最适合 |
+|---|-------|:---:|:---:|:-----:|--------|
+| 1 | `intfloat/multilingual-e5-small` ⭐ | 470MB | 384 | 100+ | 全球用户，默认推荐 |
+| 2 | `BAAI/bge-small-zh-v1.5` | 96MB | 512 | zh | 纯中文，极低资源消耗 |
+| 3 | `paraphrase-multilingual-MiniLM-L12-v2` | 471MB | 384 | 50+ | 社区最成熟方案 |
+| 4 | `Alibaba-NLP/gte-multilingual-base` | 610MB | 768 | 75+ | 中文精度最高，8K Token |
+| 5 | `sentence-transformers/LaBSE` | 471MB | 768 | 109 | 跨语言对齐专业户 |
+| 6 | `BAAI/bge-m3` | 2GB | 1024 | 100+ | 最强精度，高资源要求 |
+| 7 | `sentence-transformers/distiluse-base-multilingual-cased-v2` | 539MB | 512 | 50+ | 传统稳定方案 |
+
+**切换模型**：在启动嵌入服务器之前设置 `EMBEDDING_MODEL` 环境变量：
+```bash
+export EMBEDDING_MODEL="BAAI/bge-m3"
+python3 scripts/embedding_server.py
+```
+
+**注意**：更换嵌入模型后，如果向量维度发生变化，需要重建 pgvector 索引。
+
 ### 版本历史
 
 | 版本 | 日期 | 亮点 |
 |------|------|------|
-| v2.1.0 | 2026-05 | 🔤 BAAI/bge-small-zh-v1.5 多语言检索引擎，🛠️ 5个生产级脚本，🏠 跨平台路径自动检测 |
+| v2.1.1 | 2026-05 | 🌐 multilingual-e5-small (100+语言), 🧪 安装时模型选择, 🤖 AI 助手自动检测 |
+| v2.1.0 | 2026-05 | 🔤 BAAI/bge-small-zh-v1.5 多语言检索, 🛠️ 5个新生产脚本, 🏠 跨平台路径自动检测 |
 | v2.0.0 | 2026-05 | gbrain 集成、双路搜索、自动摘要、策展人、自进化 |
 | v1.0.0 | 2026-04 | FTS5 检索、3 个 Skill、一键安装、Markdown 档案 |
 
