@@ -1,8 +1,8 @@
 #!/bin/bash
-# Hermes Memory Installer 2.0 — 一键安装脚本（含 gbrain+Postgres 可选部署）
+# Hermes Memory Installer 2.1.1 — 一键安装脚本（含 gbrain+Postgres 可选部署）
 set -euo pipefail
 
-readonly VERSION="2.1.0"
+readonly VERSION="2.1.1"
 INSTALL_DIR="/tmp/hermes-memory-installer-$$"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -22,12 +22,11 @@ banner() {
 |  _  |  __/ | | | | | (_) | | | |  __/ |_| |  | |  | |  __/ (_|  __/ (_| | (_| |  __/ |
 |_| |_|\___|_| |_| |_|\___/|_| |_|\___|\__, |  |_|  |_|\___|\___\___|\__, |\__, |\___|_|
                                       |___/                        |___/ |___/
-  版本: v${VERSION} | 记忆体2.0 — AI长期记忆系统（含 gbrain 知识图谱）
+  版本: v${VERSION} | 记忆体2.1.1 — AI长期记忆系统（含 gbrain 知识图谱 + 多语言嵌入引擎）
 BANNER
 }
 
 detect_hermes_home() {
-    # Auto-detect .hermes path (handles /root/ vs /home/user/)
     if [ -d "$HOME/.hermes" ]; then
         HERMES_HOME="$HOME/.hermes"
     elif [ -d "/root/.hermes" ]; then
@@ -75,9 +74,98 @@ check_env() {
     fi
 }
 
+# ═══════════════════════════════════════════════════════════
+#  嵌入引擎模型选择
+# ═══════════════════════════════════════════════════════════
+
+# 检测是否由 AI 助手自动化运行
+detect_ai_assistant() {
+    # 检查 stdin 是否为 TTY
+    if [[ ! -t 0 ]]; then
+        return 0  # 非交互式 → AI 助手
+    fi
+    # 检查环境变量
+    if [[ -n "${AI_ASSISTED:-}" ]] || [[ -n "${LLM_INSTALL:-}" ]]; then
+        return 0
+    fi
+    return 1  # 正常用户
+}
+
+select_embedding_model() {
+    echo ""
+    echo "════════════════════════════════════════════════════"
+    echo "  📊 选择嵌入引擎模型"
+    echo "════════════════════════════════════════════════════"
+    echo ""
+    echo "  不同模型支持的语言、精度和资源消耗差异很大。"
+    echo "  如果您不确定，推荐选择 1 (默认)。"
+    echo ""
+
+    # AI 助手提醒
+    if detect_ai_assistant; then
+        echo "  ┌─────────────────────────────────────────────────┐"
+        echo "  │ ⚠️  AI 助手检测：您正通过 AI 助手进行安装     │"
+        echo "  │                                                 │"
+        echo "  │  请在继续之前向用户确认以下内容：               │"
+        echo "  │  1. 用户需要哪种语言的检索支持？               │"
+        echo "  │  2. 服务器可用磁盘和内存空间？                 │"
+        echo "  │  3. 选择对应的模型编号                         │"
+        echo "  │                                                 │"
+        echo "  │  确认后设置环境变量继续:                        │"
+        echo "  │  export EMBEDDING_MODEL=<模型ID>                │"
+        echo "  │  然后重新运行此脚本                            │"
+        echo "  │                                                 │"
+        echo "  │  如用户已明确指定模型，按 Enter 继续            │"
+        echo "  └─────────────────────────────────────────────────┘"
+        echo ""
+        if [[ -z "${EMBEDDING_MODEL:-}" ]]; then
+            read -p "  按 Enter 键确认已与用户沟通模型选择，或 Ctrl+C 取消: " _dummy
+        fi
+    fi
+
+    echo "  1) intfloat/multilingual-e5-small     ⭐ 推荐"
+    echo "     384维 | 100+语言 | ~470MB | 适合全球用户"
+    echo ""
+    echo "  2) BAAI/bge-small-zh-v1.5             轻量中文"
+    echo "     512维 | 中文优化 | ~96MB | 仅中英文"
+    echo ""
+    echo "  3) paraphrase-multilingual-MiniLM-L12-v2"
+    echo "     384维 | 50+语言 | ~471MB | 社区成熟"
+    echo ""
+    echo "  4) Alibaba-NLP/gte-multilingual-base"
+    echo "     768维 | 75+语言 | ~610MB | 中文精度高"
+    echo ""
+    echo "  5) sentence-transformers/LaBSE"
+    echo "     768维 | 109语言 | ~471MB | 跨语言对齐"
+    echo ""
+    echo "  6) BAAI/bge-m3"
+    echo "     1024维 | 100+语言 | ~2GB | 最强精度"
+    echo ""
+    echo "  7) 自定义（输入模型ID）"
+    echo ""
+
+    local choice
+    read -p "  请选择 [1-7] (默认: 1): " choice
+    choice="${choice:-1}"
+
+    case "$choice" in
+        1) EMBEDDING_MODEL="intfloat/multilingual-e5-small" ;;
+        2) EMBEDDING_MODEL="BAAI/bge-small-zh-v1.5" ;;
+        3) EMBEDDING_MODEL="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2" ;;
+        4) EMBEDDING_MODEL="Alibaba-NLP/gte-multilingual-base" ;;
+        5) EMBEDDING_MODEL="sentence-transformers/LaBSE" ;;
+        6) EMBEDDING_MODEL="BAAI/bge-m3" ;;
+        7) read -p "  输入模型 HuggingFace ID: " EMBEDDING_MODEL ;;
+        *) warn "无效选择，使用默认值"; EMBEDDING_MODEL="intfloat/multilingual-e5-small" ;;
+    esac
+
+    export EMBEDDING_MODEL
+    ok "嵌入引擎模型: ${EMBEDDING_MODEL}"
+}
+
 install_memory_base() {
     info "安装记忆体基础组件..."
-    mkdir -p "${HERMES_HOME}/archives/"{people,projects,knowledge,_index}
+    mkdir -p "${HERMES_HOME}/archives/"_{people,projects,knowledge,_index}
     mkdir -p "${HERMES_HOME}/scripts"
 
     # 初始化 pool.db
@@ -160,19 +248,16 @@ setup_automation() {
     # 检测 Hermes cron 或系统 cron
     if command -v hermes &>/dev/null && hermes cron list &>/dev/null; then
         info "使用 Hermes 内置 cron..."
-        # 每日归档
         hermes cron create "0 3 * * *" \
             --name "session-gbrain-archive" \
             --prompt "Run archive_sessions.py to archive old sessions to gbrain" \
             --script scripts/archive_sessions.py \
             --deliver origin 2>/dev/null || true
-        # 每日 gbrain 维护
         hermes cron create "0 4 * * *" \
             --name "gbrain-daily-maintenance" \
             --prompt "Run gbrain maintenance" \
             --script scripts/gbrain_maintain.sh \
             --deliver origin 2>/dev/null || true
-        # 每 2h 增量索引
         hermes cron create "every 120m" \
             --name "Session→Gbrain增量索引" \
             --prompt "Incremental session to gbrain indexing" \
@@ -212,12 +297,14 @@ verify() {
 show_summary() {
     echo ""
     echo "════════════════════════════════════════════════════"
-    echo "  🎉 记忆体2.0 安装成功！"
+    echo "  🎉 记忆体 ${VERSION} 安装成功！"
     echo ""
     echo "  已安装组件:"
     echo "  ✅ 记忆体基础 (pool.db, skills, scripts)"
     [[ -d "${HOME}/.hermes/archives" ]] && echo "  ✅ 档案目录 (people/projects/knowledge)"
     command -v gbrain &>/dev/null && echo "  ✅ gbrain 知识图谱引擎"
+    echo ""
+    echo "  嵌入引擎模型: ${EMBEDDING_MODEL}"
     echo ""
     echo "  下一步操作:"
     echo "  1. 重启 Gateway: systemctl restart hermes-gateway"
@@ -240,6 +327,7 @@ main() {
     banner
     detect_hermes_home
     check_env
+    select_embedding_model
 
     # 备份
     if [[ -f "${HERMES_HOME}/config.yaml" ]]; then

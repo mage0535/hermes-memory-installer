@@ -2,10 +2,20 @@
 """
 OpenAI-compatible local embedding server.
 Replaces api.openai.com/v1/embeddings for gbrain.
-Model: BAAI/bge-small-zh-v1.5 (512d, Chinese optimized, 33MB)
+
+Default model: intfloat/multilingual-e5-small (384d, 100+ languages, ~470MB)
+Set EMBEDDING_MODEL env to override (see README for full model comparison).
 
 Fully supports encoding_format: 'float' (JSON array) and 'base64' (binary).
 OpenAI SDK v4.104+ defaults to base64 for performance — we support both.
+
+Available models (env: EMBEDDING_MODEL):
+  - intfloat/multilingual-e5-small (384d) — 推荐，100+语言
+  - BAAI/bge-small-zh-v1.5 (512d) — 中文优化，33MB
+  - sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 (384d) — 50+语言，471MB
+  - Alibaba-NLP/gte-multilingual-base (768d) — 75+语言，610MB
+  - sentence-transformers/LaBSE (768d) — 109语言，471MB
+  - BAAI/bge-m3 (1024d) — 最强多语言，2GB
 """
 import base64
 import json
@@ -16,9 +26,9 @@ import traceback
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
-# Lazy-load model (takes ~2s on first call)
+# Lazy-load model (takes ~8-15s on first call, downloads ~470MB)
 model = None
-model_name = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
+model_name = os.environ.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
 
 
 def get_model():
@@ -27,7 +37,10 @@ def get_model():
         print(f"[embedding] Loading model: {model_name}...", flush=True)
         from sentence_transformers import SentenceTransformer
         model = SentenceTransformer(model_name)
-        dim = model.get_sentence_embedding_dimension()
+        try:
+            dim = model.get_embedding_dimension()
+        except AttributeError:
+            dim = model.get_sentence_embedding_dimension()
         print(f"[embedding] Model loaded. Dim={dim}", flush=True)
     return model
 

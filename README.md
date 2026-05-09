@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🧠 Hermes Memory Installer 2.1
+# 🧠 Hermes Memory Installer 2.1.1
 
 **AI长期记忆系统 — 由 gbrain 知识图谱驱动**
 
 [中文版](README_CN.md) | [English](#)
 
-![Version](https://img.shields.io/badge/version-2.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)
 
@@ -44,7 +44,42 @@ The #1 pain point of AI assistants — **they forget**. Hermes Agent provides na
 ╚══════════════════════════════════════════════════╝
 ```
 
-## v2.1.0 Changelog
+## v2.1.1 Changelog
+
+### 🌐 Multi-Language Embedding Engine Upgrade
+
+Upgraded from Chinese-only `BAAI/bge-small-zh-v1.5` (512d, 96MB) to **`intfloat/multilingual-e5-small`** (384d, ~470MB) — now supporting **100+ languages** including Chinese, English, Japanese, Korean, Arabic, Thai, Vietnamese, Hindi, and all major European languages.
+
+- New: Multi-model selection during installation (`install.sh` prompts user to choose)
+- New: AI assistant auto-detection — if run by an LLM, install script reminds to confirm model with user
+- Updated: `scripts/embedding_server.py` — default model changed to `intfloat/multilingual-e5-small`
+- Updated: `install.sh` — `select_embedding_model()` function with 7 model options
+
+### 🧪 Model Selection During Install
+
+The installer now presents a model picker before proceeding:
+
+```
+📊 Select Embedding Engine Model
+
+  1) intfloat/multilingual-e5-small     ⭐ Recommended
+     384d | 100+ languages | ~470MB
+  2) BAAI/bge-small-zh-v1.5             Chinese-only
+     512d | Chinese optimized | ~96MB
+  3) paraphrase-multilingual-MiniLM-L12-v2
+     384d | 50+ languages | ~471MB
+  4) Alibaba-NLP/gte-multilingual-base
+     768d | 75+ languages | ~610MB
+  5) sentence-transformers/LaBSE
+     768d | 109 languages | ~471MB
+  6) BAAI/bge-m3
+     1024d | 100+ languages | ~2GB
+  7) Custom (enter model ID)
+```
+
+### 🤖 AI Assistant Auto-Detection
+
+When the installer detects it's running under an AI assistant (non-interactive TTY or `AI_ASSISTED` env), it pauses to remind the AI to **confirm the model choice with the user** before continuing. This prevents silent model downgrades or unexpected disk usage.
 
 ### 🔤 A. Multi-language Search Engine
 
@@ -152,10 +187,36 @@ See [MANUAL_INSTALL.md](MANUAL_INSTALL.md)
 
 **Special thanks** to the Hermes Agent team for the native extension APIs.
 
+
+
+## 📊 Embedding Engine Model Comparison
+
+For a detailed comparison guide to help choose the right model, see the table below.  
+**Our recommendation**: `intfloat/multilingual-e5-small` (100+ languages, balanced size & quality).
+
+| # | Model | Size | Dim | Languages | Best For |
+|---|-------|:----:|:---:|:---------:|----------|
+| 1 | `intfloat/multilingual-e5-small` ⭐ | 470MB | 384 | 100+ | Global users, default choice |
+| 2 | `BAAI/bge-small-zh-v1.5` | 96MB | 512 | zh | Chinese-only, minimal resources |
+| 3 | `paraphrase-multilingual-MiniLM-L12-v2` | 471MB | 384 | 50+ | Mature community model |
+| 4 | `Alibaba-NLP/gte-multilingual-base` | 610MB | 768 | 75+ | High Chinese accuracy, 8K tokens |
+| 5 | `sentence-transformers/LaBSE` | 471MB | 768 | 109 | Cross-lingual alignment specialist |
+| 6 | `BAAI/bge-m3` | 2GB | 1024 | 100+ | Maximum precision, heavy resources |
+| 7 | `sentence-transformers/distiluse-base-multilingual-cased-v2` | 539MB | 512 | 50+ | Legacy stability |
+
+**Switching models**: Set `EMBEDDING_MODEL` env var before running the embedding server:
+```bash
+export EMBEDDING_MODEL="BAAI/bge-m3"
+python3 scripts/embedding_server.py
+```
+
+**Note**: Changing the embedding model requires rebuilding the pgvector index if dimensions differ.
+
 ### Version History
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v2.1.1 | 2026-05 | 🌐 multilingual-e5-small (100+ languages), 🧪 model selection during install, 🤖 AI assistant auto-detection |
 | v2.1.0 | 2026-05 | 🔤 BAAI/bge-small-zh-v1.5 multilingual search, 🛠️ 5 new production scripts, 🏠 cross-platform path auto-detection |
 | v2.0.0 | 2026-05 | gbrain integration, dual-path search, auto-summarization, curator, self-evolution |
 | v1.0.0 | 2026-04 | FTS5 retrieval, 3 skills, one-click install, Markdown archives |
