@@ -116,22 +116,26 @@ source_session_id: "{session['id']}"
             content += f"{text}\n\n"
     return content
 
-def call_gbrain_mcp(action, params):
-    """通过 gbrain CLI 调用 MCP 工具"""
-    try:
-        cmd = ["gbrain", "call", action, json.dumps(params)]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0:
-            return json.loads(result.stdout) if result.stdout.strip() else {}
-        else:
-            log(f"  ⚠️ gbrain call {action} failed: {result.stderr[:200]}")
-            return None
-    except subprocess.TimeoutExpired:
-        log(f"  ⚠️ gbrain call {action} timed out")
-        return None
-    except Exception as e:
-        log(f"  ⚠️ gbrain call {action} error: {e}")
-        return None
+def call_gbrain_mcp(action, params, retries=2):
+    """通过 gbrain CLI 调用 MCP 工具，带重试"""
+    for attempt in range(retries + 1):
+        try:
+            cmd = ["gbrain", "call", action, json.dumps(params)]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0:
+                return json.loads(result.stdout) if result.stdout.strip() else {}
+            else:
+                log(f"  ⚠️ gbrain call {action} failed (attempt {attempt+1}): {result.stderr[:200]}")
+        except subprocess.TimeoutExpired:
+            log(f"  ⚠️ gbrain call {action} timed out (attempt {attempt+1})")
+        except Exception as e:
+            log(f"  ⚠️ gbrain call {action} error (attempt {attempt+1}): {e}")
+
+        if attempt < retries:
+            time.sleep(1 * (attempt + 1))  # backoff
+
+    log(f"  ❌ gbrain call {action} failed after {retries+1} attempts")
+    return None
 
 def archive_session(session, dry_run):
     """归档单个会话到 gbrain"""
@@ -213,11 +217,15 @@ def main():
     new_watermark = watermark
 
     for session in sessions:
-        if archive_session(session, args.dry_run):
-            success_count += 1
+        ok = archive_session(session, args.dry_run)
         ts = session['ended_at'] or 0
-        if ts > new_watermark:
+        # CRITICAL: Only advance watermark on confirmed success.
+        # Otherwise a single gbrain failure causes permanent session loss.
+        if ok and ts > new_watermark:
+            success_count += 1
             new_watermark = ts
+        elif not ok:
+            log(f"  ⚠️ Skipping watermark advance for {session['id'][:16]} — gbrain write failed, will retry next run")
 
     if not args.dry_run and new_watermark > watermark:
         set_watermark(conn, new_watermark)
