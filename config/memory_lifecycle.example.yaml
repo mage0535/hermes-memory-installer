@@ -1,0 +1,9 @@
+# Memory Lifecycle — 保护页面配置示例
+# 复制到 ~/.hermes/memory_lifecycle.yaml 并修改
+protected_slugs:
+  - my-project-config
+  - my-hub-operations
+protected_tags:
+  - archive
+  - hub
+  - protected
