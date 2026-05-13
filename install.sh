@@ -1,8 +1,8 @@
 #!/bin/bash
-# Hermes Memory Installer 2.1.1 — 一键安装脚本（含 gbrain+Postgres 可选部署）
+# Hermes Memory Installer 2.2.0 — 一键安装脚本（含 gbrain+Postgres 可选部署）
 set -euo pipefail
 
-readonly VERSION="2.1.1"
+readonly VERSION="2.2.0"
 INSTALL_DIR="/tmp/hermes-memory-installer-$$"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -22,7 +22,7 @@ banner() {
 |  _  |  __/ | | | | | (_) | | | |  __/ |_| |  | |  | |  __/ (_|  __/ (_| | (_| |  __/ |
 |_| |_|\___|_| |_| |_|\___/|_| |_|\___|\__, |  |_|  |_|\___|\___\___|\__, |\__, |\___|_|
                                       |___/                        |___/ |___/
-  版本: v${VERSION} | 记忆体2.1.1 — AI长期记忆系统（含 gbrain 知识图谱 + 多语言嵌入引擎）
+  版本: v${VERSION} | 记忆体2.2.0 — AI长期记忆系统（含 gbrain 知识图谱 + 多语言嵌入引擎）
 BANNER
 }
 
@@ -186,7 +186,7 @@ conn.commit(); conn.close()
     ok "pool.db 已初始化（FTS5 全文索引）"
 
     # 安装 Skills
-    local src_skills="/tmp/memory-repo/skills"
+    local src_skills="$(dirname "$(readlink -f "$0")")/skills"
     if [[ -d "$src_skills" ]]; then
         for skill in memory-starter-kit memory-archivist memory-proactive; do
             if [[ -d "$src_skills/$skill" && ! -d "${HERMES_HOME}/skills/$skill" ]]; then
@@ -197,7 +197,7 @@ conn.commit(); conn.close()
     fi
 
     # 安装脚本
-    local src_scripts="/tmp/memory-repo/scripts"
+    local src_scripts="$(dirname "$(readlink -f "$0")")/scripts"
     if [[ -d "$src_scripts" ]]; then
         cp "$src_scripts"/*.py "$src_scripts"/*.sh "${HERMES_HOME}/scripts/" 2>/dev/null || true
         ok "自动化脚本已安装"

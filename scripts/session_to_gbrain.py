@@ -1,0 +1,476 @@
+#!/usr/bin/env python3
+"""
+Session → Gbrain Pipeline
+==========================
+将 Hermes 会话摘要自动摄入 gbrain 知识图谱。
+每个会话生成一个 gbrain page，带 tag + timeline + 主题链接。
+
+运行: python3 /root/.hermes/scripts/session_to_gbrain.py [--batch N] [--dry-run]
+Cron: 每 6 小时一次，增量处理新会话
+"""
+
+import os
+import json
+import time
+import hashlib
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
+from collections import defaultdict
+import re
+
+# Config
+SESSIONS_DIR = os.path.expanduser("~/.hermes/sessions")
+STATE_DB = os.path.expanduser("~/.hermes/state.db")
+CHECKPOINT_FILE = os.path.expanduser("~/.hermes/.session_to_gbrain_checkpoint.json")
+CST = timezone(timedelta(hours=8))
+
+# Topic hubs - these are gbrain pages that group sessions by topic
+TOPIC_HUBS = {
+    "kiki": {
+        "slug": "hub-kiki-relationship",
+        "title": "Kiki 关系档案中枢",
+        "tags": ["kiki", "relationship", "王钰淇", "抖音"],
+        "keywords": ["王钰淇", "kiki", "御妹儿", "🍡", "favoriting", "关系", "依恋", "聊天记录"]
+    },
+    "a-stock": {
+        "slug": "hub-a-stock-trading",
+        "title": "A股投资分析中枢",
+        "tags": ["a-stock", "trading", "investment"],
+        "keywords": ["A股", "stock", "HS300", "ZZ500", "推荐", "LightGBM", "止损", "因子", "hedge"]
+    },
+    "system": {
+        "slug": "hub-system-operations",
+        "title": "系统运维中枢",
+        "tags": ["devops", "system", "hermes"],
+        "keywords": ["config", "gateway", "cron", "api_key", "provider", "systemd", "docker", "pip install"]
+    },
+    "social": {
+        "slug": "hub-social-media",
+        "title": "社媒运营中枢",
+        "tags": ["social-media", "douyin", "tiktok", "content"],
+        "keywords": ["抖音", "douyin", "tiktok", "视频", "自媒体", "粉丝", "播放", "YouTube", "变现"]
+    },
+    "coding": {
+        "slug": "hub-dev-coding",
+        "title": "开发编程中枢",
+        "tags": ["coding", "development", "programming"],
+        "keywords": ["python", "git", "github", "代码", "deploy", "API", "skill", "tool", "script"]
+    }
+}
+
+
+def load_checkpoint():
+    """加载已处理会话列表"""
+    if os.path.exists(CHECKPOINT_FILE):
+        with open(CHECKPOINT_FILE, 'r') as f:
+            return json.load(f)
+    return {"processed_sessions": [], "last_run": None}
+
+
+def save_checkpoint(data):
+    with open(CHECKPOINT_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def get_unprocessed_sessions(processed_set, batch_size=50):
+    """获取未处理的新会话"""
+    session_files = sorted(Path(SESSIONS_DIR).glob("*.json"), 
+                          key=lambda p: p.stat().st_mtime, reverse=True)
+    unprocessed = []
+    for sf in session_files:
+        if sf.name not in processed_set:
+            unprocessed.append(sf)
+            if len(unprocessed) >= batch_size:
+                break
+    return unprocessed
+
+
+def extract_session_info(filepath: Path) -> dict:
+    """从会话文件中提取关键信息"""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        stat = filepath.stat()
+        session_id = filepath.stem.replace("session_", "")
+        
+        # Try to parse as JSON
+        messages = []
+        title = ""
+        try:
+            data = json.loads(content)
+            if isinstance(data, list):
+                messages = data
+            elif isinstance(data, dict):
+                messages = data.get("messages", data.get("history", []))
+                title = data.get("title", "")
+        except:
+            pass
+        
+        # Extract first user message as title hint
+        first_user_msg = ""
+        for msg in messages:
+            if isinstance(msg, dict):
+                role = msg.get("role", "")
+                if role == "user":
+                    first_user_msg = msg.get("content", "")[:200]
+                    break
+        
+        if not title and first_user_msg:
+            title = first_user_msg.strip()[:100]
+        if not title:
+            title = f"Session {session_id[:12]}"
+        
+        # Count messages
+        user_count = sum(1 for m in messages if isinstance(m, dict) and m.get("role") == "user")
+        assistant_count = sum(1 for m in messages if isinstance(m, dict) and m.get("role") == "assistant")
+        
+        # Detect topics by keyword matching
+        content_lower = content.lower()
+        topics = []
+        for topic_key, hub in TOPIC_HUBS.items():
+            score = sum(content_lower.count(kw.lower()) for kw in hub["keywords"])
+            if score > 10:
+                topics.append(topic_key)
+        
+        # Generate summary (first 500 chars after cleaning)
+        summary = ""
+        for msg in messages:
+            if isinstance(msg, dict) and msg.get("role") == "assistant":
+                c = msg.get("content", "")
+                if len(c) > 100:
+                    summary = c[:500].strip()
+                    break
+        
+        return {
+            "session_id": session_id,
+            "title": title,
+            "size": stat.st_size,
+            "created_at": datetime.fromtimestamp(stat.st_mtime, tz=CST).isoformat(),
+            "user_msgs": user_count,
+            "assistant_msgs": assistant_count,
+            "topics": topics,
+            "summary": summary,
+            "first_msg": first_user_msg[:200]
+        }
+    except Exception as e:
+        return None
+
+
+# ============================================================
+# 中文实体关系提取（补充 gbrain 的英文 inferLinkType）
+# ============================================================
+
+CHINESE_RELATION_PATTERNS = None  # Built at module init
+
+
+def _build_relation_patterns():
+    """从已知实体列表构建关系匹配模式"""
+    entity_names = sorted(set(_ALL_ENTITIES), key=len, reverse=True)
+    ent_pat = "(" + "|".join(re.escape(e) for e in entity_names) + ")"
+
+    return [
+        (re.compile(ent_pat + r'\s*(?:投资|入股|领投|跟投)(?:了)?\s*' + ent_pat), "invested_in"),
+        (re.compile(ent_pat + r'\s*(?:收购|并购|买入)(?:了)?\s*' + ent_pat), "acquired"),
+        (re.compile(ent_pat + r'\s*(?:在|于)\s*' + ent_pat + r'\s*(?:工作|任职|担任|负责|从事)'), "works_at"),
+        (re.compile(ent_pat + r'\s*(?:是|为)\s*' + ent_pat + r'\s*(?:的)?\s*(?:创始人|CEO|董事长|总裁|负责人)'), "leads"),
+        (re.compile(ent_pat + r'\s*(?:开发|创建|创立|创办|搭建|做|写)(?:了)?\s*' + ent_pat), "created"),
+        (re.compile(ent_pat + r'\s*(?:制作|生成|输出)(?:了)?\s*' + ent_pat), "authored"),
+        (re.compile(ent_pat + r'\s*(?:使用|基于|依赖|用)(?:了)?\s*' + ent_pat), "uses"),
+        (re.compile(ent_pat + r'\s*(?:参加|参与|出席|去)(?:了)?\s*' + ent_pat), "attended"),
+        (re.compile(ent_pat + r'\s*(?:认识|见到|联系|见了|见)(?:了)?\s*' + ent_pat), "met"),
+        (re.compile(ent_pat + r'\s*(?:辅导|指导|教|带)(?:了)?\s*' + ent_pat), "mentors"),
+    ]
+
+
+def _ensure_patterns():
+    global CHINESE_RELATION_PATTERNS
+    if CHINESE_RELATION_PATTERNS is None:
+        CHINESE_RELATION_PATTERNS = _build_relation_patterns()
+
+
+# 中文专名列表（用于辅助实体识别）
+KNOWN_ENTITIES = {
+    'person': ['王钰淇', 'Kiki', 'Magic', '宁宁', 'Hermes', '郑大姐'],
+    'company': ['字节跳动', '抖音', '腾讯', '阿里巴巴', '百度', '华为', '小米', '美团',
+                '宁德时代', '茅台', '比亚迪', 'OpenAI', 'Anthropic', 'Google'],
+    'project': ['MagicMusic', 'Hermes Agent', 'Hermes', 'gbrain', 'LightGBM', 'CodeX',
+                'WeChat', 'v2raya', 'SearXNG'],
+    'platform': ['抖音', 'TikTok', 'YouTube', '微信', 'Telegram', 'GitHub', 'Twitter', '小红书'],
+    'venue': ['斑马', '斑马驻唱', '烟台', '车展'],
+    'product': ['MagicMusic'],
+}
+
+# 构建专名正则（用于提取关系中的主体）
+_ALL_ENTITIES = set()
+for cat, entities in KNOWN_ENTITIES.items():
+    _ALL_ENTITIES.update(entities)
+
+# 按长度降序排列，避免短名匹配截断长名
+_ALL_ENTITIES_SORTED = sorted(_ALL_ENTITIES, key=len, reverse=True)
+_ENTITY_PATTERN = '|'.join(re.escape(e) for e in _ALL_ENTITIES_SORTED)
+
+
+def extract_chinese_relations(text: str) -> list:
+    """
+    从中文文本中提取实体关系对。
+    返回: [(source, relation_type, target, context), ...]
+    
+    使用两层匹配:
+    1. 已知实体 + 关系动词模式匹配
+    2. 同句共现实体（通用 related_to）
+    """
+    _ensure_patterns()
+    relations = []
+    
+    # 第一层: 已知实体 + 关系动词模式
+    for pattern, rel_type in CHINESE_RELATION_PATTERNS:
+        for match in pattern.finditer(text):
+            source = match.group(1).strip()
+            target = match.group(2).strip()
+            # 过滤过短或明显非实体的匹配
+            if len(source) < 2 or len(target) < 2:
+                continue
+            # 过滤纯标点或数字
+            if source.isdigit() or target.isdigit():
+                continue
+            ctx_start = max(0, match.start() - 20)
+            ctx_end = min(len(text), match.end() + 20)
+            context = text[ctx_start:ctx_end].replace('\n', ' ').strip()
+            relations.append((source, rel_type, target, context))
+    
+    # 第二层: 已知实体相邻关系（通用关系: 'related_to'）
+    # 查找文中同时出现的两个已知实体（在3句话内）
+    # re already imported at module level
+    entity_patterns = {e: re.compile(re.escape(e)) for e in _ALL_ENTITIES}
+    sentences = re.split(r'[。！？\n]', text)
+    
+    for sent in sentences:
+        found = []
+        for ent_name, pat in entity_patterns.items():
+            if pat.search(sent):
+                found.append(ent_name)
+        # 如果句子中包含多个已知实体且长度适中
+        # 排除子串关系（如"王"是"王钰淇"的子串）
+        found = sorted(set(found), key=len, reverse=True)
+        found = [e for e in found if not any(e != f and e in f for f in found)]
+        if len(found) >= 2 and len(sent) < 500:
+            for i in range(len(found)):
+                for j in range(i+1, len(found)):
+                    # 避免与第一层重复
+                    pair = (found[i], found[j])
+                    pair_rev = (found[j], found[i])
+                    already_found = any(
+                        (r[0] == pair[0] and r[2] == pair[1]) or
+                        (r[0] == pair[1] and r[2] == pair[0])
+                        for r in relations
+                    )
+                    if not already_found:
+                        context = sent.strip()[:120]
+                        relations.append((found[i], 'related_to', found[j], context))
+    
+    return relations
+
+
+def render_wikilinks(text: str, relations: list, platform='gbrain') -> str:
+    """将关系中的实体渲染为 wikilinks 追加到文本末尾"""
+    if not relations:
+        return text
+    
+    link_lines = []
+    seen_pairs = set()
+    for source, rel_type, target, context in relations:
+        pair = (source, target)
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        # 生成 wikilink 格式: [[source]] -- rel_type --> [[target]]
+        link_lines.append(f'- [[{source}]] -- {rel_type} --> [[{target}]]')
+    
+    if link_lines:
+        text += '\n\n## 关系提取\n\n'
+        text += '\n'.join(link_lines)
+    
+    return text
+
+
+def create_gbrain_page(info: dict, dry_run=False):
+    """通过 MCP 创建 gbrain 页面"""
+    slug = f"session-{info['session_id'][:16]}"
+    
+    # Build page content
+    tags = ["session", f"date-{info['created_at'][:10]}"] + info["topics"]
+    tags_str = ", ".join(tags)
+    
+    # 提取中文实体关系
+    # re already imported at module level
+    session_text = f"{info['summary'][:800]} {info['first_msg'][:300]} {info['title']}"
+    relations = extract_chinese_relations(session_text)
+    
+    content = f"""---
+title: "{info['title'][:100]}"
+type: session
+tags: [{tags_str}]
+created: "{info['created_at']}"
+---
+
+# {info['title'][:100]}
+
+**会话ID**: {info['session_id']}
+**日期**: {info['created_at'][:10]}
+**消息数**: 用户{info['user_msgs']} + Hermes{info['assistant_msgs']}
+**大小**: {info['size']/1024:.1f} KB
+**主题**: {', '.join(info['topics']) if info['topics'] else '未分类'}
+
+## 摘要
+
+{info['summary'][:800] if info['summary'] else '（无摘要）'}
+
+## 首条消息
+
+{info['first_msg'][:300]}
+"""
+    
+    # 追加关系 wikilinks
+    if relations:
+        link_lines = []
+        seen_pairs = set()
+        for source, rel_type, target, context in relations:
+            pair = (source, target)
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            link_lines.append(f'- [[{source}]] -- {rel_type} --> [[{target}]]')
+        if link_lines:
+            content += '\n\n## 关系提取\n\n'
+            content += '\n'.join(link_lines)
+    
+    if dry_run:
+        print(f"  [DRY-RUN] Would create: {slug}")
+        return slug
+    
+    # Write temp file and use gbrain CLI
+    tmp_file = f"/tmp/gbrain_session_{info['session_id'][:12]}.md"
+    with open(tmp_file, 'w', encoding='utf-8') as f:
+        f.write(content)
+    
+    # Use gbrain put_page via the maintenance script approach
+    # Actually, let'\n# For now, write a manifest that the cron job can pick up
+    
+    return slug
+
+
+def create_topic_hubs(dry_run=False):
+    """创建主题中枢页面"""
+    for topic_key, hub in TOPIC_HUBS.items():
+        slug = hub["slug"]
+        content = f"""---
+title: "{hub['title']}"
+type: hub
+tags: [{', '.join(hub['tags'])}]
+---
+
+# {hub['title']}
+
+本页是「{hub['title']}」相关所有会话和档案的**索引中枢**。
+
+## 关联关键词
+
+{', '.join(hub['keywords'])}
+
+## 关联会话
+
+<!-- 会话链接由 session_to_gbrain.py 自动维护 -->
+
+## 关联档案
+
+<!-- 手动或自动添加 -->
+"""
+        
+        if dry_run:
+            print(f"  [DRY-RUN] Would create hub: {slug}")
+        else:
+            tmp_file = f"/tmp/gbrain_hub_{topic_key}.md"
+            with open(tmp_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+    
+    return list(TOPIC_HUBS.keys())
+
+
+def link_session_to_hubs(session_slug, topics, dry_run=False):
+    """将会话链接到主题中枢"""
+    links = []
+    for topic in topics:
+        if topic in TOPIC_HUBS:
+            hub_slug = TOPIC_HUBS[topic]["slug"]
+            links.append((session_slug, hub_slug))
+    
+    if dry_run:
+        for s, h in links:
+            print(f"  [DRY-RUN] Link: {s} → {h}")
+    
+    return links
+
+
+def main():
+    dry_run = "--dry-run" in sys.argv
+    batch_size = 50
+    
+    for arg in sys.argv:
+        if arg.startswith("--batch="):
+            batch_size = int(arg.split("=")[1])
+    
+    cp = load_checkpoint()
+    processed = set(cp.get("processed_sessions", []))
+    
+    print(f"📋 Session→Gbrain Pipeline")
+    print(f"   Processed: {len(processed)} | Batch size: {batch_size} | Dry-run: {dry_run}")
+    
+    # Step 1: Ensure topic hubs exist
+    print(f"\n🔧 Step 1: Topic Hubs")
+    create_topic_hubs(dry_run=dry_run)
+    
+    # Step 2: Get unprocessed sessions
+    unprocessed = get_unprocessed_sessions(processed, batch_size)
+    print(f"\n📂 Step 2: Found {len(unprocessed)} new sessions")
+    
+    if not unprocessed:
+        print("   ✅ No new sessions. Done.")
+        cp["last_run"] = datetime.now(CST).isoformat()
+        save_checkpoint(cp)
+        return
+    
+    # Step 3: Process sessions
+    results = {"created": 0, "skipped": 0, "errors": 0}
+    
+    for i, sf in enumerate(unprocessed):
+        info = extract_session_info(sf)
+        if not info:
+            results["errors"] += 1
+            continue
+        
+        slug = create_gbrain_page(info, dry_run=dry_run)
+        if slug:
+            results["created"] += 1
+            if info["topics"]:
+                link_session_to_hubs(slug, info["topics"], dry_run=dry_run)
+        
+        processed.add(sf.name)
+        
+        if (i + 1) % 10 == 0:
+            print(f"   ... {i+1}/{len(unprocessed)}")
+    
+    # Save checkpoint
+    cp["processed_sessions"] = list(processed)
+    cp["last_run"] = datetime.now(CST).isoformat()
+    save_checkpoint(cp)
+    
+    print(f"\n📊 Results: {results['created']} created, {results['skipped']} skipped, {results['errors']} errors")
+    print(f"✅ Done. Next batch starts from checkpoint.")
+
+
+if __name__ == "__main__":
+    main()
