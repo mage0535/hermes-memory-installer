@@ -115,7 +115,7 @@ Memory is split into five domains with per-domain quotas:
 
 | Domain | Quota | Purpose |
 |--------|-------|---------|
-| `kiki` | 300 | Relationship status & personality profile |
+| `magic` | 300 | Relationship status & personality profile |
 | `astock` | 400 | A-stock config, models, factor weights |
 | `promo` | 300 | Promotion operations & channel data |
 | `system` | 300 | System config, philosophy, hard rules |
@@ -340,7 +340,7 @@ The central context builder. Runs before every agent session (or on cron) to pre
 **Usage:**
 ```bash
 # Build context with recall topics
-python3 tiered_context_injector.py --recall kiki memory stock
+python3 tiered_context_injector.py --recall magic memory stock
 
 # Cron mode (quiet, no console output)
 python3 tiered_context_injector.py --cron
@@ -426,7 +426,7 @@ Routes memory entries to the correct domain based on `@domain:` prefix. Manages 
 **Supported commands:**
 ```bash
 # List entries in a domain
-python3 domain_memory.py --domain kiki --list
+python3 domain_memory.py --domain magic --list
 
 # Get domain usage stats
 python3 domain_memory.py --stats
@@ -498,7 +498,7 @@ Domain quota defaults are defined in `domain_memory.py`. To customize:
 ```python
 # Edit domain_memory.py, DOMAIN_QUOTAS dict:
 DOMAIN_QUOTAS = {
-    "kiki": 300,
+    "magic": 300,
     "astock": 400,
     "promo": 300,
     "system": 300,
