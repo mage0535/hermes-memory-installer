@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🧠 Hermes Memory Installer 2.1.1
+# 🧠 Hermes Memory Installer 2.2.0
 
 **AI长期记忆系统 — 由 gbrain 知识图谱驱动**
 
@@ -10,220 +10,145 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)
 
+一键安装脚本，为 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 注入持久化长期记忆能力。
+
 </div>
 
----
+## ✨ 主要特性
 
-## 🇺🇸 About
+- **三层上下文检索**: L1 最近会话 → L2 FTS5 全文检索 × 30天半衰期 → L3 gbrain 知识图谱，RRF 融合排序
+- **记忆体生命周期**: 自动检测 stale(90d)/archived(180d) 页面，保护关键页面免于降级
+- **领域隔离**: 5 领域配额管理（kiki/astock/promo/system/misc），防止单一领域撑爆总量
+- **记忆体容量守卫**: 写入前检查容量 + 矛盾检测 + 自动 compaction 预警
+- **会话→知识图谱**: 自动将 Hermes 会话摘要摄入 gbrain，生成带 tag/timeline 的知识页面
+- **反馈驱动排名**: `fb:helpful/misleading/outdated` 标签影响上下文检索得分
+- **零第三方依赖**: 全部脚本仅使用 Python 标准库
 
-### Why Memory 2.0?
-
-The #1 pain point of AI assistants — **they forget**. Hermes Agent provides native `memory` and `skill` mechanisms, but lacks an out-of-the-box structured long-term memory solution.
-
-**Memory 1.0** solved this with SQLite FTS5 + Markdown archives + 3 skills. It was a solid foundation.
-
-**Memory 2.0** goes further — adding a **knowledge graph engine (gbrain)**, **dual-path semantic search**, **auto-summarization pipeline**, **curator self-evolution**, and **cross-platform recall**.
-
-### Core Architecture
-
-```
-╔══════════════════════════════════════════════════╗
-║            Memory 2.0 Three-Layer Stack           ║
-╠══════════════════════════════════════════════════╣
-║  Dialog Layer │ User ↔ Hermes Gateway ↔ AI       ║
-║  ─────────────────────────────────────────────── ║
-║  Skill Layer  │ memory-starter-kit  [Required]    ║
-║               │ memory-archivist    [Recommended] ║
-║               │ memory-proactive    [Optional]    ║
-║               │ curator             [Self-Evolve] ║
-║  ─────────────────────────────────────────────── ║
-║  Data Layer   │ state.db (FTS5)    — Live store   ║
-║               │ pool.db  (FTS5)    — Archive idx  ║
-║               │ archives/ (Markdown) — File system ║
-║               │ gbrain (pgvector)  — Knowledge    ║
-╚══════════════════════════════════════════════════╝
-```
-
-## v2.1.1 Changelog
-
-### 🌐 Multi-Language Embedding Engine Upgrade
-
-Upgraded from Chinese-only `BAAI/bge-small-zh-v1.5` (512d, 96MB) to **`intfloat/multilingual-e5-small`** (384d, ~470MB) — now supporting **100+ languages** including Chinese, English, Japanese, Korean, Arabic, Thai, Vietnamese, Hindi, and all major European languages.
-
-- New: Multi-model selection during installation (`install.sh` prompts user to choose)
-- New: AI assistant auto-detection — if run by an LLM, install script reminds to confirm model with user
-- Updated: `scripts/embedding_server.py` — default model changed to `intfloat/multilingual-e5-small`
-- Updated: `install.sh` — `select_embedding_model()` function with 7 model options
-
-### 🧪 Model Selection During Install
-
-The installer now presents a model picker before proceeding:
-
-```
-📊 Select Embedding Engine Model
-
-  1) intfloat/multilingual-e5-small     ⭐ Recommended
-     384d | 100+ languages | ~470MB
-  2) BAAI/bge-small-zh-v1.5             Chinese-only
-     512d | Chinese optimized | ~96MB
-  3) paraphrase-multilingual-MiniLM-L12-v2
-     384d | 50+ languages | ~471MB
-  4) Alibaba-NLP/gte-multilingual-base
-     768d | 75+ languages | ~610MB
-  5) sentence-transformers/LaBSE
-     768d | 109 languages | ~471MB
-  6) BAAI/bge-m3
-     1024d | 100+ languages | ~2GB
-  7) Custom (enter model ID)
-```
-
-### 🤖 AI Assistant Auto-Detection
-
-When the installer detects it's running under an AI assistant (non-interactive TTY or `AI_ASSISTED` env), it pauses to remind the AI to **confirm the model choice with the user** before continuing. This prevents silent model downgrades or unexpected disk usage.
-
-### 🔤 A. Multi-language Search Engine
-
-Upgraded embedding model from English-only `all-MiniLM-L6-v2` (384d) to **BAAI/bge-small-zh-v1.5** (512d, 33MB). A single model now handles both **Chinese and English** search natively — no dual-model split needed.
-
-- New: `scripts/embedding_server.py` — OpenAI-compatible API on port 8766
-- Updated: `scripts/sync_embeddings.py` — uses BAAI/bge-small-zh-v1.5 by default
-- Updated: `scripts/gbrain_init.sh` — `--embed` flag auto-deploys the server
-
-### 🛠️ B. Production Scripts Added
-
-| Script | Purpose |
-|--------|---------|
-| `scripts/daily_archive.py` | Daily session archival to gbrain + DB backup |
-| `scripts/weekly_cleanup.py` | Weekly FTS5 reindex + expired session cleanup + orphan detection |
-| `scripts/backup.py` | Full backup/restore with `backup`/`restore`/`list` subcommands |
-| `scripts/test_router.py` | Validates FTS5 → embedding → gbrain recall pipeline |
-| `bin/hermes-memory` | CLI tool with `new`/`doctor`/`init` commands |
-
-### 🏠 C. Cross-platform Path Support
-
-Fixed critical issue where hard-coded `/root/.hermes` broke installations on machines with different home directories (e.g., `/home/user/.hermes`).
-
-- All scripts now use `$HOME` / `Path.home()` (zero hard-coded paths)
-- `install.sh` includes `detect_hermes_home()` pre-flight check
-- Auto-detects and adjusts paths on first run
-- Non-root users install seamlessly
-
-### 📦 Upgrade from v2.0.0
+## 🚀 快速安装
 
 ```bash
-cd /tmp && git clone https://github.com/mage0535/hermes-memory-installer.git
-cd hermes-memory-installer && git checkout v2.1.0
-# Copy new scripts
-cp scripts/daily_archive.py scripts/weekly_cleanup.py scripts/backup.py ~/.hermes/scripts/
-cp scripts/test_router.py scripts/embedding_server.py ~/.hermes/scripts/
-cp bin/hermes-memory ~/.local/bin/
-# Install embedding server
-python3 ~/.hermes/scripts/embedding_server.py &
+# 方法 1：一键脚本
+git clone https://github.com/mage0535/hermes-memory-installer.git
+cd hermes-memory-installer
+bash install.sh
+
+# 方法 2：Python 安装器
+python3 installer/install.py
 ```
 
-### Original vs Memory 1.0 vs Memory 2.0
+## 📦 包含组件
 
-| Dimension | Original Hermes | Memory 1.0 | ⭐ Memory 2.0 |
-|---|---|---|---|
-| **Storage** | Single text blob | Flat Markdown + SQLite FTS5 | Markdown + SQLite FTS5 + **gbrain knowledge graph** |
-| **Retrieval** | LLM context only | FTS5 full-text search | **FTS5 + vector similarity + graph traversal** (triple path) |
-| **Automation** | None | Scheduled cron | Cron + **auto-summary + curator + self-evolution** |
-| **Context** | Current session | Lazy load archives | **Dual-layer semantic recall + cross-platform + knowledge graph** |
-| **Observability** | Not viewable | Markdown in editor | Markdown + **gbrain dashboard + health metrics** |
-| **Extensibility** | Core code changes | Pure skills + templates | Skills + MCP tools + **gbrain API + plugins** |
-| **Install** | Manual | 30s one-click | 30s one-click + **optinal gbrain setup** |
-| **Resource** | Minimal | ~50MB + SQLite | ~200MB + SQLite + optional Bun/gbrain |
+### Runtime 脚本 (已安装在 ~/.hermes/scripts/)
 
-### gbrain Knowledge Graph Engine (v2.0 Core)
+| 脚本 | 行数 | 用途 |
+|---|---|---|
+| `tiered_context_injector.py` | 384 | 三层上下文检索 + RRF 融合排序 |
+| `session_to_gbrain.py` | 476 | 会话摘要→gbrain 知识图谱 |
+| `memory_lifecycle.py` | 118 | 生命周期管理 + 保护配置 |
+| `domain_memory.py` | 144 | 领域隔离与配额管理 |
+| `memory_guard.py` | 76 | 写入前容量检查 |
+| `memory_prewrite_guard.py` | 58 | 写入前验证 + 矛盾检测 |
+| `compact_memory.py` | 128 | 记忆体压缩与清理 |
+| — | — | — |
+| *原 v2.1.1 已有脚本* | ~4,200 | 归档引擎、gbrain 搜索、嵌入同步等 |
 
-Memory 2.0 introduces **gbrain** (Postgres-native knowledge graph) as the Layer 3 retrieval engine:
+### Skills (安装在 ~/.hermes/skills/)
 
-- **Storage**: PGLite (zero-config, default) or PostgreSQL 16+ + pgvector
-- **Retrieval**: Keyword (tsvector) + Vector semantic (pgvector) + Graph traversal (triple hybrid)
-- **Integration**: Via Hermes MCP protocol, Gateway auto-starts gbrain sidecar
-- **Automation**: Daily session archiving to gbrain pages + timeline entries
+- `memory-starter-kit` — 快速上手模板
+- `memory-archivist` — 高级归档管理
+- `memory-proactive` — 主动记忆召回
+
+## 📖 版本历史
+
+### v2.2.0 (2026-05-13)
+
+**新增 7 个 Runtime 脚本 (1,393 行，全部零依赖):**
+
+- `tiered_context_injector.py` — 三层上下文注入器 v3，RRF 融合排序，反馈标签调分
+- `session_to_gbrain.py` — 自动将 Hermes 会话摘要摄入 gbrain 知识图谱（增量 checkpoint）
+- `memory_lifecycle.py` — 页面生命周期状态机，保护配置外移至 YAML 文件
+- `domain_memory.py` — 5 领域隔离与配额管理（kiki/astock/promo/system/misc）
+- `memory_guard.py` — 写入前容量检查，<20% 触发 compaction 预警
+- `memory_prewrite_guard.py` — 写入前验证 + 矛盾检测 + 结构化 JSON 输出
+- `compact_memory.py` — 记忆体压缩 v2，过期模式匹配，支持 --analyze/--apply
+
+**修改 4 个文件:**
+
+- `install.sh` — 版本 2.1.1→2.2.0，`/tmp/memory-repo` 硬编码路径修复为相对路径
+- `installer/install.py` — 版本标注更新
+- `README.md` / `README_CN.md` — 本文档
+- `tests/test_smoke.py` — 路径修复 + 新增脚本覆盖
+
+**数据安全重构:**
+
+- `memory_lifecycle.py`: 剥离内嵌的 `PROTECTED_SLUGS/TAGS`（内部页面名）→ 外部 YAML 配置
+- 新增 `config/memory_lifecycle.example.yaml` 占位配置示例
+
+### v2.1.1 (2026-05-09)
+
+- 默认嵌入模型切换为 `intfloat/multilingual-e5-small`
+- 模型选择器增加 AI 助手自动安装支持
+- 跨平台路径支持
+
+### v2.1.0 (2026-05-08)
+
+- 多语言语义搜索
+- 新增脚本：嵌入引擎、自动摘要、gbrain 维护
+- 跨平台 Windows/macOS/Linux 路径支持
+
+### v2.0.0 (2026-05-06)
+
+- gbrain 知识图谱集成
+- 双路径搜索（gbrain + 本地 FTS5）
+- 自动摘要与 curator 自我进化
+
+## 🏗 架构
 
 ```
-User Query -> FTS5 (state.db, ms-level)
-          -> Semantic search (embeddings, ~200ms)
-          -> gbrain knowledge graph (vector+keyword+graph, fallback)
+Hermes Agent ←→ Memory Pipeline
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+    tiered_context   lifecycle   domain_memory
+    (RRF fusion)    (state machine) (quota mgmt)
+          │            │            │
+          └────────────┼────────────┘
+                       ▼
+                 gbrain + SQLite
+                 (knowledge graph + FTS5)
 ```
 
-### Component Comparison
+### 数据流
 
-| Dimension | Memory 1.0 | Memory 2.0 |
-|-----------|-----------|------------|
-| **Retrieval** | FTS5 single path | FTS5 + Vector + Graph triple path |
-| **Knowledge Engine** | None | gbrain (PGLite/Postgres + pgvector) |
-| **Session Archive** | Local files only | Auto-writes to gbrain pages + timeline |
-| **Maintenance** | Manual | gbrain_maintain.sh daily auto |
-| **Search** | Local FTS5 | gbrain query hybrid search |
-| **Observability** | File tree | gbrain doctor + dashboard |
+1. **写入路径**: agent memory() 调用 → `memory_guard`(容量检查) → `memory_prewrite_guard`(矛盾检测) → `domain_memory`(领域路由) → 写入
+2. **读取路径**: agent 会话启动 → `tiered_context_injector`(L1+L2+L3) → RRF 融合排序 → 注入 agent 上下文
+3. **维护路径**: cron 每日 02:00 → `memory_lifecycle`(状态检查) → `session_to_gbrain`(增量同步) → 一致性校验(周一) → TTL 降级(15日)
 
+## 🛠 增量同步架构
 
+`session_to_gbrain.py` 使用 checkpoint 文件追踪已处理的会话：
 
-### Installation
-
-#### Method A: One-click (Beginner)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/mage0535/hermes-memory-installer/main/install.sh | bash
+```
+~/.hermes/scripts/
+├── session_to_gbrain.py    # 主管道
+├── .gbrain_session_cursor  # 增量 checkpoint (自动创建)
+└── ...
 ```
 
-#### Method B: Manual (Advanced)
+- 首次运行：处理所有历史会话摘要
+- 后续运行：仅处理新产生的会话
+- 设计为每 6 小时 cron 调用一次（可在 `install.sh` 中选择）
 
-See [MANUAL_INSTALL.md](MANUAL_INSTALL.md)
+## 🤝 致谢
 
-### Credits and Inspirations
+- **[@mattamundson](https://github.com/mattamundson)** — [ralph-orchestrator](https://github.com/mattamundson/ralph-orchestrator) 和 ai-agent-memory-patterns 中的配置外部化与内存隔离模式，启发了 memory_lifecycle 的保护数据外移方案（硬编码 slug/tag → YAML 配置加载）。
+- **RRF 融合算法** — 基于信息检索领域标准 Reciprocal Rank Fusion 公式 (k=60)
+- **[gbrain](https://github.com/garrytan/gbrain)** — 由 garrytan/gbrain 项目提供 `put_page` / `add_timeline_entry` / `query` MCP 接口
+- **@domain 前缀协议** — v1 阶段用户定义的命名约定
+- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — 上游 `memory()` 工具提供了写入/读取基础能力
 
-| Project | What We Borrowed |
-|---------|-----------------|
-| **[mem0](https://github.com/mem0ai/mem0)** | Memory layering architecture |
-| **[LangChain Memory](https://python.langchain.com/docs/modules/memory/)** | Hybrid retrieval strategy |
-| **[Obsidian](https://obsidian.md/)** | Local-first Markdown philosophy |
-| **[SQLite FTS5](https://sqlite.org/fts5.html)** | Embedded full-text search |
-| **[Karpathy's llm-wiki](https://github.com/karpathy/llm-wiki)** | Knowledge base organization |
-| **[gbrain](https://github.com/garrytan/gbrain)** | Knowledge graph engine (New in 2.0) |
+其余所有代码均为全自主开发。
 
-**Special thanks** to the Hermes Agent team for the native extension APIs.
-
-
-
-## 📊 Embedding Engine Model Comparison
-
-For a detailed comparison guide to help choose the right model, see the table below.  
-**Our recommendation**: `intfloat/multilingual-e5-small` (100+ languages, balanced size & quality).
-
-| # | Model | Size | Dim | Languages | Best For |
-|---|-------|:----:|:---:|:---------:|----------|
-| 1 | `intfloat/multilingual-e5-small` ⭐ | 470MB | 384 | 100+ | Global users, default choice |
-| 2 | `BAAI/bge-small-zh-v1.5` | 96MB | 512 | zh | Chinese-only, minimal resources |
-| 3 | `paraphrase-multilingual-MiniLM-L12-v2` | 471MB | 384 | 50+ | Mature community model |
-| 4 | `Alibaba-NLP/gte-multilingual-base` | 610MB | 768 | 75+ | High Chinese accuracy, 8K tokens |
-| 5 | `sentence-transformers/LaBSE` | 471MB | 768 | 109 | Cross-lingual alignment specialist |
-| 6 | `BAAI/bge-m3` | 2GB | 1024 | 100+ | Maximum precision, heavy resources |
-| 7 | `sentence-transformers/distiluse-base-multilingual-cased-v2` | 539MB | 512 | 50+ | Legacy stability |
-
-**Switching models**: Set `EMBEDDING_MODEL` env var before running the embedding server:
-```bash
-export EMBEDDING_MODEL="BAAI/bge-m3"
-python3 scripts/embedding_server.py
-```
-
-**Note**: Changing the embedding model requires rebuilding the pgvector index if dimensions differ.
-
-### Version History
-
-| Version | Date | Highlights |
-|---------|------|------------|
-| v2.1.1 | 2026-05 | 🌐 multilingual-e5-small (100+ languages), 🧪 model selection during install, 🤖 AI assistant auto-detection |
-| v2.1.0 | 2026-05 | 🔤 BAAI/bge-small-zh-v1.5 multilingual search, 🛠️ 5 new production scripts, 🏠 cross-platform path auto-detection |
-| v2.0.0 | 2026-05 | gbrain integration, dual-path search, auto-summarization, curator, self-evolution |
-| v1.0.0 | 2026-04 | FTS5 retrieval, 3 skills, one-click install, Markdown archives |
-
-
-
-
-### License
+## 📄 License
 
 MIT
