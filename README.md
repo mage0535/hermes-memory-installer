@@ -624,15 +624,35 @@ scripts/compact_memory.py            128 lines  — Memory compaction v2 with st
 
 ## Acknowledgments
 
+This project builds upon ideas, patterns, and interfaces from several open-source projects and communities. We are grateful for their contributions to the AI agent ecosystem.
+
+### Projects Directly Integrated
+
 - **[@mattamundson](https://github.com/mattamundson)** — The [ralph-orchestrator](https://github.com/mattamundson/ralph-orchestrator) project and the ai-agent-memory-patterns issue discussions inspired the config externalization pattern (moving hardcoded protected slugs/tags to YAML config) used in `memory_lifecycle.py`. The snapshot-based memory isolation approach also influenced the domain isolation design.
+- **[gbrain](https://github.com/garrytan/gbrain)** — The knowledge graph engine by garrytan provides the `put_page` / `add_timeline_entry` / `query` MCP interfaces used by `session_to_gbrain.py` and `tiered_context_injector.py`. A core dependency for the tiered context and session archiving pipeline.
+- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — This entire project is a companion to Hermes Agent. The upstream `memory()` tool, `state.db` session storage, FTS5 full-text search, and gateway infrastructure provide the underlying primitives that all pipeline scripts build upon.
+- **[Model Context Protocol (MCP)](https://github.com/modelcontextprotocol)** — The standard protocol used for gbrain integration and tool registration. The sequential thinking MCP server also informed the architecture design.
+
+### Patterns & Methodologies Referenced
+
 - **RRF (Reciprocal Rank Fusion)** — The fusion algorithm used in `tiered_context_injector.py` is based on the standard IR formula `score(entry) = Σ 1/(k + rank_i)` with k=60, as described in the information retrieval literature.
-- **[gbrain](https://github.com/garrytan/gbrain)** — The knowledge graph engine by garrytan provides the `put_page` / `add_timeline_entry` / `query` MCP interfaces used by `session_to_gbrain.py` and `tiered_context_injector.py`.
-- **@domain prefix protocol** — The domain isolation naming convention was established by the user during the v1 development phase.
-- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — The upstream `memory()` tool provides the underlying write/read primitives that all pipeline scripts build upon.
+- **[mattpocock/skills](https://github.com/mattpocock/skills)** (53k⭐) — The structured critique and review patterns influenced the feedback tag system (`fb:helpful/misleading/outdated`) and the lifecycle state machine design.
+- **[obra/superpowers](https://github.com/obra/superpowers)** (175.7k⭐) — The systematic-debugging, brainstorming, and verification-before-completion methodologies informed the testing and validation approach across this project.
+- **[evoiz/Agentic-Design-Patterns](https://github.com/evoiz/Agentic-Design-Patterns)** (562⭐) — The 21 agent architecture pattern catalog was referenced during the tiered context pipeline design, particularly the "context management patterns" and "memory patterns" sections.
+- **[msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents)** (90k⭐) — Multi-agent system patterns and the 12-division taxonomy informed the domain isolation architecture and the session→gbrain pipeline design.
+- **[forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills)** (105k⭐) — The Karpathy coding principles (think first, simplicity, surprise, suffering) are used as engineering guidelines across the codebase.
+- **[Lum1104/UA - Understand Anything](https://github.com/Lum1104/UA)** (10.3k⭐) — The code→knowledge-graph pipeline approach influenced the session→gbrain transformation logic.
+- **@domain prefix protocol** — The domain isolation naming convention was established by the user during the v1 development phase. A practical, user-driven solution to flat memory management.
 
-All new code (7 runtime scripts, config templates, installer patches, documentation) is original development. Zero third-party Python packages are required beyond the standard library.
+### Infrastructure & Tools
 
----
+- **SQLite FTS5** — The full-text search engine used in `messages_fts` and `archives_fts` tables. A proven, zero-dependency solution for local text indexing.
+- **Python Standard Library** — All scripts use only stdlib modules (json, sqlite3, pathlib, datetime, re, hashlib, etc.). No third-party packages required.
+- **gbrain Embedding Server** — Provides local sentence-transformer embeddings for semantic search, running as a systemd service on the host.
+
+### All New Code
+
+All runtime scripts (7 files, ~1,393 lines), configuration templates, installer fixes, and documentation in this repository are original development. The code is released under the MIT license for open collaboration.
 
 ## License
 

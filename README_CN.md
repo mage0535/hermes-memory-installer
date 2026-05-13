@@ -945,15 +945,35 @@ v2.2.0（安全）： ✅
 
 ## 致谢
 
-- **[@mattamundson](https://github.com/mattamundson)** — [ralph-orchestrator](https://github.com/mattamundson/ralph-orchestrator) 项目和 ai-agent-memory-patterns 中的配置外部化与内存隔离模式，启发了 `memory_lifecycle.py` 的保护数据外移方案（硬编码 slug/tag → YAML 配置加载）。
-- **RRF 融合算法** — `tiered_context_injector.py` 中使用的 Reciprocal Rank Fusion 算法基于信息检索标准公式 `score = Σ 1/(k + rank)`，k=60。
-- **[gbrain](https://github.com/garrytan/gbrain)** — garrytan 开发的知识图谱引擎，提供了 `put_page` / `add_timeline_entry` / `query` MCP 接口，支撑了 `session_to_gbrain.py` 和 `tiered_context_injector.py` 的核心功能。
-- **@domain 前缀协议** — v1 开发阶段由用户确定的领域隔离命名约定。
-- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — 上游 `memory()` 工具提供了所有管道脚本依赖的底层写入/读取原语。
+本项目在开发过程中参考、借鉴了多个开源项目的设计模式与接口协议。衷心感谢这些项目对 AI Agent 生态系统的贡献。
 
-其余所有代码（7 个 runtime 脚本、配置模板、安装器修复、文档）均为全自主开发。零第三方 Python 包依赖。
+### 直接集成的项目
 
----
+- **[@mattamundson](https://github.com/mattamundson)** — [ralph-orchestrator](https://github.com/mattamundson/ralph-orchestrator) 和 ai-agent-memory-patterns issue 讨论中的配置外部化模式（硬编码数据 → 外部 YAML 配置文件），以及基于快照的内存隔离方案，直接影响了 `memory_lifecycle.py` 的保护数据外移架构和 `domain_memory.py` 的领域隔离设计。
+- **[gbrain](https://github.com/garrytan/gbrain)** — garrytan 开发的知识图谱引擎，提供了 `put_page` / `add_timeline_entry` / `query` 等 MCP 接口。`session_to_gbrain.py` 的会话→知识图谱管道和 `tiered_context_injector.py` 的 L3 检索均基于这些接口构建。
+- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — 本项目的上游基座。`memory()` 工具的写入/读取原语、`state.db` 的会话存储机制、FTS5 全文检索能力，以及 Gateway 网关架构，是所有管道脚本的底层依赖。
+- **[Model Context Protocol (MCP)](https://github.com/modelcontextprotocol)** — 用于 gbrain 集成和工具注册的标准协议。Sequential Thinking MCP server 的架构设计也启发了部分设计决策。
+
+### 设计模式与方法论参考
+
+- **RRF（Reciprocal Rank Fusion，倒数排名融合）** — `tiered_context_injector.py` 的融合排名算法基于信息检索领域标准公式 `score = Σ 1/(k + rank)`，k=60。该算法在 L2（FTS5）和 L3（gbrain）结果并行查询后执行融合排序。
+- **[mattpocock/skills](https://github.com/mattpocock/skills)**（⭐53k）— 其中的结构化批评与审查模式，影响了反馈标签系统（`fb:helpful/misleading/outdated`）和生命周期状态机的设计思路。
+- **[obra/superpowers](https://github.com/obra/superpowers)**（⭐175.7k）— 系统性调试、头脑风暴、完成前验证等方法论，被参考用于本项目的测试和验证流程设计。
+- **[evoiz/Agentic-Design-Patterns](https://github.com/evoiz/Agentic-Design-Patterns)**（⭐562）— 21 种 Agent 架构设计模式速查表中的"上下文管理模式"和"记忆模式"章节，为三层上下文管线的架构设计提供了直接参考。
+- **[msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents)**（⭐90k）— 多 Agent 系统模式和 12 大领域分类法，影响了领域隔离架构（5 领域配额）和会话→gbrain 管道的设计。
+- **[forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills)**（⭐105k）— Karpathy 四项编码原则（先思考、保持简单、拥抱惊喜、享受痛苦）作为代码库的工程指导方针。
+- **[Lum1104/UA - Understand Anything](https://github.com/Lum1104/UA)**（⭐10.3k）— 代码→知识图谱的管道转化方法，影响了会话→gbrain 的增量同步逻辑设计。
+- **@domain 前缀协议** — 领域隔离的命名约定由用户在 v1 开发阶段定义。这是一个来自实际需求的实用方案，解决了一维 flat memory 的混排问题。
+
+### 基础设施与工具
+
+- **SQLite FTS5** — `messages_fts` 和 `archives_fts` 表使用的全文检索引擎。零依赖、经过广泛验证的本地文本索引方案。
+- **Python 标准库** — 所有脚本仅使用标准库模块（json、sqlite3、pathlib、datetime、re、hashlib 等），无任何第三方包依赖。
+- **gbrain 嵌入引擎服务** — 以 systemd 服务运行的本地 sentence-transformer 嵌入服务，为语义搜索提供向量支持。
+
+### 新代码声明
+
+本仓库中的所有 runtime 脚本（7 个文件，约 1,393 行）、配置模板、安装器修复和文档均为全自主开发，基于 MIT 开源协议发布。
 
 ## License
 
