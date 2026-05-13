@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Smoke tests for Memory 2.0"""
+"""Smoke tests for Memory 2.2"""
 import sys
 from pathlib import Path
 
 HERMES_HOME = Path.home() / '.hermes'
-REPO = Path('/tmp/memory-repo')
+REPO = Path(__file__).resolve().parent
 all_ok = True
 
 def check(desc, cond):
@@ -19,5 +19,7 @@ all_ok &= check('memory-starter-kit', (HERMES_HOME / 'skills/memory-starter-kit'
 all_ok &= check('install.sh', (REPO / 'install.sh').exists())
 all_ok &= check('install.py', (REPO / 'installer/install.py').exists())
 all_ok &= check('archive_sessions.py', (REPO / 'scripts/archive_sessions.py').exists())
+all_ok &= check('memory_lifecycle.py', (REPO / 'scripts/memory_lifecycle.py').exists())
+all_ok &= check('tiered_context_injector.py', (REPO / 'scripts/tiered_context_injector.py').exists())
 
 sys.exit(0 if all_ok else 1)

@@ -1,4 +1,4 @@
-"""Hermes Memory Installer 2.0 — Main installer"""
+"""Hermes Memory Installer 2.2 — Main installer"""
 import os, sys, shutil
 from pathlib import Path
 
@@ -116,7 +116,7 @@ def verify():
         print(f'  {"✅" if c.exists() else "❌"} {c.name}')
 
 def main():
-    print('=== Hermes Memory Installer 2.0 ===')
+    print('=== Hermes Memory Installer 2.2 ===')
     check_hermes()
     check_python()
     check_sqlite_fts5()
