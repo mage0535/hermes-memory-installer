@@ -64,7 +64,7 @@ Hermes Agent 内置的 `memory()` 工具适合短期记忆，但在长期使用�
 ### 3. 无领域隔离
 ```
 当前 flat memory:
-  "Kiki 今天心情不好"      ← 关系记录
+  "Magic 今天心情不好"      ← 关系记录
   "沪深300推荐用5因子模型"  ← 股票配置
   "抖音矩阵已注册24个渠道"  ← 推广运营
   "auxiliary必须跟随主模型"  ← 系统配置
@@ -216,7 +216,7 @@ Agent 在使用上下文完成响应后，可以为页面打标签：
 
 | 领域 | 配额 | 用途 | @domain 前缀 |
 |------|------|------|-------------|
-| 💬 Kiki | 300 | 关系状态、性格画像、沟通策略 | `@domain:kiki` |
+| 💬 Magic | 300 | 关系状态、性格画像、沟通策略 | `@domain:magic` |
 | 📈 A股 | 400 | 选股配置、因子权重、模型参数 | `@domain:astock` |
 | 📢 推广 | 300 | 渠道运营、注册进度、数据统计 | `@domain:promo` |
 | ⚙️ 系统 | 300 | 配置规则、架构决策、工程哲学 | `@domain:system` |
@@ -382,7 +382,7 @@ Agent 调用 memory() 写入新内容
 │ 步骤 3: 领域路由 (domain_memory.py)   │
 │                                      │
 │ 解析 @domain: 前缀:                   │
-│   @domain:kiki    → 路由到 Kiki 领域  │
+│   @domain:magic    → 路由到 Magic 领域  │
 │   @domain:astock  → 路由到 A股 领域   │
 │   @domain:promo   → 路由到 推广 领域  │
 │   @domain:system  → 路由到 系统 领域  │
@@ -508,7 +508,7 @@ Agent 会话启动
 **用法：**
 ```bash
 # 用指定主题构建上下文
-python3 tiered_context_injector.py --recall kiki memory stock
+python3 tiered_context_injector.py --recall magic memory stock
 
 # Cron 模式（静默）
 python3 tiered_context_injector.py --cron
@@ -633,13 +633,13 @@ python3 memory_guard.py --auto-compact
 **支持的子命令：**
 ```bash
 # 列出某领域的所有条目
-python3 domain_memory.py --domain kiki --list
+python3 domain_memory.py --domain magic --list
 
 # 查看全部领域使用统计
 python3 domain_memory.py --stats
 # 输出示例:
 # Domain      Used    Quota   Usage%
-# kiki        87/300  300     29%
+# magic        87/300  300     29%
 # astock     312/400  400     78%
 # promo      201/300  300     67%
 # system     154/300  300     51%
@@ -743,7 +743,7 @@ is_protected(slug, tags):
 
 ```python
 DOMAIN_QUOTAS = {
-    "kiki": 300,     # Kiki 关系管理
+    "magic": 300,     # Magic 关系管理
     "astock": 400,   # A 股分析（需要更多空间）
     "promo": 300,    # 推广运营
     "system": 300,   # 系统配置
@@ -865,8 +865,8 @@ v2.2.0 的一项重要重构：将所有可能包含内部数据的配置从代�
 ```
 v2.1.1（有风险）:
   memory_lifecycle.py 中硬编码:
-    PROTECTED_SLUGS = ["kiki-chat-archive-...", "hub-system-...", ...]
-    PROTECTED_TAGS = ["archive", "hub", "protected", "kiki", ...]
+    PROTECTED_SLUGS = ["magic-chat-archive-...", "hub-system-...", ...]
+    PROTECTED_TAGS = ["archive", "hub", "protected", "magic", ...]
   → 推送到 GitHub 后，所有人可见！
 
 v2.2.0（安全）： ✅
