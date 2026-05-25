@@ -4,6 +4,7 @@ set -euo pipefail
 
 readonly VERSION="2.2.0"
 INSTALL_DIR="/tmp/hermes-memory-installer-$$"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info()  { echo -e "${BLUE}ℹ️${NC}  $1"; }
@@ -186,7 +187,7 @@ conn.commit(); conn.close()
     ok "pool.db 已初始化（FTS5 全文索引）"
 
     # 安装 Skills
-    local src_skills="$(dirname "$(readlink -f "$0")")/skills"
+    local src_skills="${SCRIPT_DIR}/skills"
     if [[ -d "$src_skills" ]]; then
         for skill in memory-starter-kit memory-archivist memory-proactive; do
             if [[ -d "$src_skills/$skill" && ! -d "${HERMES_HOME}/skills/$skill" ]]; then
@@ -197,7 +198,7 @@ conn.commit(); conn.close()
     fi
 
     # 安装脚本
-    local src_scripts="$(dirname "$(readlink -f "$0")")/scripts"
+    local src_scripts="${SCRIPT_DIR}/scripts"
     if [[ -d "$src_scripts" ]]; then
         cp "$src_scripts"/*.py "$src_scripts"/*.sh "${HERMES_HOME}/scripts/" 2>/dev/null || true
         ok "自动化脚本已安装"
@@ -263,6 +264,17 @@ setup_automation() {
             --prompt "Incremental session to gbrain indexing" \
             --script scripts/archive_sessions.py \
             --deliver origin 2>/dev/null || true
+        if [[ "${ENABLE_MEMORY_CONSOLIDATION_CRON:-1}" != "0" ]]; then
+            if ! hermes cron list 2>/dev/null | grep -q "memory-consolidation-6h"; then
+                hermes cron create "every 6h" \
+                    --name "memory-consolidation-6h" \
+                    --prompt "Scan recent conversation transcripts (last 6 hours). Extract durable facts not already in memory or fact_store. Save genuinely new facts only (no duplicates). Skip task progress, PR numbers, and commit SHAs. Keep only facts likely useful in 30 days, then check MEMORY.md capacity and prune stale entries if needed." \
+                    --deliver origin 2>/dev/null || true
+                ok "Optional cron created: memory-consolidation-6h"
+            else
+                info "Optional cron already exists: memory-consolidation-6h"
+            fi
+        fi
         ok "Hermes cron 任务已创建"
     else
         info "使用系统 cron..."
