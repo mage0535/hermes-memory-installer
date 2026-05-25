@@ -1,5 +1,5 @@
-"""Hermes Memory Installer 2.2 — Main installer"""
-import os, sys, shutil
+"""Hermes Memory Installer 2.2 – Main installer"""
+import os, sys, shutil, subprocess
 from pathlib import Path
 
 HERMES_HOME = Path.home() / '.hermes'
@@ -7,6 +7,7 @@ SKILLS_DIR = HERMES_HOME / 'skills'
 ARCHIVES_DIR = HERMES_HOME / 'archives'
 POOL_DB = HERMES_HOME / 'pool.db'
 CONFIG_PATH = HERMES_HOME / 'config.yaml'
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def check_hermes():
     if not HERMES_HOME.exists():
@@ -78,7 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_archives_type ON archives(type, priority DESC);
     print('✅ pool.db initialized with FTS5')
 
 def install_skills():
-    src_skills = Path('/tmp/memory-repo/skills')
+    src_skills = REPO_ROOT / 'skills'
     if src_skills.exists():
         for skill_dir in ['memory-starter-kit','memory-archivist','memory-proactive']:
             src = src_skills / skill_dir
@@ -110,6 +111,53 @@ def patch_config():
         with open(str(CONFIG_PATH), 'w') as f: yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
     print('✅ Config patched')
 
+def setup_memory_consolidation_cron():
+    """Optional every-6-hours memory consolidation cron."""
+    enabled = os.getenv('ENABLE_MEMORY_CONSOLIDATION_CRON', '1').lower() not in ('0', 'false', 'no')
+    if not enabled:
+        print('ℹ️  Skip memory consolidation cron (ENABLE_MEMORY_CONSOLIDATION_CRON disabled)')
+        return
+
+    if shutil.which('hermes') is None:
+        print('ℹ️  Hermes CLI not found, skip memory consolidation cron setup')
+        return
+
+    try:
+        subprocess.run(['hermes', 'cron', 'list'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        print('ℹ️  Hermes cron unavailable, skip memory consolidation cron setup')
+        return
+
+    cron_name = 'memory-consolidation-6h'
+    prompt = (
+        'Scan recent conversation transcripts (last 6 hours). '
+        'Extract durable facts not already in memory or fact_store. '
+        'Save genuinely new facts only (no duplicates). '
+        'Skip task progress, PR numbers, and commit SHAs. '
+        'Keep only facts likely useful in 30 days, then check MEMORY.md capacity and prune stale entries if needed.'
+    )
+
+    try:
+        listed = subprocess.run(
+            ['hermes', 'cron', 'list'],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        if cron_name in (listed.stdout or ''):
+            print(f'✅ Cron already exists: {cron_name}')
+            return
+
+        subprocess.run([
+            'hermes', 'cron', 'create', 'every 6h',
+            '--name', cron_name,
+            '--prompt', prompt,
+            '--deliver', 'origin',
+        ], check=True)
+        print(f'✅ Created optional cron: {cron_name}')
+    except Exception as e:
+        print(f'⚠️  Failed to create optional memory consolidation cron: {e}')
+
 def verify():
     checks = [ARCHIVES_DIR, POOL_DB, SKILLS_DIR/'memory-starter-kit']
     for c in checks:
@@ -125,6 +173,7 @@ def main():
     init_pool_db()
     install_skills()
     patch_config()
+    setup_memory_consolidation_cron()
     print()
     verify()
     print()
