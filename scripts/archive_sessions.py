@@ -1,26 +1,23 @@
 #!/usr/bin/env python3
-"""Session -> gbrain Archiver for Memory 2.0 — 正式版
+"""
+Hermes Session -> gbrain Archiver
 
-Reads finished sessions from Hermes state.db, creates structured gbrain pages
-with timeline entries via MCP tools. Watermark-based incremental processing.
+Reads finished sessions from state.db, outputs structured JSON for
+gbrain ingestion via MCP tools. Designed for both one-time bulk archive
+and daily incremental runs.
 
 Usage:
-  python3 archive_sessions.py [--days 7] [--dry-run] [--batch 15] [--all]
-  python3 archive_sessions.py --reset-watermark  # 重置 watermark 重新归档
-
-Requires:
-  - Hermes state.db at ~/.hermes/state.db
-  - gbrain MCP server running (part of Hermes Gateway)
+  python3 archive_sessions.py [--days 7] [--dry-run] [--batch 20]
+    --days N    : archive sessions older than N days (default: 7)
+    --dry-run   : show what would be archived, don't mark done
+    --batch N   : max sessions per run (default: 20)
+    --all       : process ALL eligible sessions
 """
-import sqlite3, json, sys, os, argparse, datetime, subprocess, time, re
+
+import sqlite3, json, sys, os, argparse, datetime
 
 STATE_DB = os.path.expanduser("~/.hermes/state.db")
 MARKER_KEY = "gbrain_archive_watermark"
-BATCH_SIZE = 15
-DAYS_OLD = 7
-
-def log(msg):
-    print(f"[archiver] {msg}", flush=True)
 
 def connect_db():
     conn = sqlite3.connect(STATE_DB)
@@ -33,199 +30,118 @@ def get_watermark(conn):
     return float(row[0]) if row else 0
 
 def set_watermark(conn, ts):
-    conn.execute("INSERT OR REPLACE INTO state_meta (key, value) VALUES (?, ?)",
-                 (MARKER_KEY, str(ts)))
+    conn.execute("INSERT OR REPLACE INTO state_meta (key, value) VALUES (?, ?)", (MARKER_KEY, str(ts)))
     conn.commit()
 
 def fetch_sessions(conn, older_than_days, watermark, batch_size, all_sessions):
     cutoff = datetime.datetime.now() - datetime.timedelta(days=older_than_days)
     cutoff_ts = cutoff.timestamp()
-    query = """SELECT s.id, s.source, s.user_id, s.model, s.title,
-                      s.started_at, s.ended_at, s.end_reason,
-                      s.message_count, s.tool_call_count, s.summary
-               FROM sessions s
-               WHERE s.ended_at IS NOT NULL
-                 AND s.ended_at > ? AND s.ended_at < ?
-                 AND s.id NOT LIKE 'cron_%%'
-                 AND (SELECT COUNT(*) FROM messages WHERE session_id = s.id) > 1
-               ORDER BY s.ended_at ASC"""
-    if not all_sessions:
-        query += " LIMIT ?"
-        params = (watermark, cutoff_ts, batch_size)
-    else:
-        params = (watermark, cutoff_ts)
-    cur = conn.execute(query, params)
-    return cur.fetchall()
+    query = """SELECT id, source, user_id, model, title, started_at, ended_at,
+                      end_reason, message_count, tool_call_count,
+                      input_tokens, output_tokens
+               FROM sessions
+               WHERE ended_at IS NOT NULL AND started_at < ? AND started_at > ?
+               ORDER BY started_at ASC"""
+    if not all_sessions and batch_size:
+        query += f" LIMIT {batch_size}"
+    cur = conn.execute(query, (cutoff_ts, watermark))
+    return [dict(row) for row in cur.fetchall()]
 
-def get_session_messages(conn, session_id, max_msgs=30):
-    """获取会话消息摘要"""
+def fetch_messages(conn, session_id, max_samples=10):
     cur = conn.execute(
-        "SELECT role, content, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp ASC LIMIT ?",
-        (session_id, max_msgs)
-    )
-    return cur.fetchall()
+        "SELECT role, content, timestamp, tool_name FROM messages WHERE session_id = ? ORDER BY timestamp",
+        (session_id,))
+    rows = cur.fetchall()
+    total = len(rows)
+    if total <= max_samples:
+        indices = list(range(total))
+    else:
+        indices = list(range(3)) + list(range(total - (max_samples - 3), total))
+    sampled = []
+    for i in indices:
+        if i < total:
+            r = rows[i]
+            content = (r[1] or "")[:500]
+            sampled.append({"role": r[0], "content": content, "timestamp": r[2], "tool_name": r[3], "index": i + 1})
+    return sampled, total
 
-def make_slug(session_id):
-    """生成 gbrain 页面 slug"""
-    clean = re.sub(r'[^a-zA-Z0-9_-]', '-', session_id)[:24]
-    return f"session-{clean}"
-
-def build_page_content(session, messages):
-    """构建 gbrain 页面 Markdown 内容"""
-    title = session['title'] or f"Session {session['id'][:16]}"
-    summary = session['summary'] or ''
-
+def build_page(session, messages, msg_total):
+    started = datetime.datetime.fromtimestamp(session["started_at"])
+    ended = datetime.datetime.fromtimestamp(session["ended_at"]) if session.get("ended_at") else started
+    duration_min = int((ended - started).total_seconds() / 60) if session.get("ended_at") else 0
+    source = session.get("source", "unknown")
+    title_str = session.get("title", "") or "无主题"
+    user_msgs = [m["content"] for m in messages if m["role"] == "user" and m["content"]]
+    summary = user_msgs[0][:200] if user_msgs else title_str
+    page_title = f"{source.capitalize()} 会话 - {started.strftime('%Y-%m-%d %H:%M')}"
+    timeline = []
+    for m in messages:
+        ts = datetime.datetime.fromtimestamp(m["timestamp"]).strftime("%H:%M")
+        role_mark = "U" if m["role"] == "user" else "A"
+        content_preview = (m["content"] or "")[:200]
+        timeline.append(f"- **{ts}** [{role_mark}] {content_preview}")
     content = f"""---
-title: "{title}"
-type: session
-tags:
-  - session
-  - archived
-  - {session['source'] or 'unknown'}
-date: {session['started_at'] or ''}
-source_session_id: "{session['id']}"
+title: "{page_title}"
+tags: [session, {source}, archived]
 ---
 
-# {title}
+## 会话信息
+- **来源**: {source}
+- **时间**: {started.strftime('%Y-%m-%d %H:%M')} -> {ended.strftime('%H:%M')} ({duration_min}分钟)
+- **模型**: {session.get('model', 'N/A')}
+- **消息数**: {msg_total}
+- **API调用**: {session.get('tool_call_count', 0)}
+- **Tokens**: {session.get('input_tokens', 0):,} in / {session.get('output_tokens', 0):,} out
 
-## 摘要
+## 会话摘要
+{summary}
 
-{summary or '*No summary generated*'}
-
-## 元数据
-
-| 字段 | 值 |
-|------|-----|
-| 来源 | {session['source'] or 'N/A'} |
-| 模型 | {session['model'] or 'N/A'} |
-| 开始 | {session['started_at'] or '?'} |
-| 结束 | {session['ended_at'] or '?'} |
-| 消息数 | {session['message_count'] or 0} |
-| 工具调用 | {session['tool_call_count'] or 0} |
-| 结束原因 | {session['end_reason'] or 'N/A'} |
-
-## 对话片段
-
-"""
-    for msg in messages:
-        role = msg['role']
-        text = (msg['content'] or '')[:500]
-        if role == 'user':
-            content += f"> {text}\n\n"
-        elif role == 'assistant':
-            content += f"{text}\n\n"
-    return content
-
-def call_gbrain_mcp(action, params):
-    """通过 gbrain CLI 调用 MCP 工具"""
-    try:
-        cmd = ["gbrain", "call", action, json.dumps(params)]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0:
-            return json.loads(result.stdout) if result.stdout.strip() else {}
-        else:
-            log(f"  ⚠️ gbrain call {action} failed: {result.stderr[:200]}")
-            return None
-    except subprocess.TimeoutExpired:
-        log(f"  ⚠️ gbrain call {action} timed out")
-        return None
-    except Exception as e:
-        log(f"  ⚠️ gbrain call {action} error: {e}")
-        return None
-
-def archive_session(session, dry_run):
-    """归档单个会话到 gbrain"""
-    session_id = session['id']
-    slug = make_slug(session_id)
-    summary = session['summary'] or session['title'] or 'Untitled'
-    log(f"  📦 {slug}: {summary[:60]}")
-
-    if dry_run:
-        return True
-
-    # 获取消息
-    conn = connect_db()
-    messages = get_session_messages(conn, session_id)
-    conn.close()
-
-    # 构建页面内容
-    content = build_page_content(session, messages)
-
-    # Step 1: put_page — 创建/更新页面
-    page_result = call_gbrain_mcp("put_page", {
-        "slug": slug,
-        "content": content
-    })
-    if page_result is None:
-        log(f"  ❌ put_page 失败: {slug}")
-        return False
-    log(f"  ✅ put_page: {slug}")
-
-    # Step 2: add_timeline_entry — 添加时间线条目
-    timeline_result = call_gbrain_mcp("add_timeline_entry", {
-        "slug": slug,
-        "date": str(session['started_at'] or '')[:10],
-        "summary": summary[:200],
-        "detail": f"会话 {session_id[:16]} | 模型: {session['model']} | 消息: {session['message_count']}",
-        "source": session['source'] or 'hermes'
-    })
-    if timeline_result is None:
-        log(f"  ⚠️ add_timeline_entry 跳过（非致命）")
-    else:
-        log(f"  ✅ timeline 已添加")
-
-    # Step 3: 添加标签
-    call_gbrain_mcp("add_tag", {"slug": slug, "tag": "session"})
-    if session['source']:
-        call_gbrain_mcp("add_tag", {"slug": slug, "tag": session['source']})
-
-    return True
+## 关键对话节点
+""" + "\n".join(timeline)
+    return {
+        "slug": f"session-{session['id'][:20]}",
+        "content": content,
+        "tags": ["session", source, "archived"],
+        "timeline": {
+            "date": started.strftime("%Y-%m-%d"),
+            "summary": f"{source}会话 - {msg_total}条消息",
+            "detail": summary[:500]
+        },
+        "session_id": session["id"]
+    }
 
 def main():
-    parser = argparse.ArgumentParser(description='Archive sessions to gbrain')
-    parser.add_argument('--days', type=int, default=DAYS_OLD)
-    parser.add_argument('--dry-run', action='store_true', help='Preview only')
-    parser.add_argument('--batch', type=int, default=BATCH_SIZE)
-    parser.add_argument('--all', action='store_true', dest='all_sessions')
-    parser.add_argument('--reset-watermark', action='store_true')
-    args = parser.parse_args()
-
-    if args.reset_watermark:
-        conn = connect_db()
-        set_watermark(conn, 0)
-        conn.close()
-        log("Watermark 已重置为 0，下次运行将重新归档所有会话")
-        return
-
+    p = argparse.ArgumentParser()
+    p.add_argument("--days", type=int, default=7)
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--batch", type=int, default=20)
+    p.add_argument("--all", action="store_true")
+    args = p.parse_args()
     conn = connect_db()
     watermark = get_watermark(conn)
-    wm_time = datetime.datetime.fromtimestamp(watermark).isoformat() if watermark else 'start'
-    log(f"Watermark: {wm_time}")
-
-    sessions = fetch_sessions(conn, args.days, watermark, args.batch, args.all_sessions)
-    log(f"发现 {len(sessions)} 个待归档会话")
-
+    sys.stderr.write(f"Watermark: {datetime.datetime.fromtimestamp(watermark).isoformat() if watermark > 0 else 'never'}\n")
+    sessions = fetch_sessions(conn, args.days, watermark, args.batch, args.all)
     if not sessions:
-        conn.close()
+        print(json.dumps({"status": "noop", "count": 0}))
         return
-
-    success_count = 0
-    new_watermark = watermark
-
+    sys.stderr.write(f"Found {len(sessions)} sessions\n")
+    if args.dry_run:
+        print(json.dumps({"status": "dry_run", "count": len(sessions),
+            "sessions": [{"id": s["id"][:20], "date": datetime.datetime.fromtimestamp(s["started_at"]).isoformat(),
+                          "source": s["source"], "msgs": s["message_count"]} for s in sessions]},
+            ensure_ascii=False))
+        return
+    pages = []
+    max_ts = watermark
     for session in sessions:
-        if archive_session(session, args.dry_run):
-            success_count += 1
-        ts = session['ended_at'] or 0
-        if ts > new_watermark:
-            new_watermark = ts
-
-    if not args.dry_run and new_watermark > watermark:
-        set_watermark(conn, new_watermark)
-        log(f"Watermark 推进至 {datetime.datetime.fromtimestamp(new_watermark).isoformat()}")
-
+        msgs, total = fetch_messages(conn, session["id"])
+        page = build_page(session, msgs, total)
+        pages.append(page)
+        if session["started_at"] > max_ts:
+            max_ts = session["started_at"]
+    set_watermark(conn, max_ts)
+    print(json.dumps({"status": "success", "count": len(pages), "pages": pages, "watermark": max_ts}, ensure_ascii=False))
     conn.close()
-    tag = ' (dry-run)' if args.dry_run else ''
-    log(f"完成: {success_count}/{len(sessions)} 成功{tag}")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

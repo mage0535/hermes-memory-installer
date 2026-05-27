@@ -1,50 +1,64 @@
 ---
 name: memory-starter-kit
-description: "记忆体2.0 入门套件 — 档案模板、目录结构、使用指南"
-tags: [memory, archive, template, starter]
+description: 基础记忆层 — Hot/Warm 双层自动记忆, 让 AI 真正记住你
 ---
 
 # Memory Starter Kit
 
-## What is this?
+Hermes 记忆体系的基础层。让 AI 跨越会话记住你的身份、偏好和项目背景。
 
-The **memory-starter-kit** is your entry point to the Memory 2.0 system. It provides:
-
-- Archive directory structure and conventions
-- Ready-to-use templates for People, Projects, and Knowledge
-- Writing guidelines and best practices
-
-## Directory Structure
-
-Archives live in `~/.hermes/archives/`:
+## 架构: 四层记忆体
 
 ```
-archives/
-├── people/       # Person profiles
-├── projects/     # Project documentation
-├── knowledge/    # General knowledge base
-└── _index/       # Index metadata (auto-managed)
+L0 Hot  (memory tool, 5KB cap)     → 用户画像 + 系统笔记, 每轮自动注入
+L1 Warm (Hindsight, PostgreSQL)     → auto-retain + auto-recall + 每周反思
+L2 Hot-Warm bridge (agentmemory)    → 51 MCP 工具, 语义+关键词+图检索
+L3 Cold (gbrain)                    → 知识图谱, 长期档案, pgvector 向量
 ```
 
-## Getting Started
+## 安装
 
-1. Create your first person archive:
+一键安装脚本会完成:
+1. 安装 Python 依赖 (hindsight, agentmemory SDK)
+2. 初始化 Hindsight PostgreSQL (PG16)
+3. 启动 agentmemory Docker 容器
+4. 配置 config.yaml (`memory.provider: hindsight`)
+5. 部署所有 runtime 脚本到 `~/.hermes/scripts/`
+
+## 验证
+
 ```bash
-cp ~/.hermes/skills/memory-starter-kit/templates/person.md.j2 \
-   ~/.hermes/archives/people/name/profile.md
+systemctl is-active hindsight           # 应返回 active
+docker ps | grep agentmemory            # 应显示 running
+python3 ~/.hermes/scripts/memory_guard.py  # 检查内存健康
 ```
 
-2. Open in any editor and fill in the fields
+## 日常运作
 
-3. For automation, ensure memory-archivist skill is also installed
+- **自动**: 每轮 Hindsight auto-retain 存储关键信息, auto-recall 检索上下文
+- **手动**: `hindsight recall "关键词"` 或通过 agentmemory MCP 工具
+- **周常**: 每周日 5:30 Hindsight Reflect 自动生成用户画像更新
 
-## Templates
+## 文件结构
 
-- `person.md.j2` — People profiles with background, relationship, timeline
-- `project.md.j2` — Project documentation with milestones, decisions
-- `knowledge.md.j2` — Knowledge base entries with references
+```
+~/.hermes/
+├── scripts/          # runtime 脚本
+│   ├── hindsight-service.py
+│   ├── memory_guard.py
+│   ├── memory_prewrite_guard.py
+│   └── ...
+├── archives/         # 档案目录
+│   ├── people/
+│   ├── projects/
+│   └── knowledge/
+└── config.yaml       # memory.provider: hindsight
+```
 
-## See Also
+## 常见问题
 
-- `memory-archivist` — Auto-archive and FTS5 indexing
-- `memory-proactive` — Context routing and semantic recall
+| 问题 | 解决 |
+|------|------|
+| memory 满了 | `python3 ~/.hermes/scripts/compact_memory.py` |
+| hindsight 不启动 | 检查 PG16 连接: `PGPASSWORD=xxx psql -h localhost -U gbrain -d hindsight` |
+| agentmemory 断连 | `docker restart agentmemory-iii-engine-1` |

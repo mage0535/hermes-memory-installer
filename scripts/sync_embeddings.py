@@ -1,109 +1,165 @@
 #!/usr/bin/env python3
-"""Unified embedding sync for Memory 2.0
-
-Bidirectional incremental sync between semantics.db and state.db message_embeddings.
-Uses BAAI/bge-small-zh-v1.5 (512-dim) — single model for both Chinese and English.
-Production best practice: deploy via scripts/embedding_server.py for persistent service.
 """
-import argparse, sqlite3, sys, os
+统一 embedding 同步脚本
+双向增量同步 semantics.db ↔ state.db message_embeddings
+
+模型分工（不可合并）：
+- semantics.db      : all-MiniLM-L6-v2 (384维, 英文为主)
+- state.db embed.  : text2vec-base-chinese (768维, 中文为主)
+
+增量策略：
+1. 以 state.db messages 为基准，补全两边缺失（各自用独立模型编码）
+2. 各自独立增量写入，避免重复编码
+3. 运行一次即可；之后 session_search_tool 写 state.db，
+   EmbeddingStore.build_incremental_index 写 semantics.db
+
+用法：
+  python3 sync_embeddings.py --stats      # 仅查看统计
+  python3 sync_embeddings.py --dry-run    # 预览需同步量
+  python3 sync_embeddings.py              # 执行同步
+"""
+
+import argparse
+import sqlite3
+import struct
+import sys
+import time
 from pathlib import Path
 
-STATE_DB = Path.home() / '.hermes' / 'state.db'
-SEMANTICS_DB = Path.home() / '.hermes' / 'semantics.db'
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
-EMBEDDING_DIM = 512
+STATE_DB = Path.home() / ".hermes" / "state.db"
+SEMANTICS_DB = Path.home() / ".hermes" / "semantics.db"
+BATCH_SIZE = 50
 
-def get_embedder():
-    """Lazy-load embedding model (supports both EN and CN)."""
-    try:
-        from sentence_transformers import SentenceTransformer
-        print(f"[embed] Loading {EMBEDDING_MODEL} (512d, multilingual, ~33MB)...", flush=True)
-        return SentenceTransformer(EMBEDDING_MODEL)
-    except ImportError:
-        print("[embed] sentence-transformers not installed. Install: pip install sentence-transformers")
-        print("[embed] Attempting remote embedding server at localhost:8766...")
-        return None
+# ── 向量序列化 ──────────────────────────────────────────────────────────────
+
+def deserialize(blob: bytes) -> list:
+    n = len(blob) // 4
+    return list(struct.unpack(f"{n}f", blob))
+
+
+def serialize(vec: list) -> bytes:
+    return struct.pack(f"{len(vec)}f", *vec)
+
+
+# ── 统计 ────────────────────────────────────────────────────────────────────
 
 def get_stats():
-    stats = {}
-    for label, path in [('state', STATE_DB), ('semantics', SEMANTICS_DB)]:
-        if not path.exists():
-            stats[label] = 'not found'
-            continue
-        conn = sqlite3.connect(str(path))
-        try:
-            cur = conn.execute("SELECT COUNT(*) FROM message_embeddings")
-            stats[label] = cur.fetchone()[0]
-        except sqlite3.OperationalError:
-            stats[label] = 'no embeddings table'
-        conn.close()
-    return stats
+    sc = sqlite3.connect(STATE_DB)
+    ec = sqlite3.connect(SEMANTICS_DB)
 
-def embed_texts(texts, via_api=False):
-    """Get embeddings—local model or remote server."""
-    if via_api:
-        import urllib.request, json
-        data = json.dumps({"input": texts, "model": EMBEDDING_MODEL}).encode()
-        req = urllib.request.Request("http://127.0.0.1:8766/v1/embeddings",
-            data=data, headers={"Content-Type": "application/json"})
-        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
-        return [d["embedding"] for d in resp["data"]]
-    else:
-        model = get_embedder()
-        if model is None:
-            return embed_texts(texts, via_api=True)
-        return model.encode(texts, normalize_embeddings=True).tolist()
+    s_emb = sc.execute("SELECT COUNT(*) FROM message_embeddings").fetchone()[0]
+    e_emb = ec.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+    s_msg = sc.execute(
+        "SELECT COUNT(*) FROM messages WHERE content IS NOT NULL AND length(content) > 20"
+    ).fetchone()[0]
 
-def sync_semantics_to_state(batch_size=50):
-    """Sync semantics.db embeddings → state.db (incremental)."""
-    if not SEMANTICS_DB.exists():
-        print("[sync] semantics.db not found, skipping")
-        return 0
-    conn_sem = sqlite3.connect(str(SEMANTICS_DB))
-    conn_state = sqlite3.connect(str(STATE_DB))
-    
-    # Check what needs syncing
-    cur_sem = conn_sem.execute("SELECT message_id, embedding FROM message_embeddings")
-    existing = set()
-    try:
-        cur_existing = conn_state.execute("SELECT message_id FROM message_embeddings")
-        existing = {row[0] for row in cur_existing}
-    except sqlite3.OperationalError:
-        conn_state.execute("CREATE TABLE IF NOT EXISTS message_embeddings (message_id TEXT PRIMARY KEY, embedding BLOB)")
-        conn_state.commit()
-    
-    to_sync = [(mid, emb) for mid, emb in cur_sem if mid not in existing]
-    if not to_sync:
-        print("[sync] Already in sync")
-        return 0
-    
-    for mid, emb in to_sync:
-        conn_state.execute("INSERT OR REPLACE INTO message_embeddings (message_id, embedding) VALUES (?, ?)",
-                          (mid, emb))
-    conn_state.commit()
-    conn_sem.close()
-    conn_state.close()
-    print(f"[sync] Synced {len(to_sync)} embeddings")
-    return len(to_sync)
+    # 跨库 gap 查询：semantics.db embeddings 表不在 state.db，需 ATTACH
+    ec.execute("ATTACH DATABASE ? AS sdb", (str(STATE_DB),))
+    e_gap = ec.execute("""
+        SELECT COUNT(*) FROM sdb.messages m
+        WHERE m.content IS NOT NULL AND length(m.content) > 20
+          AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.message_id = m.id)
+    """).fetchone()[0]
+    s_gap = sc.execute("""
+        SELECT COUNT(*) FROM messages m
+        WHERE m.content IS NOT NULL AND length(m.content) > 20
+          AND NOT EXISTS (SELECT 1 FROM message_embeddings me WHERE me.message_id = m.id)
+    """).fetchone()[0]
 
-def main():
-    parser = argparse.ArgumentParser(description='Multi-language embedding sync (BAAI/bge-small-zh-v1.5)')
-    parser.add_argument('--stats', action='store_true', help='Show embedding stats')
-    parser.add_argument('--sync', action='store_true', help='Sync semantics → state')
-    parser.add_argument('--batch-size', type=int, default=50)
-    parser.add_argument('--via-api', action='store_true', help='Use remote embedding server (port 8766)')
-    args = parser.parse_args()
-    
-    if args.stats:
-        stats = get_stats()
-        print(f"[stats] state.db: {stats.get('state', '?')} embeddings")
-        print(f"[stats] semantics.db: {stats.get('semantics', '?')} embeddings")
+    print(f"state.db message_embeddings : {s_emb:,} 条  (text2vec-base-chinese 768维, 中文)")
+    print(f"semantics.db embeddings     : {e_emb:,} 条  (all-MiniLM-L6-v2 384维, 英文)")
+    print(f"有效 messages (>20字)        : {s_msg:,} 条")
+    print(f"semantics.db gap (缺索引)   : {e_gap} 条")
+    print(f"state.db gap (缺索引)       : {s_gap} 条")
+
+    sc.close()
+    ec.close()
+
+
+# ── 增量同步 semantics.db ────────────────────────────────────────────────────
+
+def sync_semantics(dry_run: bool = False):
+    """对 state.db 中有文本但无 semantics 索引的消息补建索引"""
+    from sentence_transformers import SentenceTransformer
+
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+    ec = sqlite3.connect(SEMANTICS_DB)
+    # semantics.db ATTACH state.db 以跨库查询 messages
+    ec.execute("ATTACH DATABASE ? AS sdb", (str(STATE_DB),))
+
+    rows = ec.execute("""
+        SELECT m.id, m.session_id, m.role, m.content, m.timestamp
+        FROM sdb.messages m
+        WHERE m.content IS NOT NULL AND length(m.content) > 20
+          AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.message_id = m.id)
+        ORDER BY m.id
+    """).fetchall()
+
+    total = len(rows)
+    if total == 0:
+        print("semantics.db 已是最优状态，无 gap 需要填充")
+        ec.close()
         return
-    
-    if args.sync:
-        sync_semantics_to_state(batch_size=args.batch_size)
-    else:
-        parser.print_help()
 
-if __name__ == '__main__':
-    main()
+    print(f"semantics.db: 补建 {total} 条缺失索引...")
+    t0 = time.time()
+
+    for i in range(0, total, BATCH_SIZE):
+        batch = rows[i:i + BATCH_SIZE]
+        texts = [r[3][:2000] for r in batch]
+        vecs = model.encode(texts, convert_to_numpy=True).tolist()
+
+        for r, vec in zip(batch, vecs):
+            emb_blob = serialize(vec)
+            content_hash = str(hash(r[3]))
+            ec.execute("""
+                INSERT OR IGNORE INTO embeddings
+                (message_id, session_id, role, content_hash, embedding, content_len, indexed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (r[0], r[1], r[2], content_hash, emb_blob, len(r[3]), time.time()))
+
+        if not dry_run:
+            ec.commit()
+
+        done = min(i + BATCH_SIZE, total)
+        elapsed = time.time() - t0
+        speed = done / elapsed if elapsed > 0 else 0
+        print(f"  {done}/{total} ({done/total*100:.1f}%) — {speed:.0f} msg/s")
+
+    if dry_run:
+        ec.rollback()
+        print(f"[dry-run] 原本将写入 {total} 条")
+
+    ec.close()
+
+
+# ── 主入口 ───────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="同步两套 embedding 数据库")
+    parser.add_argument("--stats", action="store_true", help="仅打印统计")
+    parser.add_argument("--dry-run", action="store_true", help="仅报告不写入")
+    args = parser.parse_args()
+
+    print(f"=== Embedding Sync ===")
+    print(f"state.db    : {STATE_DB}")
+    print(f"semantics.db: {SEMANTICS_DB}")
+    print()
+    get_stats()
+    print()
+
+    if args.stats:
+        print("统计完毕。")
+        sys.exit(0)
+
+    if args.dry_run:
+        print("[dry-run 模式，仅预览]")
+        sync_semantics(dry_run=True)
+        sys.exit(0)
+
+    print("开始同步 semantics.db...")
+    sync_semantics()
+    print()
+    print("=== 同步后统计 ===")
+    get_stats()
+    print("同步完成。")

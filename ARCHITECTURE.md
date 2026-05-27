@@ -1,271 +1,145 @@
-# Hermes Memory Installer 2.0 --- Architecture Document
+# Architecture: Hermes Memory Installer v4.0
 
-*Version: v2.0.0 | Target: Developers / Technical Decision Makers*
+## Overview
 
----
+The v4.0 memory system is a **4-tier, multi-engine architecture** designed for production AI agents. It replaces v3.0's fragile single-engine (SQLite FTS5) design with a battle-tested, horizontally layered system that has run continuously for 2+ months.
 
-## 1. Product Positioning
+## Design Principles
 
-Empower any Hermes user to deploy a production-grade memory management system in under 5 minutes.
+1. **No single point of failure** — 4 independent retrieval paths, any one can fail without breaking recall
+2. **Progressive depth** — L0→L3, each layer adds richer recall at the cost of latency, queries cascade
+3. **Zero-touch retention** — auto-retain every turn, no manual `remember this` needed
+4. **Domain isolation** — quota per topic, prevents memory flooding
+5. **Local-first** — everything on-prem, no cloud dependencies beyond PostgreSQL
 
-**Not**:
-- A replacement for Hermes' native memory mechanisms
-- A system requiring core code modifications
-- A cloud service needing external API keys
+## Tier Details
 
-**Is**:
-- A three-layer architecture leveraging Hermes' existing capabilities
-- A one-click environment setup tool
-- An automated pipeline for memory maintenance
+### L0: Hot Memory (memory tool)
 
----
+- **Storage**: Built-in Hermes memory tool (5KB cap)
+- **Content**: User profile (name, role, preferences), system notes
+- **Latency**: 0ms (injected into system prompt)
+- **Lifecycle**: Manually managed via `memory()` tool calls
+- **Guard script**: `memory_prewrite_guard.py` — capacity check + contradiction detection before write
 
-## 2. Three-Layer Architecture
+### L1: Warm Memory (Hindsight)
 
-### Dialog Layer (Gateway)
+- **Storage**: PostgreSQL 16, `hindsight` database
+- **Engine**: Hindsight Memory Server (systemd service, port 8890)
+- **Capabilities**:
+  - `auto-retain`: Every turn, key facts extracted and stored (non-blocking, ~50ms)
+  - `auto-recall`: Before each session, relevant context injected (async, ~200ms)
+  - `Hindsight Reflect`: Weekly (Sun 5:30), generates user profile updates
+- **Bridge**: `hindsight_mcp_bridge.py` — exposes recall/retain/reflect as MCP tools
 
-The Hermes Gateway handles all user interactions. Every message triggers the memory recall pipeline before reaching the LLM:
+### L2: Bridge Memory (agentmemory)
 
-1. **Layer 1 (FTS5)**: Search state.db session transcripts using FTS5 full-text index --- millisecond latency, precise keyword matching
-2. **Layer 2 (Semantic)**: Embedding similarity search using `paraphrase-multilingual-MiniLM-L12-v2` --- agent-local first, cross-platform fallback
-3. **Layer 3 (Graph)**: gbrain knowledge graph vector search --- semantic and graph traversal, triggered when Layer 1-2 results are insufficient
+- **Storage**: Docker container, `iii-engine`, port 3111
+- **Engine**: rohitg00/agentmemory MCP Server
+- **51 MCP tools** including:
+  - `memory_smart_search` — hybrid BM25 + vector + graph
+  - `memory_recall` — context-aware recall
+  - `memory_save` — structured save with concepts + files
+  - `memory_graph_query` — knowledge graph traversal
+- **Retrieval**: Reciprocal Rank Fusion (k=60) across 3 internal paths
 
-### Skill Layer (Hermes Skills)
+### L3: Cold Storage (gbrain)
 
-| Skill | Required | Function |
-|-------|----------|----------|
-| **memory-starter-kit** | Yes Required | Archive templates, directory structure, usage guide |
-| **memory-archivist** | Yes Recommended | Auto-archive cron jobs, FTS5 indexing, retention management |
-| **memory-proactive** | No Optional | Context routing, topic detection, semantic recall injection |
-| **curator** | Self-evolve | Knowledge governance, insight extraction, skill refinement |
+- **Storage**: PostgreSQL 16 + pgvector extension
+- **Engine**: gbrain (Bun CLI + MCP server)
+- **Index**: 10005+ pages, wikilinks graph, timeline entries
+- **Embedding**: Local BGE-small model via `gbrain-embed.service` (port 8765)
+- **Sync**: `session_to_gbrain.py` — incremental state.db → gbrain with watermark
+- **Lifecycle**: `memory_lifecycle.py` — 30d stale → 90d expired → auto-clean
 
-### Data Layer
-
-| Store | Technology | Purpose |
-|-------|-----------|---------|
-| `state.db` | SQLite + FTS5 | Real-time session store with full-text search |
-| `pool.db` | SQLite + FTS5 | Archive index for long-term reference |
-| `archives/` | Markdown files | Human-readable archive library |
-| `semantics.db` | SQLite + vectors | Embedding storage for semantic search |
-| **gbrain** (new) | Postgres/PGlite + pgvector | Knowledge graph with vector + keyword search |
-
----
-
-## 3. Data Flow
-
-### Online Path (Real-time retrieval)
-
-```
-User Message arrives at Gateway
-  |
-  +- Layer 1: FTS5 (state.db, <10ms)
-  |   Full-text search across all past sessions
-  |   Strengths: exact keyword match, fast
-  |   Trigger: always runs
-  |
-  +- Layer 2: Semantic (embeddings, ~50-200ms)
-  |   paraphrase-multilingual-MiniLM-L12-v2
-  |   Agent-local -> cross-platform fallback
-  |   Time decay: adjusted_score = sim x exp(-age/30)
-  |   Trigger: always runs, non-blocking
-  |
-  +- Layer 3: gbrain Knowledge Graph (~500ms-3s)
-      Hybrid search: vector similarity + keyword + graph traversal
-      Trigger: when Layer 1-2 return < 3 relevant results
-      API: gbrain MCP tools (query, search, get_page)
-      Storage: PGLite (default) or PostgreSQL 16+ + pgvector
-  |
-  v
-AI Response with enriched memory context
-```
-
-### Offline Pipeline (Background processing)
+## Retrieval Pipeline
 
 ```
-Finished Sessions (state.db)
-  |
-  +-- auto_session_summary.py (every 12h)
-  |   Reads ended_at sessions without summary
-  |   LLM generates concise summary per session
-  |   Writes to state.db sessions.summary column
-  |   Batch: 2 sessions, 45s timeout each
-  |
-  +-- archive_sessions.py (daily 3AM)
-  |   Reads state.db sessions older than 7 days
-  |   Calls gbrain MCP put_page -> creates structured page
-  |   Calls gbrain MCP add_timeline_entry -> adds timeline entry
-  |   Calls gbrain MCP add_tag -> classifies session source
-  |   Watermark-based incremental processing
-  |   Batch: 15 sessions per run, resume from watermark
-  |
-  +-- gbrain_maintain.sh (daily 4AM)
-  |   gbrain extract links -> rebuild link graph
-  |   gbrain extract timeline -> rebuild timelines
-  |   gbrain embed --reindex -> refresh vector indices
-  |   gbrain doctor -> health check
-  |
-  +-- gbrain_search.py (on-demand, concurrent)
-      gbrain call query -> hybrid vector+keyword search
-      Supports multi-query concurrency (3 workers)
-      Returns structured results for context injection
+User: "what did we discuss about curl timeout?"
+
+tiered_context_injector.py:
+  ┌─ L1: state.db FTS5 → "curl timeout" hits 3 sessions
+  ├─ L2: Hindsight semantic → "http requests" + "timeout" → 5 memories
+  ├─ L3: gbrain pgvector → nearest neighbors → 7 pages
+  └─ RRF fusion (k=60) → ranked top-10 → injected into context
 ```
 
-### gbrain Page Architecture
+## Domain Quota Router
 
-Each archived session becomes a gbrain page with frontmatter + content + tags + timeline:
+`domain_memory.py` enforces per-domain character quotas:
 
-```
-Page (slug: session-abc123)
-  |-- Frontmatter: title, type, tags, date, source_session_id
-  |-- Content: summary, metadata table, conversation snippets
-  |-- Tags: session, archived, telegram (auto-tagged by source)
-  |-- Timeline: one entry per session with date + summary
-  |-- Links: auto-extracted by gbrain extract links
-  |-- Chunks: auto-generated for vector search indexing
-```
-
-Pages are searchable via:
-- Keyword: \`gbrain search <query>\` (tsvector full-text)
-- Hybrid: \`gbrain query <question>\` (vector + keyword + multi-query expansion)
-- MCP: \`mcp_gbrain_query\`, \`mcp_gbrain_search\`, \`mcp_gbrain_get_page\`
-- Graph: \`mcp_gbrain_traverse_graph\` for related entity discovery
-## 4. Dual-Path Search Engine
-
-### Path A: SQLite FTS5 (state.db)
-- **Latency**: < 10ms
-- **Strengths**: Exact keyword match, handles Chinese names/projects well
-- **Trigger**: Session search tool, auto-loaded by session-search-tool skill
-- **Scales to**: Millions of messages
-
-### Path B: gbrain Vector + Hybrid
-- **Latency**: ~500ms - 3s
-- **Strengths**: Semantic understanding, graph traversal, cross-entity discovery
-- **Trigger**: Fallback when Path A returns < 3 relevant results
-- **Storage**: Postgres/PGlite + pgvector
-
-### Fallback Chain
-```
-User query -> Path A (FTS5) -> results >= 3? -> YES -> return
-                                           -> NO  -> Path B (gbrain) -> return merged results
+```python
+DOMAINS = {
+    'kiki':  500,  # relationship analysis
+    'stock': 400,  # A-share strategies  
+    'system':300,  # server configuration
+    'promo': 200,  # channel promotion
+    'misc':  200,  # everything else
+}
+TOTAL_CAP = 5000  # memory tool hard limit
 ```
 
----
+## Data Integrity Guarantees
 
-## 5. Pipeline Components
+1. **Write guard**: `memory_prewrite_guard.py` checks for contradictions before write
+2. **Atomic writes**: PostgreSQL transactions for all Hindsight operations
+3. **Watermark sync**: `session_to_gbrain.py` tracks last sync position, resumes from break
+4. **Backup**: config.yaml backed up before modification (`config.yaml.pre-memory-DATE`)
+5. **Archive pruning**: `memory_lifecycle.py` marks as archived, never deletes from gbrain
 
-### archive_sessions.py
-Reads finished sessions from Hermes' `state.db`, creates structured pages in gbrain with timeline entries. Uses a watermark cursor for incremental processing --- each run picks up where the last left off.
-
-### auto_session_summary.py
-Generates LLM-powered summaries for finished sessions. Runs every 12 hours, processes 2 sessions per batch with 45s timeout each. ThreadPoolExecutor + asyncio in a fresh event loop per call.
-
-### sync_embeddings.py
-Bidirectional sync between `semantics.db` and `state.db` embedding tables. Two independent models: `all-MiniLM-L6-v2` (384-dim, English) and `text2vec-base-chinese` (768-dim, Chinese).
-
-### curator_runner.py
-Daily self-evolution cycle. Triggers the curator skill to review recent archives, extract insights, refactor knowledge, and improve the skill library.
-
----
-
-## 6. Self-Evolution Cycle
-
-```
-Collect -> Summarize -> Archive -> Curate -> Learn -> Repeat
-   |             |              |            |           |
-   v             v              v            v           v
- sessions    summaries      gbrain      knowledge    skill
- harvested    generated     pages       refactored   improved
-```
-
-The cycle runs daily via cron. Each phase feeds into the next, creating a continuous improvement loop.
-
----
-
-## 7. Directory Structure
+## File Layout
 
 ```
 ~/.hermes/
-|-- config.yaml              # Main config (with skills added)
-|-- state.db                 # Session store (Hermes native + Memory 2.0 enhancements)
-|-- pool.db                  # Archive index (FTS5)
-|-- semantics.db             # Embedding storage
-|-- archives/                # Markdown archive library
-|   |-- people/              # People profiles
-|   |-- projects/            # Project archives
-|   |-- knowledge/           # Knowledge base
-|   |-- _index/              # Index metadata
-|-- skills/
-|   |-- memory-starter-kit/  # Required: templates + guide
-|   |-- memory-archivist/    # Recommended: auto archive
-|   |-- memory-proactive/    # Optional: context routing
-|-- scripts/                 # Automation scripts
-    |-- archive_sessions.py
-    |-- auto_session_summary.py
-    |-- sync_embeddings.py
-    |-- archive_daily.sh
-    |-- curator_runner.py
+├── config.yaml                  # memory.provider: hindsight
+├── MEMORY.md                    # L0 snapshot
+├── state.db                     # Session store (source of truth)
+├── scripts/
+│   ├── tiered_context_injector.py    # RRF fusion engine
+│   ├── memory_guardian.py            # Lifecycle manager
+│   ├── session_to_gbrain.py          # gbrain sync
+│   └── ... (13 more)
+├── skills/
+│   ├── memory-starter-kit/           # Basic tier
+│   ├── memory-archivist/             # Archive tier
+│   └── memory-proactive/             # Proactive tier
+├── archives/                         # Manual archives
+│   ├── people/
+│   ├── projects/
+│   └── knowledge/
+└── templates/                        # jinja2 templates
 ```
 
----
+## Dependencies
 
-## 8. Memory 2.0 vs Memory 1.0
+| Component | External Dep | Purpose |
+|-----------|-------------|---------|
+| Hindsight | PostgreSQL 16 | Memory storage |
+| agentmemory | Docker | MCP memory server |
+| gbrain | Bun + PostgreSQL + pgvector | Knowledge graph |
+| gbrain-embed | sentence-transformers (BGE-small) | Local embeddings |
 
-| Aspect | Memory 1.0 | Memory 2.0 |
-|--------|-----------|-----------|
-| Search | FTS5 only | FTS5 + Vector + Graph (triple path) |
-| Knowledge Engine | None | gbrain (pgvector) |
-| Summarization | None | auto_session_summary.py (LLM) |
-| Self-Evolution | None | curator + skill autopilot |
-| Cross-Platform | Same platform only | Agent-local + cross-platform recall |
-| Automation | Basic cron | Cron + watermark + incremental |
-| Embedding | None | sentence-transformers dual model |
-| Observability | File system | gbrain health + dashboard |
+All Python scripts use **stdlib only** — zero third-party dependencies for the core runtime.
 
----
+## Performance
 
-## 9. Risks and Mitigations
+| Operation | Latency | Notes |
+|-----------|---------|-------|
+| memory_prewrite_guard | <5ms | Single JSON scan |
+| domain_memory route | <1ms | Dict lookup |
+| Hindsight auto-retain | ~50ms | Async, non-blocking |
+| Hindsight auto-recall | ~200ms | Pre-session async |
+| tiered_context_injector | ~500ms-2s | 3 parallel queries + RRF |
+| gbrain sync (incremental) | ~2-10s | Depends on delta size |
+| gbrain sync (full) | ~30-60s | 10005+ pages |
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| gbrain not installed | Layer 3 unavailable | Graceful fallback to FTS5 only |
-| state.db schema migration | Data loss | ALTER TABLE with try/except |
-| Embedding model download | Slow first run | Cached in ~/.cache/huggingface/ |
-| Cron job collision | Resource contention | Configurable time windows |
-| Token exhaustion | Archives fail | Per-session timeout + batch limits |
+## Failure Modes & Recovery
 
----
-
-## 10. Roadmap
-
-| Phase | Deliverable |
-|-------|------------|
-| v1.0 | FTS5 retrieval, 3 skills, one-click install |
-| v2.0 | gbrain integration, dual-path search, auto-summary, curator |
-| v2.1 (upcoming) | Multi-agent shared memory, conflict resolution |
-| v2.2 (upcoming) | Real-time embedding sync, graph visualization |
-| v3.0 (upcoming) | Distributed memory, federation protocol |
-
----
-
-*Last updated: 2026-05-06*
-
-
-## 11. Credits and References
-
-Memory 2.0 builds upon ideas and code from the following projects:
-
-| Project | What We Used |
-|---------|-------------|
-| **[mem0](https://github.com/mem0ai/mem0)** | Memory layering concept (user/session/system) |
-| **[LangChain Memory](https://python.langchain.com/docs/modules/memory/)** | Hybrid retrieval strategy (buffer + vector store) |
-| **[Obsidian](https://obsidian.md/)** | Local-first Markdown archive philosophy |
-| **[SQLite FTS5](https://sqlite.org/fts5.html)** | Embedded full-text search engine |
-| **[Karpathy's llm-wiki](https://github.com/karpathy/llm-wiki)** | Personal knowledge base organization |
-| **[gbrain](https://github.com/garrytan/gbrain)** | Knowledge graph engine (MCP-based, pgvector) |
-| **[sentence-transformers](https://sbert.net/)** | Embedding models for semantic search |
-
-**Special thanks** to the Hermes Agent team at Nous Research for the native memory,
-skill, and MCP extension APIs that make zero-intrusion deployment possible.
-
-*Memory 2.0 was developed iteratively on a production Hermes Agent instance running
-on Linux, processing 700+ sessions and 10,000+ messages in daily operation.*
+| Failure | Impact | Recovery |
+|---------|--------|----------|
+| Hindsight down | L1 lost, L0+L2+L3 still work | `systemctl restart hindsight` |
+| agentmemory down | L2 lost, L0+L1+L3 work | `docker restart agentmemory-iii-engine-1` |
+| gbrain down | L3 lost, L0+L1+L2 work | Check PostgreSQL + Bun |
+| gbrain-embed down | semantic search degraded to keyword | `systemctl restart gbrain-embed` |
+| memory tool full | New writes rejected | `compact_memory.py` or manual cleanup |
+| PostgreSQL down | L1+L3 lost, L0+L2 still work | Full PostgreSQL recovery |
