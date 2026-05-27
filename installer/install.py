@@ -4,6 +4,9 @@ import os, sys, shutil, subprocess
 parser = argparse.ArgumentParser()
 parser.add_argument('--engine', choices=['auto','postgresql','elasticsearch','lightweight'], default='auto', help='Retrieval engine to use')
 parser.add_argument('--lang', choices=['auto','en','zh'], default='auto', help='Primary language for tuning')
+parser.add_argument('--embedding', default=None,
+    help='HuggingFace model ID for embeddings (e.g. BAAI/bge-large-zh-v1.5, '
+         'intfloat/multilingual-e5-base). When omitted, auto-selects from --lang.')
 args = parser.parse_args()
 from pathlib import Path
 
@@ -162,7 +165,30 @@ def main():
                 yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
         print('  ✅ config.yaml updated')
 
-    # 7. Verify
+
+    # 7. Configure embedding model
+    step('Configuring embedding model')
+    model_map = {
+        'en': 'BAAI/bge-base-en-v1.5',
+        'zh': 'BAAI/bge-large-zh-v1.5',
+        'auto': 'BAAI/bge-small-en',  # fallback
+    }
+    embed_model = args.embedding or model_map.get(args.lang, model_map['auto'])
+
+    # Write embedding config to scripts/embedding_config.json
+    import json
+    embed_cfg = HERMES / 'scripts' / 'embedding_config.json'
+    with open(str(embed_cfg), 'w') as f:
+        json.dump({'model': embed_model, 'device': 'cpu'}, f, indent=2)
+    check(f'Embedding model: {embed_model}', embed_cfg.exists())
+
+    # If --lang=zh, suggest Chinese-specific configuration
+    if args.lang == 'zh' or (args.lang == 'auto' and embed_model == 'BAAI/bge-large-zh-v1.5'):
+        print('  💡 Chinese language detected: consider installing zhparser for PostgreSQL')
+        print('     apt install postgresql-16-zhparser')
+        print('     CREATE TEXT SEARCH CONFIGURATION chinese (PARSER = zhparser);')
+
+    # 8. Verify
     step('Verifying installation')
     checks = [
         (dst_scripts / 'tiered_context_injector.py', 'tiered_context_injector'),
