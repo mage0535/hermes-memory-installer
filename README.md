@@ -1,11 +1,11 @@
-# Hermes Memory Installer v4.0
+# Hermes Memory Installer v3.0
 
 **Production-grade 4-tier long-term memory for Hermes Agent.**
 
 3 minutes to install. 10005+ pages indexed. 2+ months continuous production runtime.
 
 [![GitHub](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.0-green)](https://github.com/mage0535/hermes-memory-installer/releases)
+[![Version](https://img.shields.io/badge/version-3.0-green)](https://github.com/mage0535/hermes-memory-installer/releases)
 
 ---
 
@@ -29,7 +29,7 @@ L3 COLD  ─ gbrain (pgvector + wikilinks, 10005+ pages)
 
 ## Pain Points → Solutions
 
-| Problem (v3.0) | Solution (v4.0) |
+| Problem (v3.0) | Solution (v3.0) |
 |---|---|
 | SQLite FTS5 single-path — poor semantic recall | 4-way parallel: state.db → Hindsight → agentmemory → gbrain + RRF fusion |
 | No real auto-retain, lost on restart | Hindsight auto-retain every turn + weekly Reflect |
@@ -93,9 +93,9 @@ The installer:
 | Advanced | **memory-archivist** | Power users | Auto-archive, gbrain sync, lifecycle |
 | Expert | **memory-proactive** | Developers | Tiered injection, domain routing, RRF |
 
-## v3.0 → v4.0
+## Archived → v3.0
 
-| Dimension | v3.0 | v4.0 |
+| Dimension | v2.x (archived) | v3.0 |
 |-----------|------|------|
 | **Core Engine** | SQLite FTS5 | Hindsight PG16 + agentmemory + gbrain |
 | **Retrieval Paths** | 1 (FTS5) | 4 parallel + RRF fusion |
@@ -144,3 +144,106 @@ Built on the shoulders of these excellent projects and communities:
 - **V2EX community** — v2.0~v3.0 feedback and architectural suggestions
 - **Telegram testers** — Stress-tested auto-archive pipeline at scale
 - **GitHub issue reporters** — Flagged SQLite FTS5 degradation → drove PostgreSQL migration
+
+---
+
+## Choosing Your Retrieval Engine
+
+v3.0 is designed as **engine-agnostic** — pick the retrieval backend that fits your language and scale needs. You can mix and match, or start simple and upgrade later.
+
+### Engine Comparison
+
+| Engine | Type | Language Support | Scale | Dependencies | Use When |
+|--------|------|-----------------|-------|-------------|----------|
+| **SQLite FTS5** | Keyword FTS | English only (no CJK tokenizer by default) | <10K docs | None (stdlib) | Zero-dependency setups, English-only content |
+| **SQLite FTS5 + ICU** | Keyword FTS | Multi-language (ICU tokenizer) | <10K docs | libicu-dev | Chinese/Japanese content without extra services |
+| **PostgreSQL tsvector** | Keyword FTS | Multi-language (built-in configs per language) | <100K docs | PostgreSQL 16 | Already have PostgreSQL, need configurable language support |
+| **pgvector** | Vector (semantic) | Any language (needs compatible embedding model) | <1M docs | PostgreSQL + pgvector | Semantic search across languages, "find similar" queries |
+| **Hindsight** | Auto-retain + recall | Any (uses PostgreSQL underneath) | <100K sessions | PostgreSQL 16 | ⭐ **Default** — auto-retain every turn, no manual indexing |
+| **agentmemory** | Hybrid (BM25 + vector + graph) | Any (multi-model embeddings) | <100K items | Docker + MCP | ⭐ **Default** — 51 tools, RRF fusion across 3 paths |
+| **gbrain** | Knowledge graph + pgvector | Any (BGE-small local embed) | <100K pages | Bun + PostgreSQL | ⭐ **Default** — knowledge graph with wikilinks, 10000+ pages |
+| **Elasticsearch** | Full-text + vector | Any (ICU/IK for CJK) | >1M docs | Java runtime, heavy | Enterprise-scale, existing ES deployment |
+| **Milvus** | Vector only | Any | >10M vectors | Docker, 4GB+ RAM | Billion-scale vector search, dedicated infra |
+| **Meilisearch** | Full-text (typ-tolerant) | Any (multilingual) | <10M docs | Docker (<100MB) | Typo-tolerant search, instant setup |
+
+### ⭐ Recommended Configuration
+
+For most users, the default 4-engine stack covers all needs:
+
+```
+New session → tiered_context_injector.py
+  ├─ L1: state.db FTS5            (recent sessions, 0 deps)
+  ├─ L2: Hindsight                 (auto-retain every turn, PostgreSQL)
+  ├─ L3: agentmemory MCP           (hybrid semantic, Docker)
+  └─ L4: gbrain + pgvector         (knowledge graph, long-term)
+```
+
+### Lightweight Configuration (no Docker, no PostgreSQL)
+
+```bash
+# Everything runs on Python stdlib + SQLite
+# No Docker, no PostgreSQL, no external services
+# Uses SQLite FTS5 for keyword search + memory tool for hot layer
+python3 installer/install.py --lightweight
+```
+
+Limitations: English-only search (FTS5 has no built-in Chinese tokenizer), keyword-only (no semantic), <10K docs.
+
+### Chinese Language Tuning
+
+For Chinese text retrieval, key differences from English:
+
+| Aspect | English | Chinese |
+|--------|---------|---------|
+| **FTS tokenizer** | Built-in (space-separated) | Needs ICU or jieba |
+| **Embedding model** | BGE-small-en, all-MiniLM | BGE-large-zh, text2vec-large-chinese |
+| **PostgreSQL config** | `english` | `simple` + custom parser or zhparser |
+| **pgvector works?** | Yes, natively | Yes, with Chinese embed model |
+| **Elasticsearch** | Standard analyzer | IK analyzer (best CJK support) |
+
+**Best Chinese-only setup:**
+```yaml
+# gbrain-embed model → Chinese embedding
+embedding:
+  model: BAAI/bge-large-zh-v1.5  # 1024-dim, optimized for Chinese
+  device: cpu
+  max_length: 512
+
+# PostgreSQL with Chinese parser
+# Install: apt install postgresql-16-zhparser
+# CREATE TEXT SEARCH CONFIGURATION chinese (PARSER = zhparser);
+```
+
+### Switching Engines
+
+All retrieval is abstracted behind `tiered_context_injector.py`. To switch engines:
+
+```bash
+# Use Elasticsearch instead of PostgreSQL
+python3 scripts/tiered_context_injector.py --engine elasticsearch \
+  --es-url http://localhost:9200
+
+# Use Milvus for vector search
+python3 scripts/tiered_context_injector.py --engine milvus \
+  --milvus-uri http://localhost:19530
+
+# Use SQLite-only (lightweight mode)
+python3 scripts/tiered_context_injector.py --engine sqlite
+```
+
+The engine abstraction layer lives in `scripts/retrieval_router.py` (auto-detects available backends at startup).
+
+### What the Installer Does
+
+By default, the installer probes your system and chooses:
+
+1. **Has PostgreSQL?** → Enable Hindsight + gbrain (recommended)
+2. **Has Docker?** → Enable agentmemory MCP
+3. **Neither?** → SQLite FTS5 fallback
+
+Pass `--engine` to override:
+```bash
+python3 installer/install.py --engine postgresql   # Force PostgreSQL
+python3 installer/install.py --engine elasticsearch # Force ES
+python3 installer/install.py --engine lightweight   # SQLite only
+```

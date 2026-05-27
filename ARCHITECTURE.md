@@ -1,8 +1,8 @@
-# Architecture: Hermes Memory Installer v4.0
+# Architecture: Hermes Memory Installer v3.0
 
 ## Overview
 
-The v4.0 memory system is a **4-tier, multi-engine architecture** designed for production AI agents. It replaces v3.0's fragile single-engine (SQLite FTS5) design with a battle-tested, horizontally layered system that has run continuously for 2+ months.
+The v3.0 memory system is a **4-tier, multi-engine architecture** designed for production AI agents. It replaces the old single-engine single-engine (SQLite FTS5) design with a battle-tested, horizontally layered system that has run continuously for 2+ months.
 
 ## Design Principles
 
@@ -143,3 +143,82 @@ All Python scripts use **stdlib only** — zero third-party dependencies for the
 | gbrain-embed down | semantic search degraded to keyword | `systemctl restart gbrain-embed` |
 | memory tool full | New writes rejected | `compact_memory.py` or manual cleanup |
 | PostgreSQL down | L1+L3 lost, L0+L2 still work | Full PostgreSQL recovery |
+
+## Engine Abstraction Layer
+
+The retrieval layer is fully pluggable. `tiered_context_injector.py` discovers available backends at startup and selects the best combination.
+
+### Discovery Order
+
+```
+1. Check PostgreSQL connection (for Hindsight + gbrain)
+2. Check Docker socket (for agentmemory MCP)
+3. Check Elasticsearch endpoint (if configured)
+4. Check Milvus endpoint (if configured)
+5. Fallback to SQLite FTS5
+```
+
+### Language-Specific Backend Recommendations
+
+| Use Case | Recommended Backend | Rationale |
+|----------|-------------------|-----------|
+| English, <10K docs | SQLite FTS5 (stdlib) | Zero dependencies, fast enough |
+| English, <100K docs | PostgreSQL tsvector | Full-text search + auto-retain |
+| Any language, semantic | pgvector (+ BGE-small) | Cross-language, finds meaning not keywords |
+| Chinese, <100K docs | PostgreSQL + zhparser | Proper Chinese word segmentation |
+| Chinese, semantic | pgvector + BGE-large-zh-v1.5 | Chinese-optimized embeddings |
+| Japanese/Korean | Elasticsearch + ICU/Nori | Best CJK support outside Python |
+| Multi-language mixed | agentmemory MCP (hybrid) | BM25 + vector + graph RRF fusion |
+| Knowledge graph queries | gbrain (pgvector + wikilinks) | Entity relationships, timeline |
+
+### Engine Configuration File
+
+`~/.hermes/config.yaml` allows per-engine settings:
+
+```yaml
+engine:
+  primary: hindsight           # default engine
+  secondary: agentmemory       # fallback engine
+  fallback: sqlite             # last resort (always available)
+  embeddings:
+    model: BAAI/bge-small-en   # or BGE-large-zh for Chinese
+    device: cpu
+  postgresql:
+    url: postgresql://localhost:5432/hindsight
+  elasticsearch:
+    url: http://localhost:9200
+  milvus:
+    uri: http://localhost:19530
+  sqlite:
+    path: ~/.hermes/pool.db
+```
+
+### Performance by Engine
+
+| Engine | Query Latency | Index Speed | Disk Usage | Recall (English) | Recall (Chinese) |
+|--------|--------------|-------------|------------|-----------------|-----------------|
+| SQLite FTS5 | <1ms | Fast | Low | ~30% keyword | ~10% (no tokenizer) |
+| SQLite FTS5 + ICU | <1ms | Fast | Low | ~30% | ~50% keyword |
+| PostgreSQL tsvector | <5ms | Fast | Medium | ~40% | ~50% (zhparser) |
+| pgvector (BGE-small) | <20ms | Medium | Medium | ~85% semantic | ~60% (BGE-small-en) |
+| pgvector (BGE-large-zh) | <50ms | Slow | High | ~80% | ~90% semantic |
+| agentmemory hybrid | <100ms | Medium | Medium (Docker) | ~95% RRF | ~85% RRF |
+| Elasticsearch | <10ms | Fast | High | ~90% | ~95% (IK) |
+| Milvus | <5ms | Fast | High | ~95% | ~95% |
+
+### Adding a Custom Engine
+
+Implement the `RetrievalBackend` interface:
+
+```python
+# scripts/retrieval_router.py
+class RetrievalBackend:
+    def search(self, query: str, limit: int = 10) -> list[dict]:
+        raise NotImplementedError
+    def index(self, doc: dict):
+        raise NotImplementedError
+    def health(self) -> bool:
+        raise NotImplementedError
+```
+
+Register your backend, and `tiered_context_injector.py` will auto-discover it.
