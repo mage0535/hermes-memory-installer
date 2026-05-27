@@ -364,18 +364,88 @@ python3 installer/install.py --engine lightweight    # 仅 SQLite
 
 ### 如何选择
 
-```bash
-# 安装时通过 --embedding 参数指定模型：
-python3 installer/install.py --embedding BAAI/bge-large-zh-v1.5   # 中文
-python3 installer/install.py --embedding sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2  # 50+语言
-python3 installer/install.py --embedding all-MiniLM-L6-v2          # 轻量英文
-python3 installer/install.py --embedding intfloat/multilingual-e5-base  # 企业多语言
+三种方式选择 Embedding 模型：
 
-# 安装后随时修改 config.yaml：
-#   embedding:
-#     model: <your-model>
-#     device: cpu
+#### 方式一：交互式选择器（首次安装推荐）
+
+运行安装器时不加 `--embedding` 参数，会出现交互菜单：
+
 ```
+$ python3 installer/install.py
+
+  ╔══════════════════════════════════════════════════════╗
+  ║  📊 选择 Embedding 模型                              ║
+  ╠══════════════════════════════════════════════════════╣
+  ║  不同模型在语言支持、精度和资源消耗上差异很大。        ║
+  ║  如果不确定，选择 1（推荐默认）。                     ║
+  ╚══════════════════════════════════════════════════════╝
+
+   1) ⭐ BAAI/bge-base-en-v1.5
+      768维 | 英文 | 133MB   |  英文默认
+
+   2)    BAAI/bge-small-en
+      384维 | 英文 | 33MB    |  轻量英文
+
+   5) ⭐ BAAI/bge-large-zh-v1.5
+      1024维 | 中文 | 1.34GB  |  中文最佳
+
+   8)    paraphrase-multilingual-MiniLM-L12-v2
+      768维 | 50+语言 | 470MB |  多语言50种
+
+   9) ⭐ intfloat/multilingual-e5-small
+      384维 | 100+语言 | 118MB |  多语言轻量
+
+  10) ⭐ intfloat/multilingual-e5-base
+      768维 | 100+语言 | 278MB |  企业多语言
+
+   c) 自定义 — 输入任意 HuggingFace 模型 ID
+
+  请选择 [1-10/c] (默认: 1):
+```
+
+选择器将你的选择写入 `~/.hermes/scripts/embedding_config.json`。
+
+#### 方式二：命令行参数（非交互/自动化安装）
+
+```bash
+python3 installer/install.py --embedding BAAI/bge-large-zh-v1.5   # 中文
+python3 installer/install.py --embedding intfloat/multilingual-e5-base  # 企业多语言
+python3 installer/install.py --lang zh     # 自动检测 → BGE-large-zh-v1.5
+python3 installer/install.py --noninteractive                       # 跳过交互用默认值
+```
+
+#### 方式三：自定义模型
+
+在交互菜单选择 `c`，或直接传任何 HuggingFace 模型 ID：
+
+```bash
+python3 installer/install.py --embedding Alibaba-NLP/gte-multilingual-base
+python3 installer/install.py --embedding sentence-transformers/LaBSE
+```
+
+任何 `sentence-transformers` 兼容的 HuggingFace 模型都可以用。安装后也可以直接修改配置文件：
+
+```json
+// ~/.hermes/scripts/embedding_config.json
+{"model": "intfloat/multilingual-e5-base", "device": "cpu"}
+```
+
+#### AI Assistant 安全提示
+
+当安装器检测到在 AI 助手环境下运行（非交互式 TTY 或设置了 `AI_ASSISTED=1`），会暂停提示：
+
+```
+  ╔══════════════════════════════════════════════════════╗
+  ║  ⚠️  检测到 AI 助手运行环境                          ║
+  ║                                                    ║
+  ║  请向用户确认以下内容：                              ║
+  ║  1. 用户需要哪种语言的检索支持？                    ║
+  ║  2. 服务器可用磁盘和内存空间？                      ║
+  ║  3. 选择对应的模型编号                              ║
+  ╚══════════════════════════════════════════════════════╝
+```
+
+这个机制防止 AI 助手在未与用户确认的情况下选择不合适的模型。设置 `EMBEDDING_MODEL` 环境变量可跳过此提示。
 
 ### 模型详解
 

@@ -281,134 +281,88 @@ The retrieval engine is only half the story — the **embedding model** determin
 
 ### How to Choose
 
-```bash
-# Installer supports --embedding flag for model selection:
-python3 installer/install.py --embedding BAAI/bge-large-zh-v1.5   # Chinese
-python3 installer/install.py --embedding sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2  # 50+ languages
-python3 installer/install.py --embedding all-MiniLM-L6-v2          # Lightweight English
-python3 installer/install.py --embedding intfloat/multilingual-e5-base  # Enterprise multi-language
+You have three ways to select your embedding model:
 
-# After install, change model anytime in config.yaml:
-#   embedding:
-#     model: <your-model>
-#     device: cpu
+#### Method 1: Interactive Picker (Recommended for first-time install)
+
+Run the installer with no `--embedding` flag — it presents an interactive menu:
+
+```
+$ python3 installer/install.py
+
+  ╔══════════════════════════════════════════════════════╗
+  ║  📊 Select Embedding Model                          ║
+  ╠══════════════════════════════════════════════════════╣
+  ║  Different models vary in language support,          ║
+  ║  accuracy, and resource usage.                      ║
+  ║  If unsure, choose 1 (recommended default).          ║
+  ╚══════════════════════════════════════════════════════╝
+
+   1) ⭐ BAAI/bge-base-en-v1.5
+      768d | English | 133MB  |  EN default
+
+   2)    BAAI/bge-small-en
+      384d | English | 33MB   |  Lightweight EN
+
+   3)    BAAI/bge-large-en-v1.5
+      1024d | English | 1.34GB |  Max EN accuracy
+
+   ...  (6 more options)
+
+  10) ⭐ intfloat/multilingual-e5-base
+      768d | 100+ languages | 278MB  |  Multi enterprise
+
+   c) Custom — enter any HuggingFace model ID
+
+  Please select [1-10/c] (default: 1):
 ```
 
-### Model Deep-Dives
+The picker remembers your choice and writes it to `~/.hermes/scripts/embedding_config.json`.
 
----
+#### Method 2: Non-interactive (CLI flag)
 
-#### 1. BAAI/bge-small-en ⭐ Default (English, 384-dim, 33MB)
+For automated/scripted installs, pass `--embedding` directly:
 
-**The default.** Fast, tiny, good-enough recall for most English tasks. Runs on any machine including Raspberry Pi.
+```bash
+python3 installer/install.py --embedding BAAI/bge-large-zh-v1.5   # Chinese
+python3 installer/install.py --embedding intfloat/multilingual-e5-base  # Enterprise multi
+python3 installer/install.py --lang zh     # Auto-detect → BGE-large-zh-v1.5
+python3 installer/install.py --noninteractive                       # Skip prompts, use default
+```
 
-- **Strengths:** 33MB RAM, <10ms inference on CPU, best quality-per-byte ratio
-- **Weaknesses:** English only, no CJK support at all
-- **Use when:** You need a working English setup immediately and don't want to download 1GB+
-- **Speed benchmark:** 0.008s per query on Intel Xeon
-- **MTEB score:** 51.7 (standard), 60.9 (retrieval)
+#### Method 3: Custom Model
 
-#### 2. BAAI/bge-base-en-v1.5 (English, 768-dim, 133MB)
+Choose option `c` in the interactive picker, or pass any HuggingFace model ID:
 
-The step-up from bge-small. Better semantic understanding for domain-specific English (legal, medical, code).
+```bash
+python3 installer/install.py --embedding Alibaba-NLP/gte-multilingual-base
+python3 installer/install.py --embedding sentence-transformers/LaBSE
+```
 
-- **Strengths:** 768-dim captures more nuance, strong on domain-specific queries
-- **Weaknesses:** English only, 4x larger than bge-small
-- **Use when:** English production, better recall needed than bge-small
-- **Speed benchmark:** 0.025s per query on Intel Xeon
-- **MTEB score:** 54.4 (standard), 63.7 (retrieval)
+Any `sentence-transformers` compatible model from HuggingFace works. After install, you can also change the model by editing `~/.hermes/scripts/embedding_config.json`:
 
-#### 3. BAAI/bge-large-en-v1.5 (English, 1024-dim, 1.34GB)
+```json
+{"model": "intfloat/multilingual-e5-base", "device": "cpu"}
+```
 
-Maximum English accuracy. Use when precision matters more than speed.
+#### AI Assistant Guard
 
-- **Strengths:** 1024-dim, SOTA English retrieval, best for QA/document search
-- **Weaknesses:** 1.34GB RAM, 5x slower than bge-small on CPU, GPU recommended
-- **Use when:** Production English QA, legal document search, precision-critical
-- **Speed benchmark:** 0.12s per query on Intel Xeon (0.02s on GPU)
-- **MTEB score:** 58.2 (standard), 64.5 (retrieval)
+When the installer detects it's running under an AI assistant (non-interactive TTY or `AI_ASSISTED=1` env), it pauses to display a reminder:
 
-#### 4. all-MiniLM-L6-v2 (English, 384-dim, 23MB)
+```
+  ╔══════════════════════════════════════════════════════╗
+  ║  ⚠️  AI assistant detected                          ║
+  ║                                                    ║
+  ║  Please confirm with the user:                     ║
+  ║  1. What language(s) does the user need?           ║
+  ║  2. Available disk space and RAM on the server?    ║
+  ║  3. Select the matching model number below         ║
+  ╚══════════════════════════════════════════════════════╝
+```
 
-The lightest option. Great for Raspberry Pi, 256MB VPS, or any extreme resource constraint.
+This prevents silent model selection that might not match the user's language needs or resource constraints. Set `EMBEDDING_MODEL` env var to bypass.
 
-- **Strengths:** Only 23MB, runs anywhere, barely uses RAM
-- **Weaknesses:** Outdated (2020 architecture), limited vocab, moderate recall
-- **Use when:** You have <512MB RAM and English-only is acceptable
-- **Speed benchmark:** 0.005s per query on any CPU
-- **MTEB score:** 47.2 (standard)
-
-#### 5. BAAI/bge-large-zh-v1.5 ⭐ Recommended Chinese (Chinese, 1024-dim, 1.34GB)
-
-**The best Chinese embedding model available.** Optimized for Chinese semantics, idioms, and domain-specific terms.
-
-- **Strengths:** SOTA Chinese retrieval, 1024-dim captures Chinese nuance, strong on financial/medical Chinese
-- **Weaknesses:** Chinese only, large (1.34GB), slow on CPU
-- **Use when:** Primary language is Chinese — this is the default recommendation
-- **Speed benchmark:** 0.15s per query on Intel Xeon (0.03s on GPU)
-- **C-MTEB score:** 64.3 (standard), 67.2 (retrieval) — top of Chinese leaderboard
-
-#### 6. text2vec-large-chinese (Chinese, 768-dim, 1.2GB)
-
-A solid Chinese alternative to BGE-large-zh. Slightly smaller, comparable performance for FAQ matching.
-
-- **Strengths:** Good Chinese understanding, 768-dim (smaller than BGE-large-zh), good for FAQ/knowledge base matching
-- **Weaknesses:** Less actively maintained, no multilingual, 1.2GB still heavy
-- **Use when:** Chinese FAQ matching, want smaller dimensions than BGE-large-zh
-- **Speed benchmark:** 0.10s per query on Intel Xeon
-- **Note:** If unsure, prefer BGE-large-zh-v1.5 — it's more actively maintained
-
-#### 7. BAAI/bge-small-zh-v1.5 (Chinese, 512-dim, 45MB)
-
-Lightweight Chinese model for low-resource environments.
-
-- **Strengths:** Only 45MB, fast inference, reasonable Chinese recall
-- **Weaknesses:** 512-dim loses some Chinese nuance, not for precision tasks
-- **Use when:** Chinese content on low-RAM server (Raspberry Pi, 512MB VPS)
-- **Speed benchmark:** 0.01s per query on any CPU
-
-#### 8. paraphrase-multilingual-MiniLM-L12-v2 (50+ languages, 768-dim, 470MB)
-
-One model to rule most languages. Covers English, Chinese, Japanese, Korean, French, German, Spanish, and 44+ more.
-
-- **Strengths:** 50+ languages in one model, good cross-language transfer, 470MB moderate size
-- **Weaknesses:** Not specialized for any single language, no dedicated Chinese tuning
-- **Use when:** You need 3+ languages and can't run separate models per language
-- **Speed benchmark:** 0.08s per query on Intel Xeon
-- **Languages:** ar, bg, ca, cs, da, de, el, en, es, et, fa, fi, fr, he, hi, hr, hu, hy, id, it, ja, ko, lt, lv, ms, nl, no, pl, pt, ro, ru, sk, sl, sq, sr, sv, th, tr, uk, vi, zh-cn, zh-tw
-
-#### 9. intfloat/multilingual-e5-small (100+ languages, 384-dim, 118MB)
-
-Broadest language coverage. 100+ languages, smaller than multilingual-MiniLM, good accuracy per byte.
-
-- **Strengths:** 100+ languages, 118MB (4x smaller than MiniLM multilingual), strong cross-language
-- **Weaknesses:** 384-dim limits per-language precision, slightly lower accuracy than dedicated models
-- **Use when:** Extremely diverse language requirements, budget-conscious
-- **Speed benchmark:** 0.02s per query on Intel Xeon
-- **MTEB score (multilingual):** 56.8 (standard)
-
-#### 10. intfloat/multilingual-e5-base (100+ languages, 768-dim, 278MB)
-
-Enterprise multi-language. Broadest coverage with production-grade accuracy.
-
-- **Strengths:** 100+ languages, 768-dim good balance, consistent quality across languages
-- **Weaknesses:** 278MB, slower than e5-small, overkill for single-language setups
-- **Use when:** Enterprise product supporting many languages, need consistent quality
-- **Speed benchmark:** 0.06s per query on Intel Xeon
-- **MTEB score (multilingual):** 60.3 (standard)
-
-### Quick Reference: Which Model to Pick?
-
-| Your Situation | Recommended Model | Why |
-|----------------|-------------------|-----|
-| English, first time | `BAAI/bge-base-en-v1.5` | Best English quality-per-byte |
-| Chinese production | `BAAI/bge-large-zh-v1.5` | 1024-dim, Chinese SOTA |
-| Chinese + English mixed | `intfloat/multilingual-e5-small` | Cross-language without 1GB+ overhead |
-| 3+ languages | `intfloat/multilingual-e5-base` | 100+ languages, production-grade |
-| Low RAM (<1GB) | `BAAI/bge-small-zh-v1.5` (45MB) or `all-MiniLM-L6-v2` (23MB) | Runs on anything |
-| Max accuracy | `BAAI/bge-large-zh-v1.5` or `BAAI/bge-large-en-v1.5` | SOTA in their language |
-
-### Language-Aware Installer
+#### Quick Reference: Which Model to Pick?### Language-Aware Installer
 
 The `--lang` flag auto-selects the best model for your language:
 
