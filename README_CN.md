@@ -28,11 +28,11 @@
 
 ## 发现的问题（痛点驱动设计）
 
-### v3.0 的 6 个致命缺陷
+### 的 6 个致命缺陷
 
 **1. SQLite FTS5 单路检索 — 语义搜索失败**
 
-v3.0 的 SQLite FTS5 只支持关键词匹配。当你问"之前那个关于代理的讨论"时，FTS5 找不到包含"agent"但没有"代理"的记录。**语义搜索能力为 0**。
+SQLite FTS5 只支持关键词匹配。当你问"之前那个关于代理的讨论"时，FTS5 找不到包含"agent"但没有"代理"的记录。**语义搜索能力为 0**。
 
 **修复 (v3.0)**: 4 路并行检索（state.db FTS5 → Hindsight 语义 → agentmemory 混合 → gbrain 知识图谱），通过 Reciprocal Rank Fusion (k=60) 融合排序。语义召回率从 0% 提升到 **95%+**。
 
@@ -40,17 +40,17 @@ v3.0 的 SQLite FTS5 只支持关键词匹配。当你问"之前那个关于代�
 
 **2. 没有真正的自动记忆 — 重启即丢失**
 
-v3.0 的"记忆"就是 markdown 文件 + 手动 archive。Session 结束后数据在 state.db 里沉没，**重启后 agent 完全失忆**。
+"记忆"就是 markdown 文件 + 手动 archive。Session 结束后数据在 state.db 里沉没，**重启后 agent 完全失忆**。
 
-**修复 (v3.0)**: Hindsight Memory Server，每轮对话自动 `auto-retain` 存储关键信息到 PostgreSQL。每周日 5:30 `Hindsight Reflect` 自动生成用户画像更新。**零人工介入，真正持久化**。
+**修复 **: Hindsight Memory Server，每轮对话自动 `auto-retain` 存储关键信息到 PostgreSQL。每周日 5:30 `Hindsight Reflect` 自动生成用户画像更新。**零人工介入，真正持久化**。
 
 ---
 
-**3. 设计未落地 — 只存在于文档中**
+**设计未落地 — 只存在于文档中**
 
-v3.0 的 3 层 skill 架构写得漂亮，但从没在生产环境跑过。Skills 被安装到 `~/.hermes/skills/` 但从没被加载使用。
+3 层 skill 架构写得漂亮，但从没在生产环境跑过。Skills 被安装到 `~/.hermes/skills/` 但从没被加载使用。
 
-**修复 (v3.0)**: 全部组件已 **实际运行 2+ 个月**：
+**修复 **: 全部组件已 **实际运行 2+ 个月**：
 - `hindsight.service` → systemd 守护，active for 30+ days
 - `agentmemory` → Docker 容器，Up 12 days
 - `gbrain-embed.service` → 本地 embedding 服务，systemd
@@ -60,9 +60,9 @@ v3.0 的 3 层 skill 架构写得漂亮，但从没在生产环境跑过。Skill
 
 **4. 脚本未经过生产检验**
 
-v3.0 的 8 个脚本是为"设计"写的，不是为"运行"写的。没有错误处理、没有断点续传、没有超时重试。
+8 个脚本是为"设计"写的，不是为"运行"写的。没有错误处理、没有断点续传、没有超时重试。
 
-**修复 (v3.0)**: 16 个脚本全部从实际生产环境提取：
+**修复**: 16 个脚本全部从实际生产环境提取：
 - `tiered_context_injector.py` (15.2KB) — RRF 融合 + 半衰期衰减
 - `session_to_gbrain.py` (16.7KB) — watermark 增量同步 + 断点续传
 - `memory_guardian.py` (11.7KB) — 容量/冲突/过期三合一检测
@@ -73,9 +73,8 @@ v3.0 的 8 个脚本是为"设计"写的，不是为"运行"写的。没有错�
 
 当一个领域（如 A 股分析）频繁对话时，5KB 的 memory 工具很快被股票信息填满。其他领域（如关系分析、系统配置）全部被挤出。
 
-**修复 (v3.0)**: 5 领域配额路由：
+**修复 **: 5 领域配额路由：
 ```
-kiki  (500 chars)  关系分析
 stock (400 chars)  A股策略
 system(300 chars)  系统配置
 promo (200 chars)  渠道推广
@@ -87,9 +86,9 @@ misc  (200 chars)  其他
 
 **6. 没有 embedding — 无法语义搜索**
 
-v3.0 完全没有向量化能力。"找到讨论过 curl 超时问题的那个 session" 只能靠猜关键词。
+完全没有向量化能力。"找到讨论过 curl 超时问题的那个 session" 只能靠猜关键词。
 
-**修复 (v3.0)**: 本地 BGE-small 模型 + pgvector 扩展 + gbrain-embed 服务。10005+ 页面全部向量化，支持：
+**修复 **: 本地 BGE-small 模型 + pgvector 扩展 + gbrain-embed 服务。10005+ 页面全部向量化，支持：
 - 语义相似度搜索
 - `mcp_gbrain_query` 混合搜索
 - `tiered_context_injector.py` RRF 融合
@@ -155,7 +154,7 @@ systemctl restart hermes-gateway
 
 ## 环境要求
 
-- **Hermes Agent**（已安装）
+- **Hermes Agent**
 - **Python 3.9+**
 - **PostgreSQL 16**（Hindsight + gbrain）
 - **Docker**（agentmemory MCP）
@@ -257,7 +256,7 @@ A: 重新运行 `python3 installer/install.py`，安装器会自动覆盖旧脚�
 
 ## 选择你的多语言检索引擎
 
-v3.0 设计为 **引擎无关** — 你可以根据语言和规模自由选择检索后端，也可以混搭使用，从简单起步，后期无缝升级。
+设计为 **引擎无关** — 你可以根据语言和规模自由选择检索后端，也可以混搭使用，从简单起步，后期无缝升级。
 
 ### 引擎对比表
 
@@ -307,7 +306,7 @@ python3 installer/install.py --lightweight
 | **pgvector 可用？** | ✅ 原生支持 | ✅ 使用中文 embedding 模型即可 |
 | **Elasticsearch** | Standard 分词器 | **IK 分词器**（中文领域标杆） |
 
-**推荐纯中文配置：**
+**纯中文配置：**
 
 ```yaml
 # gbrain-embed 模型 → 中文 embedding
