@@ -281,9 +281,9 @@ The retrieval engine is only half the story — the **embedding model** determin
 
 ### How to Choose
 
-You have three ways to select your embedding model:
+You have three ways to select your embedding model.
 
-#### Method 1: Interactive Picker (Recommended for first-time install)
+#### Interactive Picker (Recommended for first-time install)
 
 Run the installer with no `--embedding` flag — it presents an interactive menu:
 
@@ -298,87 +298,159 @@ $ python3 installer/install.py
   ║  If unsure, choose 1 (recommended default).          ║
   ╚══════════════════════════════════════════════════════╝
 
-   1) ⭐ BAAI/bge-base-en-v1.5
-      768d | English | 133MB  |  EN default
+   1) ⭐ intfloat/multilingual-e5-small
+      384d | 100+ languages | ~470MB  |  Recommended, global users
 
-   2)    BAAI/bge-small-en
-      384d | English | 33MB   |  Lightweight EN
+   2)    BAAI/bge-small-zh-v1.5
+      512d | Chinese optimized | ~96MB  |  Chinese-only, minimal resources
 
-   3)    BAAI/bge-large-en-v1.5
-      1024d | English | 1.34GB |  Max EN accuracy
+   3)    paraphrase-multilingual-MiniLM-L12-v2
+      384d | 50+ languages | ~471MB  |  Mature community model
 
-   ...  (6 more options)
+   4)    Alibaba-NLP/gte-multilingual-base
+      768d | 75+ languages | ~610MB  |  High Chinese accuracy, 8K tokens
 
-  10) ⭐ intfloat/multilingual-e5-base
-      768d | 100+ languages | 278MB  |  Multi enterprise
+   5)    sentence-transformers/LaBSE
+      768d | 109 languages | ~471MB  |  Cross-lingual alignment
+
+   6)    BAAI/bge-m3
+      1024d | 100+ languages | ~2GB   |  Maximum precision, heavy
 
    c) Custom — enter any HuggingFace model ID
 
-  Please select [1-10/c] (default: 1):
+  Please select [1-6/c] (default: 1):
 ```
 
-The picker remembers your choice and writes it to `~/.hermes/scripts/embedding_config.json`.
+The picker writes your choice to `~/.hermes/scripts/embedding_config.json`.
 
-#### Method 2: Non-interactive (CLI flag)
-
-For automated/scripted installs, pass `--embedding` directly:
+#### CLI Flag (non-interactive)
 
 ```bash
-python3 installer/install.py --embedding BAAI/bge-large-zh-v1.5   # Chinese
-python3 installer/install.py --embedding intfloat/multilingual-e5-base  # Enterprise multi
-python3 installer/install.py --lang zh     # Auto-detect → BGE-large-zh-v1.5
-python3 installer/install.py --noninteractive                       # Skip prompts, use default
-```
-
-#### Method 3: Custom Model
-
-Choose option `c` in the interactive picker, or pass any HuggingFace model ID:
-
-```bash
+python3 installer/install.py --embedding BAAI/bge-m3
 python3 installer/install.py --embedding Alibaba-NLP/gte-multilingual-base
-python3 installer/install.py --embedding sentence-transformers/LaBSE
+python3 installer/install.py --lang zh          # auto → bge-small-zh-v1.5
+python3 installer/install.py --noninteractive   # skip prompts, use default
 ```
 
-Any `sentence-transformers` compatible model from HuggingFace works. After install, you can also change the model by editing `~/.hermes/scripts/embedding_config.json`:
+#### Custom Model
 
+Choose option `c` in the picker, or pass any HuggingFace model ID:
+
+```bash
+python3 installer/install.py --embedding your-org/your-model
+```
+
+After install, change anytime by editing `~/.hermes/scripts/embedding_config.json`:
 ```json
-{"model": "intfloat/multilingual-e5-base", "device": "cpu"}
+{"model": "intfloat/multilingual-e5-small", "device": "cpu"}
 ```
 
 #### AI Assistant Guard
 
-When the installer detects it's running under an AI assistant (non-interactive TTY or `AI_ASSISTED=1` env), it pauses to display a reminder:
+When the installer detects an AI assistant environment (non-interactive TTY or `AI_ASSISTED=1`), it pauses with a reminder to confirm the model choice with the user before proceeding. Set `EMBEDDING_MODEL` env var to bypass.
 
+### Model Deep-Dives
+
+---
+
+#### 1. intfloat/multilingual-e5-small ⭐ Recommended (Default)
+
+**The default choice for global users.** 384-dim with 100+ language support. Best balance of coverage, speed, and size.
+
+- **Languages:** 100+
+- **Dimensions:** 384 | **Size:** ~470MB
+- **Strengths:** Broadest coverage at moderate size, strong cross-lingual, actively maintained
+- **Weaknesses:** 384-dim limits per-language precision vs dedicated models
+- **Use when:** You need multi-language out of the box
+- **MTEB (multilingual):** 56.8
+
+#### 2. BAAI/bge-small-zh-v1.5 (Chinese-optimized, Minimal Resources)
+
+**Lightweight Chinese-only model.** Optimized for Chinese semantics. Single-language focus keeps it tiny.
+
+- **Languages:** Chinese (optimized), English
+- **Dimensions:** 512 | **Size:** ~96MB
+- **Strengths:** Tiny, fast CPU inference, optimized Chinese semantics
+- **Weaknesses:** Chinese-only optimization, limited multilingual
+- **Use when:** Primary language is Chinese, server has <1GB RAM
+- **Speed:** <10ms per query on CPU
+
+#### 3. paraphrase-multilingual-MiniLM-L12-v2 (Mature Community Model)
+
+**Well-established multilingual model from sentence-transformers.** 50+ languages, battle-tested in production.
+
+- **Languages:** 50+
+- **Dimensions:** 384 | **Size:** ~471MB
+- **Strengths:** Mature, widely adopted, excellent community support
+- **Weaknesses:** 384-dim, not specialized for Chinese
+- **Use when:** You need a proven, community-vetted multilingual model
+
+#### 4. Alibaba-NLP/gte-multilingual-base (High Chinese Accuracy, 8K Tokens)
+
+**Alibaba's multilingual model with strong Chinese performance.** 8K token context — ideal for long documents.
+
+- **Languages:** 75+
+- **Dimensions:** 768 | **Size:** ~610MB
+- **Strengths:** High Chinese accuracy, 8K context window, 768-dim
+- **Weaknesses:** Larger than e5-small, newer model
+- **Use when:** Chinese-heavy content with long documents
+- **Note:** 8K context means fewer chunk splits for Chinese docs
+
+#### 5. sentence-transformers/LaBSE (Cross-lingual Alignment)
+
+**Google's Language-agnostic BERT Sentence Embedding.** 109 languages with strong cross-lingual alignment.
+
+- **Languages:** 109
+- **Dimensions:** 768 | **Size:** ~471MB
+- **Strengths:** 109 languages, designed for cross-lingual retrieval (EN query → ZH results)
+- **Weaknesses:** Slower inference, higher memory
+- **Use when:** Cross-lingual search is critical
+
+#### 6. BAAI/bge-m3 (Maximum Precision, Heavy)
+
+**BAAI's flagship model.** 1024-dim, 100+ languages. Maximum precision at ~2GB.
+
+- **Languages:** 100+
+- **Dimensions:** 1024 | **Size:** ~2GB
+- **Strengths:** Highest BGE accuracy, 1024-dim captures fine semantic nuance
+- **Weaknesses:** ~2GB RAM, GPU strongly recommended
+- **Use when:** Precision is critical with GPU or abundant RAM
+- **MTEB:** 62.8 (multilingual)
+
+#### 7. Custom (Enter Model ID)
+
+**Any HuggingFace sentence-transformers model.**
+```bash
+python3 installer/install.py --embedding your-org/your-model
 ```
-  ╔══════════════════════════════════════════════════════╗
-  ║  ⚠️  AI assistant detected                          ║
-  ║                                                    ║
-  ║  Please confirm with the user:                     ║
-  ║  1. What language(s) does the user need?           ║
-  ║  2. Available disk space and RAM on the server?    ║
-  ║  3. Select the matching model number below         ║
-  ╚══════════════════════════════════════════════════════╝
-```
 
-This prevents silent model selection that might not match the user's language needs or resource constraints. Set `EMBEDDING_MODEL` env var to bypass.
+### Quick Reference
 
-#### Quick Reference: Which Model to Pick?### Language-Aware Installer
+| Your Situation | Recommended Model |
+|----------------|-------------------|
+| Global / unsure | `intfloat/multilingual-e5-small` ⭐ |
+| Chinese, low RAM | `BAAI/bge-small-zh-v1.5` |
+| Proven community | `paraphrase-multilingual-MiniLM-L12-v2` |
+| Chinese + long docs | `Alibaba-NLP/gte-multilingual-base` |
+| Cross-lingual search | `sentence-transformers/LaBSE` |
+| Max precision | `BAAI/bge-m3` |
 
-The `--lang` flag auto-selects the best model for your language:
+### Language-Aware Installer
 
 ```bash
 python3 installer/install.py --lang auto  # Detect from locale
-python3 installer/install.py --lang zh    # → BGE-large-zh-v1.5 + zhparser
-python3 installer/install.py --lang en    # → BGE-base-en-v1.5 + English tsvector
-python3 installer/install.py --lang auto --embedding my-org/my-custom-model  # Override
+python3 installer/install.py --lang zh    # → bge-small-zh-v1.5 + zhparser
+python3 installer/install.py --lang en    # → multilingual-e5-small
 ```
 
 ### What Changed From v2.x
 
-The old v2.x shipped two fixed models (`all-MiniLM-L6-v2` + `text2vec-base-chinese`) with a hand-written `select_model.sh` script. v3.0 replaces this with:
+The old v2.x shipped two fixed models (`all-MiniLM-L6-v2` + `text2vec-base-chinese`) with a hand-written `select_embedding_model()` shell function. v3.0 replaces this with:
 
-- **Dynamic model registry** — any HuggingFace `sentence-transformers` model works
-- **Unified `--embedding` flag** — replaces the separate selection script
-- **`--lang` auto-detection** — no manual choice needed for most setups
-- **Single BGE-small default** — good enough for day 1, switch when needs are clear
-- **pgvector support** — embeddings stored in PostgreSQL, not separate SQLite `semantics.db`
+- **6 presets + custom** — wider choice for global/Chinese/multi-language/cross-lingual/max-precision
+- **`--embedding` CLI flag** — non-interactive selection
+- **`--noninteractive` flag** — skip prompts entirely
+- **AI assistant auto-detection** — pauses to confirm model with user
+- **`EMBEDDING_MODEL` env var** — programmatic bypass
+- **`embedding_config.json`** — runtime config, changeable without reinstall
+- **pgvector support** — embeddings in PostgreSQL, not separate SQLite

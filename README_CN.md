@@ -360,15 +360,15 @@ python3 installer/install.py --engine lightweight    # 仅 SQLite
 
 ## Embedding 模型选择指南
 
-检索引擎只是一半——**Embedding 模型**决定了语义搜索在你的语言上是否真正有效。用错模型，中文搜索返回乱码；用对了，跨语言检索如丝般顺滑。
+检索引擎只是一半——**Embedding 模型**决定了语义搜索在你的语言上是否真正有效。
 
 ### 如何选择
 
-三种方式选择 Embedding 模型：
+三种方式选择模型：
 
-#### 方式一：交互式选择器（首次安装推荐）
+#### 交互式选择器（首次安装推荐）
 
-运行安装器时不加 `--embedding` 参数，会出现交互菜单：
+运行安装器时不加 `--embedding` 参数，出现交互菜单：
 
 ```
 $ python3 installer/install.py
@@ -380,204 +380,154 @@ $ python3 installer/install.py
   ║  如果不确定，选择 1（推荐默认）。                     ║
   ╚══════════════════════════════════════════════════════╝
 
-   1) ⭐ BAAI/bge-base-en-v1.5
-      768维 | 英文 | 133MB   |  英文默认
+   1) ⭐ intfloat/multilingual-e5-small
+      384维 | 100+语言 | ~470MB  |  推荐，全球用户
 
-   2)    BAAI/bge-small-en
-      384维 | 英文 | 33MB    |  轻量英文
+   2)    BAAI/bge-small-zh-v1.5
+      512维 | 中文优化 | ~96MB   |  仅中文，低资源
 
-   5) ⭐ BAAI/bge-large-zh-v1.5
-      1024维 | 中文 | 1.34GB  |  中文最佳
+   3)    paraphrase-multilingual-MiniLM-L12-v2
+      384维 | 50+语言 | ~471MB  |  社区成熟模型
 
-   8)    paraphrase-multilingual-MiniLM-L12-v2
-      768维 | 50+语言 | 470MB |  多语言50种
+   4)    Alibaba-NLP/gte-multilingual-base
+      768维 | 75+语言 | ~610MB  |  中文精度高，8K Tokens
 
-   9) ⭐ intfloat/multilingual-e5-small
-      384维 | 100+语言 | 118MB |  多语言轻量
+   5)    sentence-transformers/LaBSE
+      768维 | 109语言 | ~471MB  |  跨语言对齐
 
-  10) ⭐ intfloat/multilingual-e5-base
-      768维 | 100+语言 | 278MB |  企业多语言
+   6)    BAAI/bge-m3
+      1024维 | 100+语言 | ~2GB   |  最高精度，较大
 
    c) 自定义 — 输入任意 HuggingFace 模型 ID
 
-  请选择 [1-10/c] (默认: 1):
+  请选择 [1-6/c] (默认: 1):
 ```
 
-选择器将你的选择写入 `~/.hermes/scripts/embedding_config.json`。
+选择结果写入 `~/.hermes/scripts/embedding_config.json`。
 
-#### 方式二：命令行参数（非交互/自动化安装）
-
-```bash
-python3 installer/install.py --embedding BAAI/bge-large-zh-v1.5   # 中文
-python3 installer/install.py --embedding intfloat/multilingual-e5-base  # 企业多语言
-python3 installer/install.py --lang zh     # 自动检测 → BGE-large-zh-v1.5
-python3 installer/install.py --noninteractive                       # 跳过交互用默认值
-```
-
-#### 方式三：自定义模型
-
-在交互菜单选择 `c`，或直接传任何 HuggingFace 模型 ID：
+#### 命令行参数（非交互安装）
 
 ```bash
+python3 installer/install.py --embedding BAAI/bge-m3
 python3 installer/install.py --embedding Alibaba-NLP/gte-multilingual-base
-python3 installer/install.py --embedding sentence-transformers/LaBSE
+python3 installer/install.py --lang zh          # 自动 → bge-small-zh-v1.5
+python3 installer/install.py --noninteractive   # 跳过交互用默认值
 ```
 
-任何 `sentence-transformers` 兼容的 HuggingFace 模型都可以用。安装后也可以直接修改配置文件：
+#### 自定义模型
 
+选 `c` 或直接传 HuggingFace 模型 ID：
+
+```bash
+python3 installer/install.py --embedding your-org/your-model
+```
+
+安装后修改 `~/.hermes/scripts/embedding_config.json`：
 ```json
-// ~/.hermes/scripts/embedding_config.json
-{"model": "intfloat/multilingual-e5-base", "device": "cpu"}
+{"model": "intfloat/multilingual-e5-small", "device": "cpu"}
 ```
 
 #### AI Assistant 安全提示
 
-当安装器检测到在 AI 助手环境下运行（非交互式 TTY 或设置了 `AI_ASSISTED=1`），会暂停提示：
-
-```
-  ╔══════════════════════════════════════════════════════╗
-  ║  ⚠️  检测到 AI 助手运行环境                          ║
-  ║                                                    ║
-  ║  请向用户确认以下内容：                              ║
-  ║  1. 用户需要哪种语言的检索支持？                    ║
-  ║  2. 服务器可用磁盘和内存空间？                      ║
-  ║  3. 选择对应的模型编号                              ║
-  ╚══════════════════════════════════════════════════════╝
-```
-
-这个机制防止 AI 助手在未与用户确认的情况下选择不合适的模型。设置 `EMBEDDING_MODEL` 环境变量可跳过此提示。
+当安装器检测到在 AI 助手环境下运行（非交互式 TTY 或设置了 `AI_ASSISTED=1`），会暂停提示确认模型选择。设置 `EMBEDDING_MODEL` 环境变量可跳过。
 
 ### 模型详解
 
 ---
 
-#### 1. BAAI/bge-small-en ⭐ 默认（英文，384维，33MB）
+#### 1. intfloat/multilingual-e5-small ⭐ 推荐（默认）
 
-**开箱即用。** 快、小、够用。任何机器包括树莓派都能跑。
+**全球用户默认选择。** 384维，100+语言。覆盖面、速度、体积的最佳平衡。
 
-- **优势：** 仅33MB，CPU推理<10ms，性价比最高
-- **劣势：** 仅英文，完全不支持中日韩
-- **适用场景：** 想立刻跑起来，不想下载1GB+
-- **速度：** Xeon CPU 0.008s/次查询
-- **MTEB评分：** 51.7（通用），60.9（检索）
+- **语言：** 100+ | **维度：** 384 | **大小：** ~470MB
+- **优势：** 覆盖面最广，跨语言能力强，Microsoft/intfloat 持续维护
+- **劣势：** 384维限制单语言精度
+- **适用场景：** 需要开箱即用的多语言支持
 
-#### 2. BAAI/bge-base-en-v1.5（英文，768维，133MB）
+#### 2. BAAI/bge-small-zh-v1.5（中文优化，低资源）
 
-bge-small的升级版。对专业领域英文（法律、医学、代码）语义理解更强。
+**轻量中文模型。** 针对中文语义优化，单语言专注保持小体积。
 
-- **优势：** 768维，对专业领域查询更好
-- **劣势：** 仅英文，比bge-small大4倍
-- **适用场景：** 英文生产环境，需要比bge-small更好的召回率
-- **速度：** Xeon CPU 0.025s/次查询
-- **MTEB评分：** 54.4（通用），63.7（检索）
+- **语言：** 中文（优化）、英文 | **维度：** 512 | **大小：** ~96MB
+- **优势：** 体积小，CPU推理快，中文语义优化
+- **劣势：** 仅中文优化，多语言能力有限
+- **适用场景：** 主要语言为中文，服务器内存<1GB
+- **速度：** CPU <10ms/次
 
-#### 3. BAAI/bge-large-en-v1.5（英文，1024维，1.34GB）
+#### 3. paraphrase-multilingual-MiniLM-L12-v2（社区成熟模型）
 
-最高英文精度。精度优先于速度时的选择。
+**sentence-transformers 的成熟多语言模型。** 50+语言，已在全球生产环境验证。
 
-- **优势：** 1024维，英文检索SOTA，最适合问答/文档搜索
-- **劣势：** 1.34GB，CPU上比bge-small慢5倍，建议GPU
-- **适用场景：** 生产级英文问答、法律文档搜索、高精度场景
-- **速度：** Xeon CPU 0.12s/次（GPU 0.02s）
-- **MTEB评分：** 58.2（通用），64.5（检索）
+- **语言：** 50+ | **维度：** 384 | **大小：** ~471MB
+- **优势：** 成熟稳定，社区支持好，跨语言表现良好
+- **劣势：** 384维，未针对中文专门优化
+- **适用场景：** 需要经过验证的多语言模型
 
-#### 4. all-MiniLM-L6-v2（英文，384维，23MB）
+#### 4. Alibaba-NLP/gte-multilingual-base（中文精度高，8K Tokens）
 
-**最轻量选择。** 适合树莓派、256MB VPS、任何极端资源受限环境。
+**阿里巴巴多语言模型，中文表现强劲。** 支持 8K token 上下文——适合长文档。
 
-- **优势：** 仅23MB，任何地方都能跑
-- **劣势：** 2020年架构，词汇量有限，召回一般
-- **适用场景：** <512MB内存，且仅需英文
-- **速度：** 任何CPU 0.005s/次查询
-- **MTEB评分：** 47.2
+- **语言：** 75+ | **维度：** 768 | **大小：** ~610MB
+- **优势：** 中文精度高，8K上下文窗口，768维
+- **劣势：** 比 e5-small 大，较新
+- **适用场景：** 中文内容为主+长文档
+- **说明：** 8K上下文意味着中文文档的切块更少
 
-#### 5. BAAI/bge-large-zh-v1.5 ⭐ 中文推荐（中文，1024维，1.34GB）
+#### 5. sentence-transformers/LaBSE（跨语言对齐）
 
-**当前最好的中文Embedding模型。** 针对中文语义、成语、专业术语优化。
+**Google 的语言无关 BERT 句嵌入。** 109语言，跨语言对齐能力强。
 
-- **优势：** 中文检索SOTA，1024维捕捉中文细微差异，金融/医疗中文表现强
-- **劣势：** 仅中文，1.34GB，CPU推理慢
-- **适用场景：** 主要语言是中文——**这是默认推荐**
-- **速度：** Xeon CPU 0.15s/次（GPU 0.03s）
-- **C-MTEB评分：** 64.3（通用），67.2（检索）——**中文排行榜第一**
+- **语言：** 109 | **维度：** 768 | **大小：** ~471MB
+- **优势：** 109语言，专为跨语言检索设计（英文搜索→中文结果）
+- **劣势：** 推理慢，内存占用高
+- **适用场景：** 跨语言搜索是关键需求
 
-#### 6. text2vec-large-chinese（中文，768维，1.2GB）
+#### 6. BAAI/bge-m3（最高精度，较大）
 
-BGE-large-zh的可靠替代。稍小，FAQ匹配表现不错。
+**BAAI 旗舰模型。** 1024维，100+语言。最高精度，~2GB。
 
-- **优势：** 中文理解良好，768维（比BGE-large-zh小），适合FAQ/知识库匹配
-- **劣势：** 维护不如BGE活跃，不支持多语言，1.2GB仍然不小
-- **适用场景：** 中文FAQ匹配，想要比BGE-large-zh更小的维度
-- **速度：** Xeon CPU 0.10s/次查询
-- **提示：** 不确定时选BGE-large-zh-v1.5——维护更积极
+- **语言：** 100+ | **维度：** 1024 | **大小：** ~2GB
+- **优势：** BGE系列最高精度，1024维捕捉细微语义
+- **劣势：** ~2GB，强烈建议使用 GPU
+- **适用场景：** 精度至关重要，有 GPU 或充裕内存
+- **MTEB：** 62.8（多语言）
 
-#### 7. BAAI/bge-small-zh-v1.5（中文，512维，45MB）
+#### 7. 自定义（输入模型 ID）
 
-低资源环境的中文轻量模型。
-
-- **优势：** 仅45MB，推理快，中文召回可接受
-- **劣势：** 512维丢失部分中文细微差异，不适合高精度任务
-- **适用场景：** 中文内容+低内存服务器（树莓派、512MB VPS）
-- **速度：** 任何CPU 0.01s/次查询
-
-#### 8. paraphrase-multilingual-MiniLM-L12-v2（50+语言，768维，470MB）
-
-**一个模型覆盖多数语言。** 支持英文、中文、日文、韩文、法文、德文、西班牙文等50+语言。
-
-- **优势：** 50+语言一个模型搞定，跨语言迁移好，470MB体积适中
-- **劣势：** 不专精任何单一语言，无专门中文优化
-- **适用场景：** 需要3种以上语言，且不能为每种语言单独跑模型
-- **速度：** Xeon CPU 0.08s/次查询
-- **覆盖语言：** 英、中、日、韩、法、德、西、俄、阿、葡等50种
-
-#### 9. intfloat/multilingual-e5-small（100+语言，384维，118MB）
-
-**最广泛语言覆盖。** 100+语言，比multilingual-MiniLM小4倍，精度每字节出色。
-
-- **优势：** 100+语言，118MB（比MiniLM多语言版小4倍），跨语言能力强
-- **劣势：** 384维限制单语言精度，不如专用模型准确
-- **适用场景：** 语言需求极其多样，预算敏感
-- **速度：** Xeon CPU 0.02s/次查询
-- **MTEB评分（多语言）：** 56.8
-
-#### 10. intfloat/multilingual-e5-base（100+语言，768维，278MB）
-
-**企业级多语言。** 最广泛覆盖+生产级精度。
-
-- **优势：** 100+语言，768维平衡性好，各语言质量一致
-- **劣势：** 278MB，比e5-small慢，单语言场景大材小用
-- **适用场景：** 企业产品支持多语言，需要稳定质量
-- **速度：** Xeon CPU 0.06s/次查询
-- **MTEB评分（多语言）：** 60.3
+**任何 HuggingFace sentence-transformers 模型。**
+```bash
+python3 installer/install.py --embedding your-org/your-model
+```
 
 ### 快速选择指南
 
-| 你的场景 | 推荐模型 | 原因 |
-|---------|---------|------|
-| 英文，初次使用 | `BAAI/bge-base-en-v1.5` | 英文性价比最高 |
-| 中文生产环境 | `BAAI/bge-large-zh-v1.5` | 1024维，中文SOTA |
-| 中英混合 | `intfloat/multilingual-e5-small` | 跨语言无需1GB+ |
-| 3种以上语言 | `intfloat/multilingual-e5-base` | 100+语言，生产级 |
-| 低内存(<1GB) | `bge-small-zh` (45MB) 或 `all-MiniLM` (23MB) | 任何机器都能跑 |
-| 极限精度 | `BGE-large-zh` 或 `BGE-large-en` | 各自语言的SOTA |
+| 你的场景 | 推荐模型 |
+|---------|---------|
+| 全球/不确定 | `intfloat/multilingual-e5-small` ⭐ |
+| 中文，低内存 | `BAAI/bge-small-zh-v1.5` |
+| 社区成熟 | `paraphrase-multilingual-MiniLM-L12-v2` |
+| 中文+长文档 | `Alibaba-NLP/gte-multilingual-base` |
+| 跨语言搜索 | `sentence-transformers/LaBSE` |
+| 最高精度 | `BAAI/bge-m3` |
 
 ### 语言感知安装
 
 ```bash
 python3 installer/install.py --lang auto  # 从系统设置检测
-python3 installer/install.py --lang zh    # → BGE-large-zh-v1.5 + zhparser
-python3 installer/install.py --lang en    # → BGE-base-en-v1.5 + 英文 tsvector
-python3 installer/install.py --lang auto --embedding my-org/my-model  # 自定义覆盖
+python3 installer/install.py --lang zh    # → bge-small-zh-v1.5 + zhparser
+python3 installer/install.py --lang en    # → multilingual-e5-small
 ```
 
 ### 相比 v2.x 的变化
 
-旧版 v2.x 只有两个固定模型（`all-MiniLM-L6-v2` + `text2vec-base-chinese`），配一个手写的 `select_model.sh` 选择脚本。v3.0 替换为：
+旧版 v2.x 只有两个固定模型（`all-MiniLM-L6-v2` + `text2vec-base-chinese`），配一个手写的 `select_embedding_model()` shell 函数。v3.0 替换为：
 
-- **动态模型注册** — 任何 HuggingFace `sentence-transformers` 模型都可以用
-- **统一 `--embedding` 参数** — 替代了独立的选择脚本
-- **`--lang` 自动检测** — 大多数场景无需手动选择
-- **单一 BGE-small 默认** — 开局够用，语言需求明确后再切换
+- **6 个预设 + 自定义** — 覆盖全球/中文/多语言/跨语言/最高精度场景
+- **`--embedding` CLI 参数** — 非交互式选择
+- **`--noninteractive` 参数** — 完全跳过交互
+- **AI 助手自动检测** — 暂停确认模型选择
+- **`EMBEDDING_MODEL` 环境变量** — 编程式绕过
+- **`embedding_config.json`** — 运行时配置，无需重装即可修改
 - **pgvector 支持** — 向量存储在 PostgreSQL，不再需要独立 SQLite
 
 ## 致谢

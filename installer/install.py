@@ -5,22 +5,18 @@ from pathlib import Path
 
 # ── Model registry ──────────────────────────────────────────────────
 EMBEDDING_MODELS = {
-    '1':  ('BAAI/bge-base-en-v1.5',          'English',              '768d',    '133MB',  '⭐ EN default'),
-    '2':  ('BAAI/bge-small-en',               'English',              '384d',    '33MB',   'Lightweight EN'),
-    '3':  ('BAAI/bge-large-en-v1.5',          'English',              '1024d',   '1.34GB', 'Max EN accuracy'),
-    '4':  ('all-MiniLM-L6-v2',                'English',              '384d',    '23MB',   'Tiniest EN'),
-    '5':  ('BAAI/bge-large-zh-v1.5',          'Chinese',              '1024d',   '1.34GB', '⭐ CN best'),
-    '6':  ('BAAI/bge-small-zh-v1.5',          'Chinese',              '512d',    '45MB',   'Lightweight CN'),
-    '7':  ('text2vec-large-chinese',          'Chinese',              '768d',    '1.2GB',  'CN FAQ'),
-    '8':  ('paraphrase-multilingual-MiniLM-L12-v2', '50+ languages',  '768d',    '470MB',  'Multi 50lang'),
-    '9':  ('intfloat/multilingual-e5-small',  '100+ languages',       '384d',    '118MB',  '⭐ Multi budget'),
-    '10': ('intfloat/multilingual-e5-base',   '100+ languages',       '768d',    '278MB',  '⭐ Multi enterprise'),
+    '1':  ('intfloat/multilingual-e5-small',  '100+ languages',       '384d',    '~470MB', '⭐ Recommended, global users'),
+    '2':  ('BAAI/bge-small-zh-v1.5',          'Chinese optimized',    '512d',    '~96MB',  'Chinese-only, minimal resources'),
+    '3':  ('paraphrase-multilingual-MiniLM-L12-v2', '50+ languages',  '384d',    '~471MB', 'Mature community model'),
+    '4':  ('Alibaba-NLP/gte-multilingual-base', '75+ languages',      '768d',    '~610MB', 'High Chinese accuracy, 8K tokens'),
+    '5':  ('sentence-transformers/LaBSE',     '109 languages',         '768d',    '~471MB', 'Cross-lingual alignment'),
+    '6':  ('BAAI/bge-m3',                     '100+ languages',       '1024d',   '~2GB',   'Maximum precision, heavy'),
 }
 
 LANG_MODEL_MAP = {
-    'en':  'BAAI/bge-base-en-v1.5',
-    'zh':  'BAAI/bge-large-zh-v1.5',
-    'auto': 'BAAI/bge-small-en',
+    'en':  'intfloat/multilingual-e5-small',
+    'zh':  'BAAI/bge-small-zh-v1.5',
+    'auto': 'intfloat/multilingual-e5-small',
 }
 
 parser = argparse.ArgumentParser(description='Hermes Memory Installer v3.0')
@@ -94,7 +90,7 @@ def select_embedding_model():
         print('  ║  Please confirm with the user:                     ║')
         print('  ║  1. What language(s) does the user need?           ║')
         print('  ║  2. Available disk space and RAM on the server?    ║')
-        print('  ║  3. Select the matching model number below         ║')
+        print('  ║  3. Select the matching model number [1-6]         ║')
         print('  ║                                                    ║')
         print('  ║  After confirmation, set env var and re-run:       ║')
         print('  ║  export EMBEDDING_MODEL=<model-id>                 ║')
@@ -130,7 +126,7 @@ def select_embedding_model():
     print('  c) Custom — enter any HuggingFace model ID')
     print()
 
-    choice = input('  Please select [1-10/c] (default: 1): ').strip()
+    choice = input('  Please select [1-6/c] (default: 1): ').strip()
     choice = choice or '1'
 
     if choice.lower() == 'c':
