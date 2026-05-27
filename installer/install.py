@@ -1,5 +1,10 @@
-"""Hermes Memory Installer v4.0 — 4-tier memory system"""
+"""Hermes Memory Installer v3.0 — 4-tier memory system"""
+import argparse
 import os, sys, shutil, subprocess
+parser = argparse.ArgumentParser()
+parser.add_argument('--engine', choices=['auto','postgresql','elasticsearch','lightweight'], default='auto', help='Retrieval engine to use')
+parser.add_argument('--lang', choices=['auto','en','zh'], default='auto', help='Primary language for tuning')
+args = parser.parse_args()
 from pathlib import Path
 
 HERMES = Path.home() / '.hermes'
@@ -38,7 +43,7 @@ def check(msg, ok):
 
 def main():
     print('╔══════════════════════════════════╗')
-    print('║ Hermes Memory Installer v4.0    ║')
+    print('║ Hermes Memory Installer v3.0    ║')
     print('║ 4-tier: Hot → Hindsight →      ║')
     print('║ agentmemory → gbrain           ║')
     print('╚══════════════════════════════════╝')

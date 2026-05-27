@@ -54,7 +54,7 @@ score(doc) = Σ 1/(k + rank_i(doc))
 
 ## 从旧版 (v3.0) 升级
 
-v3.0 仅支持 SQLite FTS5 单路检索。v4.0 升级为:
+v3.0 仅支持 SQLite FTS5 单路检索。v3.0 升级为:
 - 三路并行 (state → hindsight → gbrain)
 - RRF 融合 (vs 简单排序)
 - 领域路由 (vs 全局搜索)

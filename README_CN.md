@@ -1,11 +1,11 @@
-# Hermes Memory Installer v4.0
+# Hermes Memory Installer v3.0
 
 **生产级四层记忆体系，为 Hermes Agent 注入长期记忆。**
 
 3 分钟安装。10005+ 页面索引。2+ 个月连续生产运行。
 
 [![GitHub](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.0-green)](https://github.com/mage0535/hermes-memory-installer/releases)
+[![Version](https://img.shields.io/badge/version-3.0-green)](https://github.com/mage0535/hermes-memory-installer/releases)
 
 ---
 
@@ -28,7 +28,7 @@
 
 v3.0 的 SQLite FTS5 只支持关键词匹配。当你问"之前那个关于代理的讨论"时，FTS5 找不到包含"agent"但没有"代理"的记录。**语义搜索能力为 0**。
 
-**修复 (v4.0)**: 4 路并行检索（state.db FTS5 → Hindsight 语义 → agentmemory 混合 → gbrain 知识图谱），通过 Reciprocal Rank Fusion (k=60) 融合排序。语义召回率从 0% 提升到 **95%+**。
+**修复 (v3.0)**: 4 路并行检索（state.db FTS5 → Hindsight 语义 → agentmemory 混合 → gbrain 知识图谱），通过 Reciprocal Rank Fusion (k=60) 融合排序。语义召回率从 0% 提升到 **95%+**。
 
 ---
 
@@ -36,7 +36,7 @@ v3.0 的 SQLite FTS5 只支持关键词匹配。当你问"之前那个关于代�
 
 v3.0 的"记忆"就是 markdown 文件 + 手动 archive。Session 结束后数据在 state.db 里沉没，**重启后 agent 完全失忆**。
 
-**修复 (v4.0)**: Hindsight Memory Server，每轮对话自动 `auto-retain` 存储关键信息到 PostgreSQL。每周日 5:30 `Hindsight Reflect` 自动生成用户画像更新。**零人工介入，真正持久化**。
+**修复 (v3.0)**: Hindsight Memory Server，每轮对话自动 `auto-retain` 存储关键信息到 PostgreSQL。每周日 5:30 `Hindsight Reflect` 自动生成用户画像更新。**零人工介入，真正持久化**。
 
 ---
 
@@ -44,7 +44,7 @@ v3.0 的"记忆"就是 markdown 文件 + 手动 archive。Session 结束后数�
 
 v3.0 的 3 层 skill 架构写得漂亮，但从没在生产环境跑过。Skills 被安装到 `~/.hermes/skills/` 但从没被加载使用。
 
-**修复 (v4.0)**: 全部组件已 **实际运行 2+ 个月**：
+**修复 (v3.0)**: 全部组件已 **实际运行 2+ 个月**：
 - `hindsight.service` → systemd 守护，active for 30+ days
 - `agentmemory` → Docker 容器，Up 12 days
 - `gbrain-embed.service` → 本地 embedding 服务，systemd
@@ -56,7 +56,7 @@ v3.0 的 3 层 skill 架构写得漂亮，但从没在生产环境跑过。Skill
 
 v3.0 的 8 个脚本是为"设计"写的，不是为"运行"写的。没有错误处理、没有断点续传、没有超时重试。
 
-**修复 (v4.0)**: 16 个脚本全部从实际生产环境提取：
+**修复 (v3.0)**: 16 个脚本全部从实际生产环境提取：
 - `tiered_context_injector.py` (15.2KB) — RRF 融合 + 半衰期衰减
 - `session_to_gbrain.py` (16.7KB) — watermark 增量同步 + 断点续传
 - `memory_guardian.py` (11.7KB) — 容量/冲突/过期三合一检测
@@ -67,7 +67,7 @@ v3.0 的 8 个脚本是为"设计"写的，不是为"运行"写的。没有错�
 
 当一个领域（如 A 股分析）频繁对话时，5KB 的 memory 工具很快被股票信息填满。其他领域（如关系分析、系统配置）全部被挤出。
 
-**修复 (v4.0)**: 5 领域配额路由：
+**修复 (v3.0)**: 5 领域配额路由：
 ```
 kiki  (500 chars)  关系分析
 stock (400 chars)  A股策略
@@ -83,7 +83,7 @@ misc  (200 chars)  其他
 
 v3.0 完全没有向量化能力。"找到讨论过 curl 超时问题的那个 session" 只能靠猜关键词。
 
-**修复 (v4.0)**: 本地 BGE-small 模型 + pgvector 扩展 + gbrain-embed 服务。10005+ 页面全部向量化，支持：
+**修复 (v3.0)**: 本地 BGE-small 模型 + pgvector 扩展 + gbrain-embed 服务。10005+ 页面全部向量化，支持：
 - 语义相似度搜索
 - `mcp_gbrain_query` 混合搜索
 - `tiered_context_injector.py` RRF 融合
@@ -183,9 +183,9 @@ systemctl restart hermes-gateway
 | 进阶 | **memory-archivist** | 高级用户 | 自动归档、gbrain 同步、生命周期 |
 | 专家 | **memory-proactive** | 开发者 | 分层注入、领域路由、RRF 融合 |
 
-## v3.0 → v4.0 升级对比
+## 旧版 → v3.0 升级对比
 
-| 维度 | v3.0 | v4.0 |
+| 维度 | v2.x (旧版) | v3.0 |
 |------|------|------|
 | **核心引擎** | SQLite FTS5 | Hindsight PG16 + agentmemory + gbrain |
 | **检索路径** | 1 路 (FTS5) | 4 路并行 + RRF 融合 |
@@ -268,3 +268,105 @@ MIT — 见 [LICENSE](LICENSE)
 ---
 
 *Made with ❤️ for the Hermes Agent community.*
+
+---
+
+## 选择你的多语言检索引擎
+
+v3.0 设计为 **引擎无关** — 你可以根据语言和规模自由选择检索后端，也可以混搭使用，从简单起步，后期无缝升级。
+
+### 引擎对比表
+
+| 引擎 | 类型 | 语言支持 | 规模 | 依赖 | 适用场景 |
+|------|------|---------|------|------|---------|
+| **SQLite FTS5** | 关键词全文检索 | 仅英文（默认无中文分词器） | <1万文档 | 无（Python 内置） | 零依赖场景，纯英文内容 |
+| **SQLite FTS5 + ICU** | 关键词全文检索 | 多语言（ICU 分词器） | <1万文档 | libicu-dev | 有中日韩文内容但不想加服务 |
+| **PostgreSQL tsvector** | 关键词全文检索 | 多语言（内置每种语言配置） | <10万文档 | PostgreSQL 16 | 已有 PostgreSQL，需要语言定制 |
+| **pgvector** | 向量语义检索 | **任何语言**（需配套的 embedding 模型） | <百万向量 | PostgreSQL + pgvector 扩展 | 跨语言语义搜索，"找相似"场景 |
+| **Hindsight** | 自动记忆 + 召回 | 任何语言（底层 PostgreSQL） | <10万会话 | PostgreSQL 16 | ⭐ **默认** — 每轮自动记忆，无需手动索引 |
+| **agentmemory** | 混合（BM25 + 向量 + 图） | 任何语言（多模型 embedding） | <10万条目 | Docker + MCP | ⭐ **默认** — 51 工具，3 路 RRF 融合 |
+| **gbrain** | 知识图谱 + pgvector | 任何语言（BGE-small 本地） | <10万页面 | Bun + PostgreSQL | ⭐ **默认** — 知识图谱 + wikilinks |
+| **Elasticsearch** | 全文 + 向量 | 任何语言（ICU/IK 中文分词） | >百万文档 | Java 运行时，较重 | 企业级，已有 ES 部署 |
+| **Milvus** | 纯向量 | 任何语言 | >千万向量 | Docker, 4GB+ 内存 | 十亿级向量搜索，专用基础设施 |
+| **Meilisearch** | 全文（容错） | 多语言 | <千万文档 | Docker (<100MB) | 容错搜索引擎，即时部署 |
+
+### ⭐ 推荐配置（默认 4 引擎栈）
+
+```
+新会话 → tiered_context_injector.py
+  ├─ L1: state.db FTS5           （近期待办，零依赖）
+  ├─ L2: Hindsight                （每轮自动记忆，PostgreSQL）
+  ├─ L3: agentmemory MCP          （混合语义检索，Docker）
+  └─ L4: gbrain + pgvector        （知识图谱，长期档案）
+```
+
+### 轻量配置（无 Docker、无 PostgreSQL）
+
+```bash
+# 全部基于 Python 内置库 + SQLite
+# 不需要 Docker、PostgreSQL 或外部服务
+# 使用 SQLite FTS5 做关键词搜索 + memory tool 做热层
+python3 installer/install.py --lightweight
+```
+
+局限：只支持英文关键词搜索（FTS5 无内置中文分词器），无语义搜索能力，适合 <1 万文档。
+
+### 中文检索特别说明
+
+中文与英文在搜索引擎选择上有本质区别：
+
+| 方面 | 英文 | 中文 |
+|------|------|------|
+| **FTS 分词器** | 内置（按空格分词） | 需要 ICU 或 jieba 分词 |
+| **Embedding 模型** | BGE-small-en, all-MiniLM | **BGE-large-zh**, text2vec-large-chinese |
+| **PostgreSQL 配置** | `english` | `simple` + zhparser 或 ICU |
+| **pgvector 可用？** | ✅ 原生支持 | ✅ 使用中文 embedding 模型即可 |
+| **Elasticsearch** | Standard 分词器 | **IK 分词器**（中文领域标杆） |
+
+**推荐纯中文配置：**
+
+```yaml
+# gbrain-embed 模型 → 中文 embedding
+embedding:
+  model: BAAI/bge-large-zh-v1.5   # 1024维，中文化化
+  device: cpu
+  max_length: 512
+
+# PostgreSQL 中文全文搜索
+# 安装扩展: apt install postgresql-16-zhparser
+# 创建配置: CREATE TEXT SEARCH CONFIGURATION chinese (PARSER = zhparser);
+```
+
+### 如何切换引擎
+
+所有检索逻辑通过 `tiered_context_injector.py` 统一抽象。切换引擎只需改参数：
+
+```bash
+# 用 Elasticsearch 替代 PostgreSQL
+python3 scripts/tiered_context_injector.py --engine elasticsearch \
+  --es-url http://localhost:9200
+
+# 用 Milvus 做向量搜索
+python3 scripts/tiered_context_injector.py --engine milvus \
+  --milvus-uri http://localhost:19530
+
+# 纯 SQLite 轻量模式
+python3 scripts/tiered_context_injector.py --engine sqlite
+```
+
+引擎抽象层位于 `scripts/retrieval_router.py`，启动时自动检测可用后端。
+
+### 安装器自动检测逻辑
+
+```text
+检测到 PostgreSQL?  → 启用 Hindsight + gbrain (推荐)
+检测到 Docker?      → 启用 agentmemory MCP
+两者都没有?          → SQLite FTS5 降级
+```
+
+手动指定引擎：
+```bash
+python3 installer/install.py --engine postgresql    # 强制 PostgreSQL
+python3 installer/install.py --engine elasticsearch  # 强制 ES
+python3 installer/install.py --engine lightweight    # 仅 SQLite
+```
