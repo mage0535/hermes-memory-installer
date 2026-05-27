@@ -35,7 +35,7 @@ L3 COLD  ─ gbrain (pgvector + wikilinks, 10005+ pages)
 
 ## Pain Points → Solutions
 
-| Problem (v3.0) | Solution (v3.0) |
+| Problem  | Solution |
 |---|---|
 | SQLite FTS5 single-path — poor semantic recall | 4-way parallel: state.db → Hindsight → agentmemory → gbrain + RRF fusion |
 | No real auto-retain, lost on restart | Hindsight auto-retain every turn + weekly Reflect |
