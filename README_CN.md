@@ -1,11 +1,17 @@
-# Hermes Memory Installer v3.0
+<div align="center">
+
+# 🧠 Hermes Memory Installer v3.0
 
 **生产级四层记忆体系，为 Hermes Agent 注入长期记忆。**
 
-3 分钟安装。10005+ 页面索引。2+ 个月连续生产运行。
+3 分钟安装 · 10005+ 页面索引 · 2+ 个月连续生产运行
 
 [![GitHub](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Version](https://img.shields.io/badge/version-3.0-green)](https://github.com/mage0535/hermes-memory-installer/releases)
+
+[**English**](README.md) | [**中文版**](README_CN.md)
+
+</div>
 
 ---
 
@@ -247,28 +253,6 @@ A: 检查 embedding 服务：`systemctl status gbrain-embed`，确保 BGE-small 
 **Q: 怎么从 v3.0 升级？**
 A: 重新运行 `python3 installer/install.py`，安装器会自动覆盖旧脚本和 skill，配置做增量修改不覆盖 API Key。
 
-## 许可证
-
-MIT — 见 [LICENSE](LICENSE)
-
-## 致谢
-
-站在以下优秀项目和社区的肩膀上：
-
-- **[Nous Research](https://nousresearch.com)** — Hermes Agent 框架（地基）
-- **[rohitg00/agentmemory](https://github.com/rohitg00/agentmemory)** — MCP 记忆服务器（51 工具, RRF 融合）, LongMemEval-S R@5 95.2%
-- **Hindsight** — 长期记忆引擎（PostgreSQL + auto-retain/recall）
-- **[gbrain](https://github.com/garrytan/gbrain)** — 知识图谱引擎（pgvector + wikilinks）
-- **[garrytan/gstack](https://github.com/garrytan/gstack)** — 46 个工程方法论 skill
-- **[BAAI/bge-small](https://huggingface.co/BAAI/bge-small-en)** — 本地 embedding 模型
-- **V2EX 社区** — v2.0 ~ v3.0 的架构反馈和建议
-- **Telegram 测试群** — 在生产压力下验证了自动归档管线
-- **GitHub issue 提交者** — 指出了 SQLite FTS5 在大规模数据下的性能退化，推动了 PostgreSQL 迁移
-
----
-
-*Made with ❤️ for the Hermes Agent community.*
-
 ---
 
 ## 选择你的多语言检索引擎
@@ -370,3 +354,196 @@ python3 installer/install.py --engine postgresql    # 强制 PostgreSQL
 python3 installer/install.py --engine elasticsearch  # 强制 ES
 python3 installer/install.py --engine lightweight    # 仅 SQLite
 ```
+
+
+---
+
+## Embedding 模型选择指南
+
+检索引擎只是一半——**Embedding 模型**决定了语义搜索在你的语言上是否真正有效。用错模型，中文搜索返回乱码；用对了，跨语言检索如丝般顺滑。
+
+### 如何选择
+
+```bash
+# 安装时通过 --embedding 参数指定模型：
+python3 installer/install.py --embedding BAAI/bge-large-zh-v1.5   # 中文
+python3 installer/install.py --embedding sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2  # 50+语言
+python3 installer/install.py --embedding all-MiniLM-L6-v2          # 轻量英文
+python3 installer/install.py --embedding intfloat/multilingual-e5-base  # 企业多语言
+
+# 安装后随时修改 config.yaml：
+#   embedding:
+#     model: <your-model>
+#     device: cpu
+```
+
+### 模型详解
+
+---
+
+#### 1. BAAI/bge-small-en ⭐ 默认（英文，384维，33MB）
+
+**开箱即用。** 快、小、够用。任何机器包括树莓派都能跑。
+
+- **优势：** 仅33MB，CPU推理<10ms，性价比最高
+- **劣势：** 仅英文，完全不支持中日韩
+- **适用场景：** 想立刻跑起来，不想下载1GB+
+- **速度：** Xeon CPU 0.008s/次查询
+- **MTEB评分：** 51.7（通用），60.9（检索）
+
+#### 2. BAAI/bge-base-en-v1.5（英文，768维，133MB）
+
+bge-small的升级版。对专业领域英文（法律、医学、代码）语义理解更强。
+
+- **优势：** 768维，对专业领域查询更好
+- **劣势：** 仅英文，比bge-small大4倍
+- **适用场景：** 英文生产环境，需要比bge-small更好的召回率
+- **速度：** Xeon CPU 0.025s/次查询
+- **MTEB评分：** 54.4（通用），63.7（检索）
+
+#### 3. BAAI/bge-large-en-v1.5（英文，1024维，1.34GB）
+
+最高英文精度。精度优先于速度时的选择。
+
+- **优势：** 1024维，英文检索SOTA，最适合问答/文档搜索
+- **劣势：** 1.34GB，CPU上比bge-small慢5倍，建议GPU
+- **适用场景：** 生产级英文问答、法律文档搜索、高精度场景
+- **速度：** Xeon CPU 0.12s/次（GPU 0.02s）
+- **MTEB评分：** 58.2（通用），64.5（检索）
+
+#### 4. all-MiniLM-L6-v2（英文，384维，23MB）
+
+**最轻量选择。** 适合树莓派、256MB VPS、任何极端资源受限环境。
+
+- **优势：** 仅23MB，任何地方都能跑
+- **劣势：** 2020年架构，词汇量有限，召回一般
+- **适用场景：** <512MB内存，且仅需英文
+- **速度：** 任何CPU 0.005s/次查询
+- **MTEB评分：** 47.2
+
+#### 5. BAAI/bge-large-zh-v1.5 ⭐ 中文推荐（中文，1024维，1.34GB）
+
+**当前最好的中文Embedding模型。** 针对中文语义、成语、专业术语优化。
+
+- **优势：** 中文检索SOTA，1024维捕捉中文细微差异，金融/医疗中文表现强
+- **劣势：** 仅中文，1.34GB，CPU推理慢
+- **适用场景：** 主要语言是中文——**这是默认推荐**
+- **速度：** Xeon CPU 0.15s/次（GPU 0.03s）
+- **C-MTEB评分：** 64.3（通用），67.2（检索）——**中文排行榜第一**
+
+#### 6. text2vec-large-chinese（中文，768维，1.2GB）
+
+BGE-large-zh的可靠替代。稍小，FAQ匹配表现不错。
+
+- **优势：** 中文理解良好，768维（比BGE-large-zh小），适合FAQ/知识库匹配
+- **劣势：** 维护不如BGE活跃，不支持多语言，1.2GB仍然不小
+- **适用场景：** 中文FAQ匹配，想要比BGE-large-zh更小的维度
+- **速度：** Xeon CPU 0.10s/次查询
+- **提示：** 不确定时选BGE-large-zh-v1.5——维护更积极
+
+#### 7. BAAI/bge-small-zh-v1.5（中文，512维，45MB）
+
+低资源环境的中文轻量模型。
+
+- **优势：** 仅45MB，推理快，中文召回可接受
+- **劣势：** 512维丢失部分中文细微差异，不适合高精度任务
+- **适用场景：** 中文内容+低内存服务器（树莓派、512MB VPS）
+- **速度：** 任何CPU 0.01s/次查询
+
+#### 8. paraphrase-multilingual-MiniLM-L12-v2（50+语言，768维，470MB）
+
+**一个模型覆盖多数语言。** 支持英文、中文、日文、韩文、法文、德文、西班牙文等50+语言。
+
+- **优势：** 50+语言一个模型搞定，跨语言迁移好，470MB体积适中
+- **劣势：** 不专精任何单一语言，无专门中文优化
+- **适用场景：** 需要3种以上语言，且不能为每种语言单独跑模型
+- **速度：** Xeon CPU 0.08s/次查询
+- **覆盖语言：** 英、中、日、韩、法、德、西、俄、阿、葡等50种
+
+#### 9. intfloat/multilingual-e5-small（100+语言，384维，118MB）
+
+**最广泛语言覆盖。** 100+语言，比multilingual-MiniLM小4倍，精度每字节出色。
+
+- **优势：** 100+语言，118MB（比MiniLM多语言版小4倍），跨语言能力强
+- **劣势：** 384维限制单语言精度，不如专用模型准确
+- **适用场景：** 语言需求极其多样，预算敏感
+- **速度：** Xeon CPU 0.02s/次查询
+- **MTEB评分（多语言）：** 56.8
+
+#### 10. intfloat/multilingual-e5-base（100+语言，768维，278MB）
+
+**企业级多语言。** 最广泛覆盖+生产级精度。
+
+- **优势：** 100+语言，768维平衡性好，各语言质量一致
+- **劣势：** 278MB，比e5-small慢，单语言场景大材小用
+- **适用场景：** 企业产品支持多语言，需要稳定质量
+- **速度：** Xeon CPU 0.06s/次查询
+- **MTEB评分（多语言）：** 60.3
+
+### 快速选择指南
+
+| 你的场景 | 推荐模型 | 原因 |
+|---------|---------|------|
+| 英文，初次使用 | `BAAI/bge-base-en-v1.5` | 英文性价比最高 |
+| 中文生产环境 | `BAAI/bge-large-zh-v1.5` | 1024维，中文SOTA |
+| 中英混合 | `intfloat/multilingual-e5-small` | 跨语言无需1GB+ |
+| 3种以上语言 | `intfloat/multilingual-e5-base` | 100+语言，生产级 |
+| 低内存(<1GB) | `bge-small-zh` (45MB) 或 `all-MiniLM` (23MB) | 任何机器都能跑 |
+| 极限精度 | `BGE-large-zh` 或 `BGE-large-en` | 各自语言的SOTA |
+
+### 语言感知安装
+
+```bash
+python3 installer/install.py --lang auto  # 从系统设置检测
+python3 installer/install.py --lang zh    # → BGE-large-zh-v1.5 + zhparser
+python3 installer/install.py --lang en    # → BGE-base-en-v1.5 + 英文 tsvector
+python3 installer/install.py --lang auto --embedding my-org/my-model  # 自定义覆盖
+```
+
+### 相比 v2.x 的变化
+
+旧版 v2.x 只有两个固定模型（`all-MiniLM-L6-v2` + `text2vec-base-chinese`），配一个手写的 `select_model.sh` 选择脚本。v3.0 替换为：
+
+- **动态模型注册** — 任何 HuggingFace `sentence-transformers` 模型都可以用
+- **统一 `--embedding` 参数** — 替代了独立的选择脚本
+- **`--lang` 自动检测** — 大多数场景无需手动选择
+- **单一 BGE-small 默认** — 开局够用，语言需求明确后再切换
+- **pgvector 支持** — 向量存储在 PostgreSQL，不再需要独立 SQLite
+
+## 致谢
+
+### Embedding 模型致谢
+
+本项目支持并推荐以下 Embedding 模型（每个链接到来源）：
+
+| 模型 | 作者 | 许可证 | 角色 |
+|------|------|--------|------|
+| [BGE 系列](https://huggingface.co/BAAI/bge-small-en) | BAAI / 智源研究院 | MIT | ⭐ 默认英文与中文 Embedding |
+| [multilingual-e5](https://huggingface.co/intfloat/multilingual-e5-base) | Microsoft / intfloat | MIT | 最广泛多语言覆盖 |
+| [paraphrase-multilingual-MiniLM](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2) | sentence-transformers | Apache 2.0 | 50语言统一模型 |
+| [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) | sentence-transformers | Apache 2.0 | 最轻量英文 |
+| [text2vec-large-chinese](https://huggingface.co/shibing624/text2vec-base-chinese) | shibing624 | Apache 2.0 | 中文FAQ匹配 |
+| [sentence-transformers](https://sbert.net) | UKP Lab, TU Darmstadt | Apache 2.0 | 支撑以上所有模型的框架 |
+
+### 项目致谢
+
+- **[Nous Research](https://nousresearch.com)** — Hermes Agent，项目的地基
+- **[rohitg00/agentmemory](https://github.com/rohitg00/agentmemory)** — MCP 记忆服务器（51工具，RRF融合）
+- **Hindsight** — 长期记忆引擎（PostgreSQL + auto-retain/recall）
+- **[gbrain](https://github.com/garrytan/gbrain)** — 知识图谱引擎（pgvector + wikilinks + 时间线）
+- **[garrytan/gstack](https://github.com/garrytan/gstack)** — 46个工程方法论技能
+
+### 社区贡献者
+
+- **V2EX 社区** — v2.0 → v3.0 架构反馈、中日韩检索建议、多语言引擎对比输入
+- **Telegram 测试群** — 在生产压力下验证了自动归档管线；生命周期调优反馈
+- **GitHub Issue 提交者** — 指出 SQLite FTS5 在大数据下的性能退化，推动了 PostgreSQL 迁移；提出 Embedding 模型选择功能
+- **HuggingFace 模型作者（BAAI、intfloat、sentence-transformers、shibing624）** — 发布开源 Embedding 模型，让多语言语义搜索成为可能
+
+## 许可证
+
+MIT — 见 [LICENSE](LICENSE)
+
+---
+
+*Made with ❤️ for the Hermes Agent community.*
