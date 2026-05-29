@@ -171,7 +171,7 @@ It includes safe remediation logic for sticky consolidation backlogs and stuck o
 
 v3.0 introduces the **Focused Dossier** concept.  
 A dossier is a first-class memory profile for an important person, relationship, project, event, or topic.  
-The production deployment includes a validated relationship dossier (`kiki`), and the shared registry supports extending to more dossiers.
+The production deployment includes a validated relationship dossier , and the shared registry supports extending to more dossiers.
 
 ---
 
