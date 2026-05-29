@@ -1,313 +1,295 @@
-"""Hermes Memory Installer v3.0 — 4-tier memory system with model selection"""
+"""Hermes Memory Sidecar Installer v3.0."""
 
-import argparse, json, os, sys, shutil, subprocess
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import sys
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
-# ── Model registry ──────────────────────────────────────────────────
-EMBEDDING_MODELS = {
-    '1':  ('intfloat/multilingual-e5-small',  '100+ languages',       '384d',    '~470MB', '⭐ Recommended, global users'),
-    '2':  ('BAAI/bge-small-zh-v1.5',          'Chinese optimized',    '512d',    '~96MB',  'Chinese-only, minimal resources'),
-    '3':  ('paraphrase-multilingual-MiniLM-L12-v2', '50+ languages',  '384d',    '~471MB', 'Mature community model'),
-    '4':  ('Alibaba-NLP/gte-multilingual-base', '75+ languages',      '768d',    '~610MB', 'High Chinese accuracy, 8K tokens'),
-    '5':  ('sentence-transformers/LaBSE',     '109 languages',         '768d',    '~471MB', 'Cross-lingual alignment'),
-    '6':  ('BAAI/bge-m3',                     '100+ languages',       '1024d',   '~2GB',   'Maximum precision, heavy'),
+import yaml
+
+VERSION = "3.0"
+DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
+DEFAULT_PROFILE = "hybrid"
+SIDECAR_DIRNAME = "memory-sidecar"
+SUPPORTED_SCRIPT_NAMES = [
+    "memory_family_registry.py",
+    "memory_governance_rebuild.py",
+    "memory_guardian.py",
+    "memory_maintenance_cycle.py",
+    "session_to_gbrain.py",
+    "sidecar_acceptance_check.py",
+    "tiered_context_injector.py",
+]
+
+
+@dataclass(frozen=True)
+class EmbeddingModel:
+    key: str
+    model_id: str
+    languages: str
+    dimension: str
+    approx_size: str
+    best_for: str
+    recommended: bool = False
+
+
+EMBEDDING_MODELS: dict[str, EmbeddingModel] = {
+    "1": EmbeddingModel(
+        key="1",
+        model_id="intfloat/multilingual-e5-small",
+        languages="100+ languages",
+        dimension="384d",
+        approx_size="~470MB",
+        best_for="Best default for mixed Chinese/English Hermes deployments",
+        recommended=True,
+    ),
+    "2": EmbeddingModel(
+        key="2",
+        model_id="BAAI/bge-small-zh-v1.5",
+        languages="Chinese focused",
+        dimension="512d",
+        approx_size="~96MB",
+        best_for="Lowest-resource Chinese-first deployment",
+    ),
+    "3": EmbeddingModel(
+        key="3",
+        model_id="paraphrase-multilingual-MiniLM-L12-v2",
+        languages="50+ languages",
+        dimension="384d",
+        approx_size="~471MB",
+        best_for="Mature multilingual sentence-transformers ecosystem",
+    ),
+    "4": EmbeddingModel(
+        key="4",
+        model_id="Alibaba-NLP/gte-multilingual-base",
+        languages="75+ languages",
+        dimension="768d",
+        approx_size="~610MB",
+        best_for="Higher multilingual recall quality when RAM budget is comfortable",
+    ),
+    "5": EmbeddingModel(
+        key="5",
+        model_id="sentence-transformers/LaBSE",
+        languages="109 languages",
+        dimension="768d",
+        approx_size="~471MB",
+        best_for="Cross-lingual alignment heavy workloads",
+    ),
+    "6": EmbeddingModel(
+        key="6",
+        model_id="BAAI/bge-m3",
+        languages="100+ languages",
+        dimension="1024d",
+        approx_size="~2GB",
+        best_for="Maximum recall quality when disk and RAM are abundant",
+    ),
 }
 
-LANG_MODEL_MAP = {
-    'en':  'intfloat/multilingual-e5-small',
-    'zh':  'BAAI/bge-small-zh-v1.5',
-    'auto': 'intfloat/multilingual-e5-small',
-}
-
-parser = argparse.ArgumentParser(description='Hermes Memory Installer v3.0')
-parser.add_argument('--engine', choices=['auto','postgresql','elasticsearch','lightweight'],
-                    default='auto', help='Retrieval engine to use')
-parser.add_argument('--lang', choices=['auto','en','zh'], default='auto',
-                    help='Primary language for tuning')
-parser.add_argument('--embedding', default=None,
-                    help='HuggingFace model ID (e.g. BAAI/bge-large-zh-v1.5). '
-                         'Omit for interactive picker.')
-parser.add_argument('--noninteractive', action='store_true',
-                    help='Skip interactive prompts (use --embedding or default)')
-args = parser.parse_args()
-
-HERMES = Path.home() / '.hermes'
-SRC = Path(__file__).resolve().parent.parent
-
-TIERS = {
-    'hindsight': {
-        'desc': 'Hindsight Memory Server (PostgreSQL PG16)',
-        'bin': '/usr/bin/pg_isready',
-        'install': 'apt install -y postgresql-16',
-        'service': 'hindsight',
-        'env_var': 'DATABASE_URL',
-    },
-    'agentmemory': {
-        'desc': 'agentmemory MCP Server (Docker)',
-        'bin': '/usr/bin/docker',
-        'install': None,
-        'service': 'docker',
-        'port': 3111,
-    },
-    'gbrain': {
-        'desc': 'gbrain Knowledge Graph (Bun + PostgreSQL)',
-        'bin': '/root/.bun/bin/bun',
-        'install': 'curl -fsSL https://bun.sh/install | bash',
-        'service': 'gbrain-embed',
+RETRIEVAL_PROFILES = {
+    "hybrid": {
+        "name": "Hybrid Sidecar",
+        "description": "Hindsight + governance objects + gbrain archive pages. This is the supported production profile.",
     },
 }
 
 
-def step(msg):
-    print(f'\n  → {msg}')
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Memory Sidecar Installer v3.0 — multi-agent compatible")
+    parser.add_argument(
+        "--profile",
+        choices=sorted(RETRIEVAL_PROFILES.keys()),
+        default=DEFAULT_PROFILE,
+        help="Retrieval profile to install.",
+    )
+    parser.add_argument(
+        "--embedding",
+        default=None,
+        help="Embedding model ID to record for deployment metadata. Omit for interactive selection.",
+    )
+    parser.add_argument(
+        "--noninteractive",
+        action="store_true",
+        help=f"Skip prompts and use the default recommended model ({DEFAULT_EMBEDDING_MODEL}).",
+    )
+    parser.add_argument(
+        "--agent-home",
+        default=None,
+        help="Target agent home directory (overrides --hermes-home and AGENT_HOME env).",
+    )
+    parser.add_argument(
+        "--hermes-home",
+        default=None,
+        help="(deprecated) Target Hermes home directory. Use --agent-home instead.",
+    )
+    return parser.parse_args(argv)
 
-def check(msg, ok):
-    print(f'  {"✅" if ok else "❌"} {msg}')
-    return ok
 
-def detect_ai_assistant():
-    """Detect if running under an AI assistant (non-interactive TTY)."""
-    return not sys.stdin.isatty() or os.environ.get('AI_ASSISTED') == '1'
-
-def select_embedding_model():
-    """Interactive model picker (v2.1.1-style). Returns model ID string."""
-
+def choose_embedding_model(args: argparse.Namespace) -> EmbeddingModel:
     if args.embedding:
-        print(f'  📦 Model specified via --embedding: {args.embedding}')
-        return args.embedding
+        return EmbeddingModel(
+            key="custom",
+            model_id=args.embedding,
+            languages="custom",
+            dimension="unknown",
+            approx_size="unknown",
+            best_for="Custom user-supplied model",
+        )
 
     if args.noninteractive:
-        model = LANG_MODEL_MAP.get(args.lang, LANG_MODEL_MAP['auto'])
-        print(f'  🤖 Non-interactive mode → {model}')
-        return model
+        return EMBEDDING_MODELS["1"]
 
-    # AI assistant guard (v2.1.1 feature)
-    if detect_ai_assistant():
-        print()
-        print('  ╔══════════════════════════════════════════════════════╗')
-        print('  ║  ⚠️  AI assistant detected                        ║')
-        print('  ║                                                    ║')
-        print('  ║  Please confirm with the user:                     ║')
-        print('  ║  1. What language(s) does the user need?           ║')
-        print('  ║  2. Available disk space and RAM on the server?    ║')
-        print('  ║  3. Select the matching model number [1-6]         ║')
-        print('  ║                                                    ║')
-        print('  ║  After confirmation, set env var and re-run:       ║')
-        print('  ║  export EMBEDDING_MODEL=<model-id>                 ║')
-        print('  ║  python3 installer/install.py                     ║')
-        print('  ║                                                    ║')
-        print('  ║  If user already specified, press Enter to continue ║')
-        print('  ╚══════════════════════════════════════════════════════╝')
-        input('  Press Enter to confirm model choice with user, or Ctrl+C to abort: ')
-
-        env_model = os.environ.get('EMBEDDING_MODEL')
-        if env_model:
-            print(f'  📦 Using EMBEDDING_MODEL from env: {env_model}')
-            return env_model
-
-    # Show menu
-    print()
-    print('  ╔══════════════════════════════════════════════════════╗')
-    print('  ║  📊 Select Embedding Model                          ║')
-    print('  ╠══════════════════════════════════════════════════════╣')
-    print('  ║  Different models vary in language support,         ║')
-    print('  ║  accuracy, and resource usage.                      ║')
-    print('  ║  If unsure, choose 1 (recommended default).         ║')
-    print('  ╚══════════════════════════════════════════════════════╝')
-    print()
-
-    for key in sorted(EMBEDDING_MODELS.keys(), key=int):
-        name, lang, dim, size, tag = EMBEDDING_MODELS[key]
-        star = '⭐ ' if '⭐' in tag else '   '
-        print(f'  {key:>2}) {star}{name}')
-        print(f'     {dim} | {lang} | {size}  |  {tag.replace("⭐ ","")}')
-        print()
-
-    print('  c) Custom — enter any HuggingFace model ID')
-    print()
-
-    choice = input('  Please select [1-6/c] (default: 1): ').strip()
-    choice = choice or '1'
-
-    if choice.lower() == 'c':
-        custom = input('  Enter HuggingFace model ID (e.g. Alibaba-NLP/gte-multilingual-base): ').strip()
-        return custom or 'BAAI/bge-base-en-v1.5'
-
-    if choice in EMBEDDING_MODELS:
-        return EMBEDDING_MODELS[choice][0]
-
-    print(f'  ⚠️  Invalid choice "{choice}", using default')
-    return EMBEDDING_MODELS['1'][0]
+    print("\nSelect an embedding model for the sidecar metadata:")
+    for key, model in EMBEDDING_MODELS.items():
+        prefix = "*" if model.recommended else " "
+        print(
+            f"  {key}){prefix} {model.model_id} | {model.languages} | {model.dimension} | "
+            f"{model.approx_size} | {model.best_for}"
+        )
+    choice = input("Choose [1-6] (default: 1): ").strip() or "1"
+    return EMBEDDING_MODELS.get(choice, EMBEDDING_MODELS["1"])
 
 
-def main():
-    print('╔══════════════════════════════════════════════════╗')
-    print('║     🧠  Hermes Memory Installer v3.0            ║')
-    print('║     4-tier: Hot → Hindsight →                   ║')
-    print('║     agentmemory → gbrain                        ║')
-    print('╚══════════════════════════════════════════════════╝')
+def repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
 
-    # ── 0. Select embedding model ──────────────────────────────
-    step('Selecting embedding model')
-    embed_model = select_embedding_model()
-    check(f'Embedding model: {embed_model}', True)
 
-    # ── 1. Check Hermes ────────────────────────────────────────
-    step('Checking Hermes Agent')
-    ok = HERMES.exists()
-    check('~/.hermes directory', ok)
-    if not ok:
-        print('\n  Install Hermes Agent first: https://hermes-agent.nousresearch.com')
-        sys.exit(1)
+def scripts_source_dir() -> Path:
+    return repo_root() / "scripts"
 
-    # ── 2. Check prerequisites ────────────────────────────────
-    step('Checking prerequisites')
-    ok_py = sys.version_info >= (3, 9)
-    check(f'Python {sys.version_info.major}.{sys.version_info.minor}', ok_py)
 
-    ok_psql = os.system('which psql >/dev/null 2>&1') == 0
-    check('PostgreSQL client', ok_psql)
+def resolve_agent_home(args: argparse.Namespace) -> Path:
+    if args.agent_home:
+        return Path(args.agent_home).expanduser()
+    if args.hermes_home:
+        return Path(args.hermes_home).expanduser()
+    env_val = os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME")
+    if env_val:
+        return Path(env_val).expanduser()
+    return Path.home() / ".hermes"
 
-    ok_docker = os.system('docker ps >/dev/null 2>&1') == 0
-    check('Docker (agentmemory)', ok_docker)
 
-    ok_bun = os.system(f'test -f {TIERS["gbrain"]["bin"]}') == 0
-    check('Bun (gbrain)', ok_bun)
+def check_agent_home(agent_home: Path) -> bool:
+    return agent_home.exists()
 
-    # ── 3. Install scripts ────────────────────────────────────
-    step('Installing runtime scripts')
-    dst_scripts = HERMES / 'scripts'
-    dst_scripts.mkdir(parents=True, exist_ok=True)
-    src_scripts = SRC / 'scripts'
-    installed = 0
-    for f in sorted(src_scripts.glob('*.py')):
-        dst = dst_scripts / f.name
-        shutil.copy2(str(f), str(dst))
-        if os.access(str(f), os.X_OK):
-            dst.chmod(0o755)
-        installed += 1
-    print(f'  ✅ {installed} scripts installed to {dst_scripts}')
 
-    # ── 4. Install skills ─────────────────────────────────────
-    step('Installing skills')
-    dst_skills = HERMES / 'skills'
-    dst_skills.mkdir(parents=True, exist_ok=True)
-    src_skills = SRC / 'skills'
-    for skill_dir in sorted(src_skills.iterdir()):
-        if skill_dir.is_dir() and (skill_dir / 'SKILL.md').exists():
-            dst = dst_skills / skill_dir.name
-            if not dst.exists():
-                shutil.copytree(str(skill_dir), str(dst))
-            else:
-                shutil.copy2(str(skill_dir / 'SKILL.md'), str(dst / 'SKILL.md'))
-                for sub in ['references', 'templates', 'scripts', 'assets']:
-                    sd = skill_dir / sub
-                    if sd.exists():
-                        dd = dst / sub
-                        dd.mkdir(exist_ok=True)
-                        for sf in sd.iterdir():
-                            shutil.copy2(str(sf), str(dd / sf.name))
-            print(f'  ✅ {skill_dir.name}')
+def check_python() -> bool:
+    return sys.version_info >= (3, 9)
 
-    # ── 5. Install templates ─────────────────────────────────
-    step('Installing templates')
-    dst_templates = HERMES / 'templates'
-    dst_templates.mkdir(parents=True, exist_ok=True)
-    src_templates = SRC / 'templates'
-    if src_templates.exists():
-        for tf in src_templates.glob('*.j2'):
-            shutil.copy2(str(tf), str(dst_templates / tf.name))
-            print(f'  ✅ {tf.name}')
 
-    # ── 6. Patch config.yaml ────────────────────────────────
-    step('Patching config.yaml')
-    cfg = HERMES / 'config.yaml'
-    if cfg.exists():
+def check_required_scripts(src_dir: Path) -> list[str]:
+    missing = []
+    for name in SUPPORTED_SCRIPT_NAMES:
+        if not (src_dir / name).exists():
+            missing.append(name)
+    return missing
+
+
+def load_yaml(path: Path) -> dict:
+    if not path.exists():
+        print(f"[installer] warning: config not found at {path}, creating new")
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return data or {}
+
+
+def save_yaml(path: Path, payload: dict) -> None:
+    path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
+def patch_config(hermes_home: Path, profile: str) -> Path:
+    config_path = hermes_home / "config.yaml"
+    config = load_yaml(config_path)
+    config.setdefault("memory", {})
+    config["memory"]["provider"] = "hindsight"
+
+    skills = list(config.get("skills") or [])
+    for skill in ("memory-starter-kit", "memory-archivist", "memory-proactive"):
+        if skill not in skills:
+            skills.append(skill)
+    config["skills"] = skills
+
+    config.setdefault("memory_sidecar", {})
+    config["memory_sidecar"]["version"] = VERSION
+    config["memory_sidecar"]["profile"] = profile
+    config["memory_sidecar"]["scripts_dir"] = str(hermes_home / "scripts")
+
+    save_yaml(config_path, config)
+    return config_path
+
+
+def deploy_scripts(src_dir: Path, dest_dir: Path) -> list[str]:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    installed = []
+    for name in SUPPORTED_SCRIPT_NAMES:
+        src = src_dir / name
+        dst = dest_dir / name
         try:
-            from ruamel.yaml import YAML
-            yaml = YAML(); yaml.preserve_quotes = True
-            with open(str(cfg)) as f:
-                data = yaml.load(f) or {}
-        except ImportError:
-            import yaml
-            with open(str(cfg)) as f:
-                data = yaml.safe_load(f) or {}
-
-        if 'memory' not in data:
-            data['memory'] = {}
-        data['memory']['provider'] = 'hindsight'
-
-        if 'skills' not in data:
-            data['skills'] = []
-        existing = set(data.get('skills', []))
-        for skill in ['memory-starter-kit', 'memory-archivist', 'memory-proactive']:
-            if skill not in existing:
-                data['skills'].append(skill)
-
-        if 'mcp_servers' not in data:
-            data['mcp_servers'] = {}
-        if 'agentmemory' not in data['mcp_servers']:
-            data['mcp_servers']['agentmemory'] = {
-                'command': 'npx',
-                'args': ['-y', '@agentmemory/mcp'],
-                'env': {'AGENTMEMORY_URL': 'http://localhost:3111'},
-                'timeout': 120,
-                'connect_timeout': 30,
-            }
-
-        try:
-            from ruamel.yaml import YAML
-            yaml = YAML(); yaml.default_flow_style = False
-            with open(str(cfg), 'w') as f:
-                yaml.dump(data, f)
-        except ImportError:
-            import yaml
-            with open(str(cfg), 'w') as f:
-                yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
-        print('  ✅ config.yaml updated')
-
-    # ── 7. Write embedding config ────────────────────────────
-    step('Writing embedding model config')
-    embed_cfg = HERMES / 'scripts' / 'embedding_config.json'
-    with open(str(embed_cfg), 'w') as f:
-        json.dump({'model': embed_model, 'device': 'cpu'}, f, indent=2)
-    check(f'embedding_config.json → {embed_model}', embed_cfg.exists())
-
-    # Chinese-specific hints
-    is_zh = (args.lang == 'zh' or
-             args.lang == 'auto' and 'zh' in embed_model.lower())
-    if is_zh:
-        print('  💡 Chinese language detected: consider installing zhparser')
-        print('     apt install postgresql-16-zhparser')
-        print('     CREATE TEXT SEARCH CONFIGURATION chinese (PARSER = zhparser);')
-
-    # ── 8. Verify ────────────────────────────────────────────
-    step('Verifying installation')
-    checks = [
-        (dst_scripts / 'tiered_context_injector.py', 'tiered_context_injector'),
-        (dst_scripts / 'hindsight-service.py', 'hindsight-service'),
-        (dst_scripts / 'memory_guardian.py', 'memory_guardian'),
-        (dst_skills / 'memory-starter-kit' / 'SKILL.md', 'memory-starter-kit'),
-        (dst_templates, 'templates dir'),
-        (embed_cfg, f'embedding config ({embed_model})'),
-    ]
-    all_ok = True
-    for p, label in checks:
-        ok = p.exists()
-        check(label, ok)
-        if not ok:
-            all_ok = False
-
-    # Summary
-    print()
-    print('  ╔══════════════════════════════════════════════════╗')
-    print(f'  ║  {"✅ Installation complete!" if all_ok else "⚠️  Some checks failed"}  ║')
-    print(f'  ║  Embedding model: {embed_model[:38]:38s}║')
-    print('  ╠══════════════════════════════════════════════════╣')
-    print('  ║  Restart Gateway to activate:                    ║')
-    print('  ║  systemctl restart hermes-gateway                ║')
-    print('  ╚══════════════════════════════════════════════════╝')
+            shutil.copy2(src, dst)
+            if src.suffix == ".py":
+                dst.chmod(0o755)
+            installed.append(name)
+        except OSError as exc:
+            print(f"[installer] failed to deploy {name}: {exc}", file=sys.stderr)
+            raise
+    return installed
 
 
-if __name__ == '__main__':
-    main()
+def write_install_profile(hermes_home: Path, profile: str, embedding: EmbeddingModel, installed_scripts: list[str]) -> Path:
+    sidecar_dir = hermes_home / SIDECAR_DIRNAME
+    sidecar_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": VERSION,
+        "installed_at": datetime.now(timezone.utc).isoformat(),
+        "profile": profile,
+        "embedding_model": asdict(embedding),
+        "installed_scripts": installed_scripts,
+    }
+    path = sidecar_dir / "install-profile.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    agent_home = resolve_agent_home(args)
+    src_dir = scripts_source_dir()
+
+    if not check_python():
+        print("Python 3.9+ is required.")
+        return 1
+
+    if not check_agent_home(agent_home):
+        print(f"Agent home not found: {agent_home}")
+        print("Set AGENT_HOME env or use --agent-home to specify the target directory.")
+        return 1
+
+    missing = check_required_scripts(src_dir)
+    if missing:
+        print("Missing required sidecar scripts:")
+        for name in missing:
+            print(f"  - {name}")
+        return 1
+
+    embedding = choose_embedding_model(args)
+    installed_scripts = deploy_scripts(src_dir, agent_home / "scripts")
+    config_path = patch_config(agent_home, args.profile)
+    profile_path = write_install_profile(agent_home, args.profile, embedding, installed_scripts)
+
+    print("Memory Sidecar v3.0 installed")
+    print(f"  Agent home: {agent_home}")
+    print(f"  Retrieval profile: {args.profile} ({RETRIEVAL_PROFILES[args.profile]['name']})")
+    print(f"  Embedding model: {embedding.model_id}")
+    print(f"  Config patched: {config_path}")
+    print(f"  Install profile: {profile_path}")
+    print(f"  Scripts installed: {len(installed_scripts)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

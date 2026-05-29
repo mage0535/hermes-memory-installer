@@ -1,105 +1,78 @@
 #!/usr/bin/env python3
-"""hermes-memory CLI — Memory 2.0 template and management commands."""
+"""Memory Sidecar CLI v3.0 — multi-agent compatible."""
+
+from __future__ import annotations
+
 import argparse
+import json
 import os
-import shutil
+import subprocess
+import sys
 from pathlib import Path
 
-HOME = Path.home()
-HERMES = HOME / '.hermes'
-SKILLS_DIR = HERMES / 'skills' / 'memory-starter-kit' / 'templates'
-ARCHIVE_DIR = HERMES / 'archives'
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+SCRIPTS_DIR = AGENT_HOME / "scripts"
+PROFILE_PATH = AGENT_HOME / "memory-sidecar" / "install-profile.json"
 
-TEMPLATES = {
-    'person': 'person.md.j2',
-    'project': 'project.md.j2',
-    'knowledge': 'knowledge.md.j2',
-}
 
-def cmd_new(args):
-    """Create a new archive from template."""
-    template_name = args.type
-    target_name = args.name
-    
-    if template_name not in TEMPLATES:
-        print(f"Unknown template type: {template_name}")
-        print(f"Available: {', '.join(TEMPLATES.keys())}")
-        return
-    
-    src = SKILLS_DIR / TEMPLATES[template_name]
-    if not src.exists():
-        print(f"Template not found: {src}")
-        print("Ensure memory-starter-kit skill is installed")
-        return
-    
-    # Determine target path
-    if template_name == 'person':
-        dst = ARCHIVE_DIR / 'people' / target_name / 'profile.md'
-    elif template_name == 'project':
-        dst = ARCHIVE_DIR / 'projects' / target_name / 'README.md'
-    elif template_name == 'knowledge':
-        dst = ARCHIVE_DIR / 'knowledge' / f"{target_name}.md"
-    else:
-        dst = ARCHIVE_DIR / f"{target_name}.md"
-    
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-    print(f"Created: {dst}")
-    print(f"Edit this file: {dst}")
+def run_script(script_name: str) -> int:
+    script = SCRIPTS_DIR / script_name
+    if not script.exists():
+        print(f"Missing script: {script}")
+        return 1
+    result = subprocess.run([sys.executable, str(script)], text=True)
+    return result.returncode
 
-def cmd_doctor(args):
-    """Check installation health."""
-    print("=== Memory 2.0 Health Check ===\n")
+
+def cmd_doctor(_: argparse.Namespace) -> int:
     checks = {
-        'Hermes Agent': HERMES.exists(),
-        'Archives dir': ARCHIVE_DIR.exists(),
-        'Pool DB': (HERMES / 'pool.db').exists(),
-        'State DB': (HERMES / 'state.db').exists(),
-        'Starter Kit': (HERMES / 'skills' / 'memory-starter-kit').exists(),
-        'Archivist': (HERMES / 'skills' / 'memory-archivist').exists(),
-        'Proactive': (HERMES / 'skills' / 'memory-proactive').exists(),
-        'gbrain CLI': shutil.which('gbrain') is not None,
+        "agent_home": AGENT_HOME.exists(),
+        "scripts_dir": SCRIPTS_DIR.exists(),
+        "install_profile": PROFILE_PATH.exists(),
+        "maintenance_cycle": (SCRIPTS_DIR / "memory_maintenance_cycle.py").exists(),
+        "acceptance_check": (SCRIPTS_DIR / "sidecar_acceptance_check.py").exists(),
     }
-    
-    ok = 0
-    for name, result in checks.items():
-        icon = 'OK' if result else 'MISSING'
-        print(f"  [{icon:<7}] {name}")
-        if result:
-            ok += 1
-    
-    print(f"\n  Score: {ok}/{len(checks)}")
+    for name, ok in checks.items():
+        print(f"{name}: {'ok' if ok else 'missing'}")
+    return 0 if all(checks.values()) else 1
 
-def cmd_init(args):
-    """Initialize archive directory structure."""
-    for subdir in ['people', 'projects', 'knowledge', '_index']:
-        ARCHIVE_DIR.joinpath(subdir).mkdir(parents=True, exist_ok=True)
-    print(f"Archive structure created at: {ARCHIVE_DIR}")
-    print(f"  {ARCHIVE_DIR}/people/")
-    print(f"  {ARCHIVE_DIR}/projects/")
-    print(f"  {ARCHIVE_DIR}/knowledge/")
 
-def main():
-    parser = argparse.ArgumentParser(description='Hermes Memory 2.0 CLI')
-    sub = parser.add_subparsers(dest='command')
-    
-    new_parser = sub.add_parser('new', help='Create new archive from template')
-    new_parser.add_argument('type', choices=list(TEMPLATES.keys()), help='Template type')
-    new_parser.add_argument('name', help='Archive name')
-    
-    sub.add_parser('doctor', help='Check installation health')
-    sub.add_parser('init', help='Initialize archive directory structure')
-    
+def cmd_profile(_: argparse.Namespace) -> int:
+    if not PROFILE_PATH.exists():
+        print(f"Install profile not found: {PROFILE_PATH}")
+        return 1
+    payload = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_maintenance(_: argparse.Namespace) -> int:
+    return run_script("memory_maintenance_cycle.py")
+
+
+def cmd_acceptance(_: argparse.Namespace) -> int:
+    return run_script("sidecar_acceptance_check.py")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.0")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("doctor", help="Check whether the sidecar is installed")
+    sub.add_parser("profile", help="Print install profile metadata")
+    sub.add_parser("maintenance", help="Run one maintenance cycle")
+    sub.add_parser("acceptance", help="Run the acceptance regression suite")
+
     args = parser.parse_args()
-    
-    if args.command == 'new':
-        cmd_new(args)
-    elif args.command == 'init':
-        cmd_init(args)
-    elif args.command == 'doctor':
-        cmd_doctor(args)
-    else:
-        parser.print_help()
+    if args.command == "doctor":
+        return cmd_doctor(args)
+    if args.command == "profile":
+        return cmd_profile(args)
+    if args.command == "maintenance":
+        return cmd_maintenance(args)
+    if args.command == "acceptance":
+        return cmd_acceptance(args)
+    return 1
 
-if __name__ == '__main__':
-    main()
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -4,6 +4,12 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
 
 # OS
 .DS_Store
@@ -13,7 +19,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Hermes local
+# Agent local
 .env
 *.db
 archives/

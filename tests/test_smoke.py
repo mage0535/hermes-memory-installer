@@ -1,25 +1,41 @@
 #!/usr/bin/env python3
-"""Smoke tests for Memory 2.2"""
-import sys
+"""Repository smoke tests for the v3.0 sidecar project."""
+
+from __future__ import annotations
+
+import py_compile
 from pathlib import Path
+import sys
 
-HERMES_HOME = Path.home() / '.hermes'
-REPO = Path(__file__).resolve().parent
-all_ok = True
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
 
-def check(desc, cond):
-    print(f'{"✅" if cond else "❌"} {desc}')
-    return cond
+from installer import install
 
-all_ok &= check('Hermes home', HERMES_HOME.exists())
-all_ok &= check('config.yaml', (HERMES_HOME / 'config.yaml').exists())
-all_ok &= check('pool.db', (HERMES_HOME / 'pool.db').exists())
-all_ok &= check('archives/', (HERMES_HOME / 'archives').exists())
-all_ok &= check('memory-starter-kit', (HERMES_HOME / 'skills/memory-starter-kit').exists())
-all_ok &= check('install.sh', (REPO / 'install.sh').exists())
-all_ok &= check('install.py', (REPO / 'installer/install.py').exists())
-all_ok &= check('archive_sessions.py', (REPO / 'scripts/archive_sessions.py').exists())
-all_ok &= check('memory_lifecycle.py', (REPO / 'scripts/memory_lifecycle.py').exists())
-all_ok &= check('tiered_context_injector.py', (REPO / 'scripts/tiered_context_injector.py').exists())
 
-sys.exit(0 if all_ok else 1)
+def test_expected_project_files_exist():
+    expected = [
+        REPO / "README.md",
+        REPO / "README_CN.md",
+        REPO / "ARCHITECTURE.md",
+        REPO / "ARCHITECTURE_CN.md",
+        REPO / "MANUAL_INSTALL.md",
+        REPO / "install.sh",
+        REPO / "install_cli.sh",
+        REPO / "installer" / "install.py",
+        REPO / "bin" / "hermes-memory",
+    ]
+    for path in expected:
+        assert path.exists(), f"Missing required file: {path}"
+
+
+def test_supported_scripts_compile():
+    for name in install.SUPPORTED_SCRIPT_NAMES:
+        py_compile.compile(str(REPO / "scripts" / name), doraise=True)
+
+
+def test_wrapper_scripts_compile():
+    py_compile.compile(str(REPO / "installer" / "install.py"), doraise=True)
+    py_compile.compile(str(REPO / "installer" / "check_env.py"), doraise=True)
+    py_compile.compile(str(REPO / "installer" / "config_patch.py"), doraise=True)
+    py_compile.compile(str(REPO / "bin" / "hermes-memory"), doraise=True)

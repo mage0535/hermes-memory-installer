@@ -2,10 +2,10 @@
 """
 Session → Gbrain Pipeline
 ==========================
-将 Hermes 会话摘要自动摄入 gbrain 知识图谱。
+将智能体会话摘要自动摄入 gbrain 知识图谱。
 每个会话生成一个 gbrain page，带 tag + timeline + 主题链接。
 
-运行: python3 /root/.hermes/scripts/session_to_gbrain.py [--batch N] [--dry-run]
+运行: python3 scripts/session_to_gbrain.py [--batch N] [--dry-run]
 Cron: 每 6 小时一次，增量处理新会话
 """
 
@@ -16,16 +16,26 @@ import hashlib
 import sqlite3
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 import re
+from tempfile import NamedTemporaryFile
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from memory_family_registry import active_focus_profiles, focus_profile_archive_tags, focus_profile_ids_for_text
 
 # Config
-SESSIONS_DIR = os.path.expanduser("~/.hermes/sessions")
-STATE_DB = os.path.expanduser("~/.hermes/state.db")
-CHECKPOINT_FILE = os.path.expanduser("~/.hermes/.session_to_gbrain_checkpoint.json")
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+SESSIONS_DIR = AGENT_HOME / "sessions"
+STATE_DB = AGENT_HOME / "state.db"
+CHECKPOINT_FILE = AGENT_HOME / ".session_to_gbrain_checkpoint.json"
 CST = timezone(timedelta(hours=8))
+SESSION_FILE_PATTERN = re.compile(r"(?:session|request_dump)_[^\"\\/\s]+\.json")
 
 # Topic hubs - these are gbrain pages that group sessions by topic
 TOPIC_HUBS = {
@@ -62,17 +72,54 @@ TOPIC_HUBS = {
 }
 
 
+def merge_focus_profile_hubs(topic_hubs):
+    merged = dict(topic_hubs)
+    for profile_id, profile in active_focus_profiles().items():
+        merged[profile_id] = {
+            "slug": profile.get("slug") or f"hub-{profile_id}",
+            "title": profile.get("title") or profile_id,
+            "tags": list(profile.get("tags", ()) or (profile_id,)),
+            "keywords": list(profile.get("keywords", ()) or profile.get("aliases", ())),
+        }
+    return merged
+
+
+TOPIC_HUBS = merge_focus_profile_hubs(TOPIC_HUBS)
+
+GBRAIN_BIN = shutil.which("gbrain") or os.environ.get("GBRAIN_BIN", "/usr/local/bin/gbrain")
+
+
 def load_checkpoint():
     """加载已处理会话列表"""
     if os.path.exists(CHECKPOINT_FILE):
-        with open(CHECKPOINT_FILE, 'r') as f:
-            return json.load(f)
+        try:
+            with open(CHECKPOINT_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            with open(CHECKPOINT_FILE, 'r', encoding='utf-8', errors='ignore') as f:
+                raw = f.read()
+            recovered = sorted(set(SESSION_FILE_PATTERN.findall(raw)))
+            corrupt_copy = f"{CHECKPOINT_FILE}.corrupt-{int(time.time())}"
+            try:
+                shutil.copy2(CHECKPOINT_FILE, corrupt_copy)
+            except Exception:
+                print(f"[session_to_gbrain] failed to backup corrupt checkpoint: {CHECKPOINT_FILE}", file=sys.stderr)
+            return {
+                "processed_sessions": recovered,
+                "last_run": None,
+                "recovered_from_corrupt_checkpoint": True,
+            }
     return {"processed_sessions": [], "last_run": None}
 
 
 def save_checkpoint(data):
-    with open(CHECKPOINT_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
+    checkpoint_dir = os.path.dirname(CHECKPOINT_FILE) or "."
+    with NamedTemporaryFile("w", delete=False, dir=checkpoint_dir, encoding='utf-8') as tmp:
+        json.dump(data, tmp, indent=2, ensure_ascii=False)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp_path = tmp.name
+    os.replace(tmp_path, CHECKPOINT_FILE)
 
 
 def get_unprocessed_sessions(processed_set, batch_size=50):
@@ -88,10 +135,33 @@ def get_unprocessed_sessions(processed_set, batch_size=50):
     return unprocessed
 
 
+def _sanitize_session_json_text(text: str) -> str:
+    cleaned_lines = []
+    for line in text.splitlines():
+        line = "".join(ch for ch in line if ord(ch) >= 32 or ch in "\n\r\t")
+        line = line.replace("\ufffd", "")
+        if '"' in line:
+            last_quote = line.rfind('"')
+            suffix = line[last_quote + 1 :]
+            if suffix and not re.fullmatch(r"[\s,:{}\[\]]*", suffix):
+                valid_suffix = "".join(ch for ch in suffix if ch in " \t,:{}[]")
+                line = line[: last_quote + 1] + valid_suffix
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines)
+
+
+def _load_session_payload(content: str):
+    try:
+        return json.loads(content), content, False
+    except Exception:
+        sanitized = _sanitize_session_json_text(content)
+        return json.loads(sanitized), sanitized, True
+
+
 def extract_session_info(filepath: Path) -> dict:
     """从会话文件中提取关键信息"""
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
             content = f.read()
         
         stat = filepath.stat()
@@ -101,13 +171,15 @@ def extract_session_info(filepath: Path) -> dict:
         messages = []
         title = ""
         try:
-            data = json.loads(content)
+            data, cleaned_content, was_sanitized = _load_session_payload(content)
             if isinstance(data, list):
                 messages = data
             elif isinstance(data, dict):
                 messages = data.get("messages", data.get("history", []))
                 title = data.get("title", "")
-        except:
+            if was_sanitized:
+                filepath.with_suffix(filepath.suffix + ".repaired").write_text(cleaned_content, encoding='utf-8')
+        except Exception:
             pass
         
         # Extract first user message as title hint
@@ -130,8 +202,10 @@ def extract_session_info(filepath: Path) -> dict:
         
         # Detect topics by keyword matching
         content_lower = content.lower()
-        topics = []
+        topics = list(focus_profile_ids_for_text(content))
         for topic_key, hub in TOPIC_HUBS.items():
+            if topic_key in topics:
+                continue
             score = sum(content_lower.count(kw.lower()) for kw in hub["keywords"])
             if score > 10:
                 topics.append(topic_key)
@@ -297,12 +371,55 @@ def render_wikilinks(text: str, relations: list, platform='gbrain') -> str:
     return text
 
 
+def run_gbrain(args: list[str], *, input_text: str | None = None) -> subprocess.CompletedProcess:
+    """Run gbrain deterministically and fail fast on CLI errors."""
+    return subprocess.run(
+        [GBRAIN_BIN, *args],
+        input=input_text,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+
+def ensure_gbrain_page(slug: str, content: str, tags: list[str], *, timeline_entry: tuple[str, str] | None = None) -> None:
+    """Persist a page into gbrain and attach metadata idempotently."""
+    try:
+        run_gbrain(["put", slug], input_text=content)
+        for tag in sorted({tag.strip() for tag in tags if tag and tag.strip()}):
+            run_gbrain(["tag", slug, tag])
+        if timeline_entry:
+            date_value, text_value = timeline_entry
+            run_gbrain(["timeline-add", slug, date_value, text_value])
+    except subprocess.CalledProcessError as exc:
+        print(f"[session_to_gbrain] gbrain command failed for slug={slug}: {exc}", file=sys.stderr)
+
+
+def ensure_gbrain_link(from_slug: str, to_slug: str, *, link_type: str = "belongs_to") -> None:
+    if not from_slug or not to_slug or from_slug == to_slug:
+        return
+    try:
+        run_gbrain(["link", from_slug, to_slug, "--type", link_type])
+    except subprocess.CalledProcessError as exc:
+        print(f"[session_to_gbrain] gbrain link failed {from_slug} -> {to_slug}: {exc}", file=sys.stderr)
+
+
+def gbrain_page_exists(slug: str) -> bool:
+    result = subprocess.run(
+        [GBRAIN_BIN, "get", slug],
+        text=True,
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
 def create_gbrain_page(info: dict, dry_run=False):
     """通过 MCP 创建 gbrain 页面"""
     slug = f"session-{info['session_id'][:16]}"
     
     # Build page content
     tags = ["session", f"date-{info['created_at'][:10]}"] + info["topics"]
+    tags.extend(focus_profile_archive_tags(info.get('summary', ''), info.get('first_msg', ''), info.get('title', '')))
     tags_str = ", ".join(tags)
     
     # 提取中文实体关系
@@ -352,18 +469,17 @@ created: "{info['created_at']}"
         print(f"  [DRY-RUN] Would create: {slug}")
         return slug
     
-    # Write temp file and use gbrain CLI
-    tmp_file = f"/tmp/gbrain_session_{info['session_id'][:12]}.md"
-    with open(tmp_file, 'w', encoding='utf-8') as f:
-        f.write(content)
-    
-    # Use gbrain put_page via the maintenance script approach
-    # Actually, let'\n# For now, write a manifest that the cron job can pick up
-    
+    timeline_text = info['summary'][:180] if info.get('summary') else info['first_msg'][:180]
+    ensure_gbrain_page(
+        slug,
+        content,
+        tags,
+        timeline_entry=(info['created_at'][:10], timeline_text) if timeline_text else None,
+    )
     return slug
 
 
-def create_topic_hubs(dry_run=False):
+def create_topic_hubs(dry_run=False, refresh=False):
     """创建主题中枢页面"""
     for topic_key, hub in TOPIC_HUBS.items():
         slug = hub["slug"]
@@ -393,9 +509,9 @@ tags: [{', '.join(hub['tags'])}]
         if dry_run:
             print(f"  [DRY-RUN] Would create hub: {slug}")
         else:
-            tmp_file = f"/tmp/gbrain_hub_{topic_key}.md"
-            with open(tmp_file, 'w', encoding='utf-8') as f:
-                f.write(content)
+            if not refresh and gbrain_page_exists(slug):
+                continue
+            ensure_gbrain_page(slug, content, hub["tags"])
     
     return list(TOPIC_HUBS.keys())
 
@@ -412,6 +528,9 @@ def link_session_to_hubs(session_slug, topics, dry_run=False):
         for s, h in links:
             print(f"  [DRY-RUN] Link: {s} → {h}")
     
+    if not dry_run:
+        for s, h in links:
+            ensure_gbrain_link(s, h)
     return links
 
 
