@@ -1,224 +1,309 @@
-# Architecture: Hermes Memory Installer v3.0
+# Hermes Memory Installer v3.0 Architecture
 
-## Overview
+This document describes the final **v3.0 sidecar architecture** that is intended to be deployed next to a live Hermes installation.
 
-The v3.0 memory system is a **4-tier, multi-engine architecture** designed for production AI agents. It replaces the old single-engine single-engine (SQLite FTS5) design with a battle-tested, horizontally layered system that has run continuously for 2+ months.
+Hermes itself remains the conversation runtime. This project provides a **memory sidecar** that:
 
-## Design Principles
+- reads Hermes session output,
+- organizes important memories into long-term structures,
+- rebuilds retrieval indexes,
+- prepares layered recall context,
+- and exposes operational health signals.
 
-1. **No single point of failure** — 4 independent retrieval paths, any one can fail without breaking recall
-2. **Progressive depth** — L0→L3, each layer adds richer recall at the cost of latency, queries cascade
-3. **Zero-touch retention** — auto-retain every turn, no manual `remember this` needed
-4. **Domain isolation** — quota per topic, prevents memory flooding
-5. **Local-first** — everything on-prem, no cloud dependencies beyond PostgreSQL
+It does **not** patch Hermes core.
 
-## Tier Details
+## Design Goals
 
-### L0: Hot Memory (memory tool)
+The final v3.0 architecture is designed around five production goals:
 
-- **Storage**: Built-in Hermes memory tool (5KB cap)
-- **Content**: User profile (name, role, preferences), system notes
-- **Latency**: 0ms (injected into system prompt)
-- **Lifecycle**: Manually managed via `memory()` tool calls
-- **Guard script**: `memory_prewrite_guard.py` — capacity check + contradiction detection before write
+1. **Lossless durability**
+   Hermes sessions remain the source of truth. The sidecar may summarize, index, or archive them, but it does not depend on destructive cleanup.
+2. **Layered recall**
+   Retrieval is not “one database search”. The sidecar blends hot, warm, and cold memory layers.
+3. **Focused memory management**
+   Important people, projects, incidents, or topics can become explicit dossiers instead of staying buried in session fragments.
+4. **Operational visibility**
+   Queue backlog, sync lag, duplicate ingestion, and rebuild health are visible instead of hidden.
+5. **Low coupling**
+   Hermes upgrades should not require rewriting the sidecar. The integration boundary is Hermes state, sessions, skills, and sidecar-generated artifacts.
 
-### L1: Warm Memory (Hindsight)
+## Runtime Layers
 
-- **Storage**: PostgreSQL 16, `hindsight` database
-- **Engine**: Hindsight Memory Server (systemd service, port 8890)
-- **Capabilities**:
-  - `auto-retain`: Every turn, key facts extracted and stored (non-blocking, ~50ms)
-  - `auto-recall`: Before each session, relevant context injected (async, ~200ms)
-  - `Hindsight Reflect`: Weekly (Sun 5:30), generates user profile updates
-- **Bridge**: `hindsight_mcp_bridge.py` — exposes recall/retain/reflect as MCP tools
+### 1. Source-of-Truth Layer
 
-### L2: Bridge Memory (agentmemory)
+This layer is owned by Hermes.
 
-- **Storage**: Docker container, `iii-engine`, port 3111
-- **Engine**: rohitg00/agentmemory MCP Server
-- **51 MCP tools** including:
-  - `memory_smart_search` — hybrid BM25 + vector + graph
-  - `memory_recall` — context-aware recall
-  - `memory_save` — structured save with concepts + files
-  - `memory_graph_query` — knowledge graph traversal
-- **Retrieval**: Reciprocal Rank Fusion (k=60) across 3 internal paths
+- `state.db`
+- session files under `~/.hermes/sessions/`
 
-### L3: Cold Storage (gbrain)
+Purpose:
 
-- **Storage**: PostgreSQL 16 + pgvector extension
-- **Engine**: gbrain (Bun CLI + MCP server)
-- **Index**: 10005+ pages, wikilinks graph, timeline entries
-- **Embedding**: Local BGE-small model via `gbrain-embed.service` (port 8765)
-- **Sync**: `session_to_gbrain.py` — incremental state.db → gbrain with watermark
-- **Lifecycle**: `memory_lifecycle.py` — 30d stale → 90d expired → auto-clean
+- preserve original conversations,
+- preserve chronology,
+- support post-hoc recovery and audit.
 
-## Retrieval Pipeline
+This layer is never treated as disposable cache.
 
-```
-User: "what did we discuss about curl timeout?"
+### 2. Fact Extraction Layer
 
-tiered_context_injector.py:
-  ┌─ L1: state.db FTS5 → "curl timeout" hits 3 sessions
-  ├─ L2: Hindsight semantic → "http requests" + "timeout" → 5 memories
-  ├─ L3: gbrain pgvector → nearest neighbors → 7 pages
-  └─ RRF fusion (k=60) → ranked top-10 → injected into context
-```
+This layer extracts higher-value memory from raw sessions.
 
-## Domain Quota Router
+- Hindsight
+- sidecar archive intake
+- session summaries
 
-`domain_memory.py` enforces per-domain character quotas:
+Purpose:
 
-```python
-DOMAINS = {
-    'kiki':  500,  # relationship analysis
-    'stock': 400,  # A-share strategies  
-    'system':300,  # server configuration
-    'promo': 200,  # channel promotion
-    'misc':  200,  # everything else
-}
-TOTAL_CAP = 5000  # memory tool hard limit
-```
+- extract reusable facts,
+- detect recurring entities and topics,
+- maintain a shorter-path memory substrate for active recall.
 
-## Data Integrity Guarantees
+### 3. Governance Layer
 
-1. **Write guard**: `memory_prewrite_guard.py` checks for contradictions before write
-2. **Atomic writes**: PostgreSQL transactions for all Hindsight operations
-3. **Watermark sync**: `session_to_gbrain.py` tracks last sync position, resumes from break
-4. **Backup**: config.yaml backed up before modification (`config.yaml.pre-memory-DATE`)
-5. **Archive pruning**: `memory_lifecycle.py` marks as archived, never deletes from gbrain
+This is the sidecar’s control plane.
 
-## File Layout
+- `memory_governance.db`
+- `memory_governance_rebuild.py`
+- `memory_family_registry.py`
 
-```
-~/.hermes/
-├── config.yaml                  # memory.provider: hindsight
-├── MEMORY.md                    # L0 snapshot
-├── state.db                     # Session store (source of truth)
-├── scripts/
-│   ├── tiered_context_injector.py    # RRF fusion engine
-│   ├── memory_guardian.py            # Lifecycle manager
-│   ├── session_to_gbrain.py          # gbrain sync
-│   └── ... (13 more)
-├── skills/
-│   ├── memory-starter-kit/           # Basic tier
-│   ├── memory-archivist/             # Archive tier
-│   └── memory-proactive/             # Proactive tier
-├── archives/                         # Manual archives
-│   ├── people/
-│   ├── projects/
-│   └── knowledge/
-└── templates/                        # jinja2 templates
-```
+Purpose:
 
-## Dependencies
+- normalize multi-source memory,
+- build hubs and canonical objects,
+- enforce family and mode policies,
+- track recall and maintenance metrics.
 
-| Component | External Dep | Purpose |
-|-----------|-------------|---------|
-| Hindsight | PostgreSQL 16 | Memory storage |
-| agentmemory | Docker | MCP memory server |
-| gbrain | Bun + PostgreSQL + pgvector | Knowledge graph |
-| gbrain-embed | sentence-transformers (BGE-small) | Local embeddings |
+### 4. Recall Layer
 
-All Python scripts use **stdlib only** — zero third-party dependencies for the core runtime.
+This is where query-time layering happens.
 
-## Performance
+- `tiered_context_injector.py`
 
-| Operation | Latency | Notes |
-|-----------|---------|-------|
-| memory_prewrite_guard | <5ms | Single JSON scan |
-| domain_memory route | <1ms | Dict lookup |
-| Hindsight auto-retain | ~50ms | Async, non-blocking |
-| Hindsight auto-recall | ~200ms | Pre-session async |
-| tiered_context_injector | ~500ms-2s | 3 parallel queries + RRF |
-| gbrain sync (incremental) | ~2-10s | Depends on delta size |
-| gbrain sync (full) | ~30-60s | 10005+ pages |
+Purpose:
 
-## Failure Modes & Recovery
+- classify query family and mode,
+- assemble hub/object/hindsight/fallback evidence,
+- suppress weak fallback when strong evidence exists,
+- return structured recall for Hermes to consume.
 
-| Failure | Impact | Recovery |
-|---------|--------|----------|
-| Hindsight down | L1 lost, L0+L2+L3 still work | `systemctl restart hindsight` |
-| agentmemory down | L2 lost, L0+L1+L3 work | `docker restart agentmemory-iii-engine-1` |
-| gbrain down | L3 lost, L0+L1+L2 work | Check PostgreSQL + Bun |
-| gbrain-embed down | semantic search degraded to keyword | `systemctl restart gbrain-embed` |
-| memory tool full | New writes rejected | `compact_memory.py` or manual cleanup |
-| PostgreSQL down | L1+L3 lost, L0+L2 still work | Full PostgreSQL recovery |
+### 5. Operations Layer
 
-## Engine Abstraction Layer
+- `memory_maintenance_cycle.py`
+- `memory_guardian.py`
+- `sidecar_acceptance_check.py`
 
-The retrieval layer is fully pluggable. `tiered_context_injector.py` discovers available backends at startup and selects the best combination.
+Purpose:
 
-### Discovery Order
+- orchestrate maintenance,
+- drain and monitor backlog,
+- surface queue trends and sync lag,
+- run consistent acceptance checks.
 
-```
-1. Check PostgreSQL connection (for Hindsight + gbrain)
-2. Check Docker socket (for agentmemory MCP)
-3. Check Elasticsearch endpoint (if configured)
-4. Check Milvus endpoint (if configured)
-5. Fallback to SQLite FTS5
-```
+## Core Script Set
 
-### Language-Specific Backend Recommendations
+The supported production script set for v3.0 is:
 
-| Use Case | Recommended Backend | Rationale |
-|----------|-------------------|-----------|
-| English, <10K docs | SQLite FTS5 (stdlib) | Zero dependencies, fast enough |
-| English, <100K docs | PostgreSQL tsvector | Full-text search + auto-retain |
-| Any language, semantic | pgvector (+ BGE-small) | Cross-language, finds meaning not keywords |
-| Chinese, <100K docs | PostgreSQL + zhparser | Proper Chinese word segmentation |
-| Chinese, semantic | pgvector + BGE-large-zh-v1.5 | Chinese-optimized embeddings |
-| Japanese/Korean | Elasticsearch + ICU/Nori | Best CJK support outside Python |
-| Multi-language mixed | agentmemory MCP (hybrid) | BM25 + vector + graph RRF fusion |
-| Knowledge graph queries | gbrain (pgvector + wikilinks) | Entity relationships, timeline |
+- `memory_family_registry.py`
+- `memory_governance_rebuild.py`
+- `memory_guardian.py`
+- `memory_maintenance_cycle.py`
+- `session_to_gbrain.py`
+- `sidecar_acceptance_check.py`
+- `tiered_context_injector.py`
 
-### Engine Configuration File
+These are the scripts installed by `installer/install.py`.
 
-`~/.hermes/config.yaml` allows per-engine settings:
+## Data Stores
 
-```yaml
-engine:
-  primary: hindsight           # default engine
-  secondary: agentmemory       # fallback engine
-  fallback: sqlite             # last resort (always available)
-  embeddings:
-    model: BAAI/bge-small-en   # or BGE-large-zh for Chinese
-    device: cpu
-  postgresql:
-    url: postgresql://localhost:5432/hindsight
-  elasticsearch:
-    url: http://localhost:9200
-  milvus:
-    uri: http://localhost:19530
-  sqlite:
-    path: ~/.hermes/pool.db
-```
+### Hermes `state.db`
 
-### Performance by Engine
+Role:
 
-| Engine | Query Latency | Index Speed | Disk Usage | Recall (English) | Recall (Chinese) |
-|--------|--------------|-------------|------------|-----------------|-----------------|
-| SQLite FTS5 | <1ms | Fast | Low | ~30% keyword | ~10% (no tokenizer) |
-| SQLite FTS5 + ICU | <1ms | Fast | Low | ~30% | ~50% keyword |
-| PostgreSQL tsvector | <5ms | Fast | Medium | ~40% | ~50% (zhparser) |
-| pgvector (BGE-small) | <20ms | Medium | Medium | ~85% semantic | ~60% (BGE-small-en) |
-| pgvector (BGE-large-zh) | <50ms | Slow | High | ~80% | ~90% semantic |
-| agentmemory hybrid | <100ms | Medium | Medium (Docker) | ~95% RRF | ~85% RRF |
-| Elasticsearch | <10ms | Fast | High | ~90% | ~95% (IK) |
-| Milvus | <5ms | Fast | High | ~95% | ~95% |
+- original session store,
+- search fallback,
+- audit and replay source.
 
-### Adding a Custom Engine
+### Hindsight
 
-Implement the `RetrievalBackend` interface:
+Role:
 
-```python
-# scripts/retrieval_router.py
-class RetrievalBackend:
-    def search(self, query: str, limit: int = 10) -> list[dict]:
-        raise NotImplementedError
-    def index(self, doc: dict):
-        raise NotImplementedError
-    def health(self) -> bool:
-        raise NotImplementedError
-```
+- short- and medium-horizon fact store,
+- live recall for relationship and context-heavy queries,
+- consolidation target for extracted memory.
 
-Register your backend, and `tiered_context_injector.py` will auto-discover it.
+### `memory_governance.db`
+
+Role:
+
+- sidecar metadata and retrieval control plane.
+
+Current important logical groups:
+
+- session index
+- hindsight index
+- memory hubs
+- memory objects
+- recall metrics
+- governance meta
+
+### gbrain
+
+Role:
+
+- long-term archive pages,
+- hubs, tags, links, and timeline edges,
+- durable sidecar archive target.
+
+## Query Families and Modes
+
+v3.0 intentionally routes different kinds of requests differently.
+
+### Provider / System
+
+Modes:
+
+- `config`
+- `runtime`
+- `tooling`
+
+Examples:
+
+- `hermes gateway provider` -> config-first
+- `gateway restart error switching model` -> runtime / incident
+
+### Project
+
+Modes:
+
+- `delivery`
+- `exploration`
+- `project`
+
+Examples:
+
+- `github script deploy` -> delivery-first
+- `search open source automation tools` -> exploration-first
+
+### Relationship / Dossier
+
+This family powers focused dossiers such as `kiki`.
+
+Behavior:
+
+- dossier-first interpretation
+- strong preference for live Hindsight
+- timeline-aware organization
+
+## Focused Dossier Model
+
+v3.0 generalizes “important topic handling” into **Focused Dossiers**.
+
+A dossier is a high-priority long-term memory profile with:
+
+- aliases,
+- topic markers,
+- retention priority,
+- timeline preference,
+- recall preference.
+
+`kiki` is the first production dossier instance, but the architecture is meant for additional future dossiers such as:
+
+- important people,
+- major projects,
+- long-running incidents,
+- strategy themes,
+- operational domains.
+
+## Maintenance Workflow
+
+The standard v3.0 maintenance cycle is:
+
+1. session archive intake,
+2. governance rebuild,
+3. tiered recall generation,
+4. guardian health snapshot.
+
+In practical terms:
+
+- `session_to_gbrain.py`
+- `memory_governance_rebuild.py`
+- `tiered_context_injector.py`
+- `memory_guardian.py --status`
+
+The cycle appends guardian history snapshots so backlog trends can be inspected over time.
+
+## Backlog and Recovery Model
+
+v3.0 includes explicit management for sticky Hindsight consolidation backlog.
+
+Observed production issue:
+
+- backlog can become sticky while failures remain zero,
+- duplicate consolidation requests may map to the same in-flight operation,
+- queue pressure can plateau instead of draining.
+
+v3.0 mitigation:
+
+- trend and stickiness detection,
+- stuck operation detection,
+- controlled drain path,
+- guarded service restart with cooldown,
+- acceptance and health verification after maintenance.
+
+This is intentionally operationally explicit rather than silently optimistic.
+
+## Installation Contract
+
+The installer’s job is to:
+
+- copy the supported sidecar scripts,
+- patch Hermes config safely,
+- record sidecar install metadata,
+- let the operator choose an embedding model,
+- keep project versioning on `3.0`.
+
+The installer is not responsible for:
+
+- rewriting Hermes core,
+- creating a custom retrieval engine matrix,
+- replacing Hindsight or gbrain.
+
+## Embedding Model Role
+
+Embedding models in v3.0 are deployment metadata and retrieval-quality configuration, not the main runtime “engine switch”.
+
+They affect:
+
+- semantic similarity quality,
+- multilingual recall quality,
+- resource footprint,
+- long-term archive search quality.
+
+The installer records the selected model in the install profile so the operator can reproduce or audit a deployment later.
+
+## Acceptance Baseline
+
+The production regression set used during development is:
+
+- `hermes gateway provider`
+- `gateway restart error switching model`
+- `github script deploy`
+- `search open source automation tools`
+- `模型用量`
+- `kiki`
+
+The project should be considered deployable only if:
+
+- maintenance is `ok`,
+- acceptance passes,
+- core services are active,
+- no new sidecar regression is introduced.
+
+## Architecture Boundary
+
+The final v3.0 project boundary is:
+
+- **inside Hermes**: session generation, Hermes memory tool, Hermes runtime
+- **inside the sidecar**: archive, governance, dossiering, recall, health
+
+That boundary is the main reason this design is maintainable across Hermes upgrades.

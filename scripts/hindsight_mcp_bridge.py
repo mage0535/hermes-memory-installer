@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Lightweight MCP stdio bridge for Hindsight REST API (port 8890).
 No second Hindsight instance needed — wraps existing API via HTTP calls."""
-import json, sys, urllib.request, urllib.error, traceback
+import json, os, sys, urllib.request, urllib.error, traceback
 
-HINDSIGHT = "http://127.0.0.1:8890"
-BANK = "hermes"
+HINDSIGHT = os.environ.get("HINDSIGHT_BASE_URL", "http://127.0.0.1:8890")
+BANK = os.environ.get("HINDSIGHT_BANK", "hermes")
 
 def jsonrpc(req_id, method, params):
     msg = {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}

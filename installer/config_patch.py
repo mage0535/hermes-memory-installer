@@ -1,17 +1,12 @@
-"""Config patcher for Memory 2.0.
+"""Config patch helpers for Memory Sidecar v3.0."""
 
-Patches Hermes config.yaml with memory skill entries and defaults.
-Auto-detects the correct .hermes path via $HOME (not hard-coded /root/).
-"""
+from __future__ import annotations
+
 import os
-import yaml
 from pathlib import Path
 
-# Default memory entries to inject into config.yaml
-DEFAULT_MEMORY_ENTRIES = {
-    "memory_char_limit": 2200,
-    "user_char_limit": 1375,
-}
+import yaml
+
 
 DEFAULT_SKILLS = [
     "memory-starter-kit",
@@ -19,70 +14,45 @@ DEFAULT_SKILLS = [
     "memory-proactive",
 ]
 
-DEFAULT_MCP = {
-    "gbrain": {
-        "command": "$HOME/.bun/bin/bun",
-        "args": ["$HOME/.bun/bin/gbrain", "serve"],
-        "timeout": 120,
-        "connect_timeout": 60,
-    }
-}
 
-
-def patch(config_path=None):
-    """Apply Memory 2.0 config patches."""
+def patch(config_path: Path | None = None, profile: str = "hybrid") -> bool:
     if config_path is None:
-        home = Path.home()
-        config_path = home / ".hermes" / "config.yaml"
-    
+        agent_home = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+        config_path = agent_home / "config.yaml"
     if not config_path.exists():
-        print(f"Config not found: {config_path}")
         return False
-    
-    with open(config_path) as f:
-        config = yaml.safe_load(f) or {}
-    
+
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     changed = False
-    
-    # Inject memory limits
-    for key, val in DEFAULT_MEMORY_ENTRIES.items():
-        if key not in config or config[key] != val:
-            config[key] = val
-            changed = True
-            print(f"  Set {key} = {val}")
-    
-    # Inject skills
-    skills = config.get("skills", [])
+
+    config.setdefault("memory", {})
+    if config["memory"].get("provider") != "hindsight":
+        config["memory"]["provider"] = "hindsight"
+        changed = True
+
+    skills = list(config.get("skills") or [])
     for skill in DEFAULT_SKILLS:
         if skill not in skills:
             skills.append(skill)
             changed = True
-            print(f"  Added skill: {skill}")
     config["skills"] = skills
-    
-    # Inject gbrain MCP config
-    mcp = config.get("mcp_servers", {})
-    if "gbrain" not in mcp:
-        home = Path.home()
-        mcp["gbrain"] = {
-            "command": str(home / ".bun" / "bin" / "bun"),
-            "args": [str(home / ".bun" / "bin" / "gbrain"), "serve"],
-            "timeout": 120,
-            "connect_timeout": 60,
-        }
+
+    config.setdefault("memory_sidecar", {})
+    if config["memory_sidecar"].get("version") != "3.0":
+        config["memory_sidecar"]["version"] = "3.0"
         changed = True
-        print(f"  Added gbrain MCP config")
-    config["mcp_servers"] = mcp
-    
+    if config["memory_sidecar"].get("profile") != profile:
+        config["memory_sidecar"]["profile"] = profile
+        changed = True
+
     if changed:
-        with open(config_path, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
-        print(f"Config patched: {config_path}")
-    else:
-        print("No changes needed")
-    
+        config_path.write_text(
+            yaml.safe_dump(config, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+
     return changed
 
 
 if __name__ == "__main__":
-    patch()
+    raise SystemExit(0 if patch() else 1)
