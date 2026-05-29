@@ -169,7 +169,7 @@ Sidecar 通过 checkpoint 增量读取。
 
 v3.0 引入了 **Focused Dossier** 概念。  
 它将重要人物、关系、项目、事件或主题提升为一级记忆对象。  
-生产版已验证了 relationship dossier（`kiki`），共享 registry 支持扩展到更多重点对象。
+生产版已验证了 relationship dossier，共享 registry 支持扩展到更多重点对象。
 
 ---
 
