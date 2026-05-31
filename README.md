@@ -4,16 +4,26 @@
 
 **A production-grade sidecar memory system for AI agents.**
 
+[![Stars](https://img.shields.io/github/stars/mage0535/hermes-memory-installer?style=flat-square&logo=github&label=stars)](https://github.com/mage0535/hermes-memory-installer/stargazers)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/pulls)
+
 [**中文文档**](README_CN.md) | [**English**](README.md)
 
 </div>
 
 ---
 
+## The Problem
+
+Every AI coding agent session starts blank. Claude Code, Cursor, Codex, Hermes — none have persistent long-term memory out of the box. You close a session and everything it learned about your project, your preferences, your ongoing work — gone.
+
+Running multiple agents on the same project? Each one starts from zero, with no shared context, no institutional memory. The agent frameworks don't fix this because it's not their job. But if you're running agents in production, you hit this wall every day.
+
 ## What v3.0 Is
 
-Memory Sidecar v3.0 is a **sidecar memory system** for AI agents such as Hermes, Claude Code, Cursor, Codex, and others.  
-It does **not** patch the agent's core. Instead, it runs alongside and provides:
+Memory Sidecar v3.0 is a **sidecar memory system** that sits alongside your agent. It does **not** patch the agent's core. Instead, it captures what the agent learned, indexes it, and makes it available to the next session — and to every other agent on the same server.
 
 - durable session intake and long-term archival
 - canonical memory objects with governance indexes
@@ -24,6 +34,18 @@ It does **not** patch the agent's core. Instead, it runs alongside and provides:
 
 **Multi-agent support**: all scripts use the `AGENT_HOME` environment variable (backward compatible with `HERMES_HOME`).  
 Mount the sidecar to any agent by setting `AGENT_HOME` to the agent's data directory.
+
+## Use Cases
+
+| Scenario | What the sidecar does |
+|----------|----------------------|
+| **Cross-session continuity** | Agent remembers project decisions, user preferences, ongoing tasks across restarts |
+| **Multi-agent team** | Hermes + Claude Code + Codex share the same memory layer — no silos |
+| **Production deployment** | Health checks, acceptance test suite, backlog remediation for self-healing |
+| **Bilingual teams** | First-class Chinese + English support from day one, 6 multilingual embedding models |
+| **Knowledge management** | Session archives → governance objects → focused dossiers → tiered retrieval |
+
+
 
 ---
 
