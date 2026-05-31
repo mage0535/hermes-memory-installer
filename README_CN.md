@@ -4,6 +4,11 @@
 
 **一个面向任意 AI 智能体的生产级外挂记忆体 sidecar。**
 
+[![Stars](https://img.shields.io/github/stars/mage0535/hermes-memory-installer?style=flat-square&logo=github&label=stars)](https://github.com/mage0535/hermes-memory-installer/stargazers)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/pulls)
+
 [**English**](README.md) | [**中文文档**](README_CN.md)
 
 </div>
