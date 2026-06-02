@@ -211,8 +211,8 @@ A dossier entry in `memory_family_registry.py`:
     "slug": "hub-magic-relationship",
     "title": "magic Relationship Archive",
     "tags": ["magic", "relationship"],
-    "keywords": ["magic", "王钰淇", "chat", "relationship"],
-    "aliases": ["御妹儿", "🍡"],
+    "keywords": ["magic", "M", "chat", "relationship"],
+    "aliases": ["M", "🍡"],
     "retention_priority": "high",
     "enable_timeline": True,
 }
