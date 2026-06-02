@@ -181,7 +181,7 @@ Supports domain routing to prevent one topic from dominating all memory:
 
 | Domain | Quota | Purpose |
 |--------|-------|---------|
-| kiki | 500 | Relationship analysis |
+| magic | 500 | Relationship analysis |
 | stock | 400 | Trading strategies |
 | system | 300 | System configuration |
 | promo | 200 | Channel promotion |
@@ -207,11 +207,11 @@ When a person, project, or topic is important enough to track systematically, it
 A dossier entry in `memory_family_registry.py`:
 
 ```python
-"kiki": {
-    "slug": "hub-kiki-relationship",
-    "title": "Kiki Relationship Archive",
-    "tags": ["kiki", "relationship"],
-    "keywords": ["kiki", "王钰淇", "chat", "relationship"],
+"magic": {
+    "slug": "hub-magic-relationship",
+    "title": "magic Relationship Archive",
+    "tags": ["magic", "relationship"],
+    "keywords": ["magic", "王钰淇", "chat", "relationship"],
     "aliases": ["御妹儿", "🍡"],
     "retention_priority": "high",
     "enable_timeline": True,
