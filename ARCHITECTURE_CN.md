@@ -212,7 +212,7 @@ L1  L2                              L3
     "title": "magic 关系档案",
     "tags": ["magic", "relationship"],
     "keywords": ["magic", "m", "聊天", "关系"],
-    "aliases": ["御妹儿", "🍡"],
+    "aliases": ["M儿", "🍡"],
     "retention_priority": "high",
     "enable_timeline": True,
 }
