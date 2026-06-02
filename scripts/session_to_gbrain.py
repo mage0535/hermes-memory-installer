@@ -23,6 +23,62 @@ from collections import defaultdict
 import re
 from tempfile import NamedTemporaryFile
 
+# --- gbrain MCP API bridge (auto-patched) ---
+import urllib.request as _urllib
+import json as _json
+
+_GBRAIN_MCP = os.environ.get("GBRAIN_MCP_URL", "http://localhost:8787/mcp")
+_GBRAIN_TOKEN = os.environ.get("GBRAIN_MCP_TOKEN", "")
+# Set GBRAIN_MCP_TOKEN env var, or paste your token above
+# or paste your raw token here: _GBRAIN_TOKEN="your-token-here"
+
+def _mcp_call(method, params, req_id=1):
+    """Call gbrain via MCP API directly (bypasses broken CLI)"""
+    data = _json.dumps({"jsonrpc":"2.0","id":req_id,"method":"tools/call","params":{"name":method,"arguments":params}}).encode()
+    req = _urllib.Request(_GBRAIN_MCP, data=data,
+        headers={"Content-Type":"application/json","Authorization":f"Bearer {_GBRAIN_TOKEN}"})
+    try:
+        resp = _urllib.urlopen(req, timeout=15)
+        result = _json.loads(resp.read())
+        if "error" in result:
+            raise subprocess.CalledProcessError(1, "gbrain-mcp", result["error"].get("message",""))
+        return result
+    except Exception as e:
+        raise subprocess.CalledProcessError(1, "gbrain-mcp", str(e))
+
+def run_gbrain_mcp(args, input_text=None):
+    """MCP-based replacement for run_gbrain(). Same interface, uses MCP API."""
+    cmd = args[0] if args else ""
+
+    if cmd == "put":
+        slug = args[1]
+        _mcp_call("put_page", {"slug": slug, "content": input_text or ""})
+    elif cmd == "tag":
+        slug, tag = args[1], args[2]
+        _mcp_call("add_tag", {"slug": slug, "tag": tag})
+    elif cmd == "timeline-add":
+        slug, date, text = args[1], args[2], args[3]
+        _mcp_call("add_timeline_entry", {"slug": slug, "date": date, "summary": text})
+    elif cmd == "link":
+        from_slug, to_slug = args[1], args[2]
+        link_type = "belongs_to"
+        if "--type" in args:
+            idx = args.index("--type")
+            if idx + 1 < len(args):
+                link_type = args[idx + 1]
+        _mcp_call("add_link", {"from": from_slug, "to": to_slug, "link_type": link_type})
+    elif cmd == "get":
+        slug = args[1]
+        _mcp_call("get_page", {"slug": slug})
+    else:
+        raise subprocess.CalledProcessError(1, "gbrain-mcp", f"Unknown command: {cmd}")
+    # Return a CompletedProcess-like result
+    class FakeResult:
+        returncode = 0
+    return FakeResult()
+# --- end bridge ---
+
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -30,7 +86,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from memory_family_registry import active_focus_profiles, focus_profile_archive_tags, focus_profile_ids_for_text
 
 # Config
-AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
 SESSIONS_DIR = AGENT_HOME / "sessions"
 STATE_DB = AGENT_HOME / "state.db"
 CHECKPOINT_FILE = AGENT_HOME / ".session_to_gbrain_checkpoint.json"
@@ -372,14 +428,19 @@ def render_wikilinks(text: str, relations: list, platform='gbrain') -> str:
 
 
 def run_gbrain(args: list[str], *, input_text: str | None = None) -> subprocess.CompletedProcess:
-    """Run gbrain deterministically and fail fast on CLI errors."""
-    return subprocess.run(
-        [GBRAIN_BIN, *args],
-        input=input_text,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
+    """Run gbrain via MCP API (CLI is broken due to embedding server)"""
+    try:
+        return run_gbrain_mcp(args, input_text=input_text)
+    except Exception:
+        # Fallback to CLI if MCP fails
+        return subprocess.run(
+            [GBRAIN_BIN, *args],
+            input=input_text,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=30,
+        )
 
 
 def ensure_gbrain_page(slug: str, content: str, tags: list[str], *, timeline_entry: tuple[str, str] | None = None) -> None:
@@ -409,6 +470,7 @@ def gbrain_page_exists(slug: str) -> bool:
         [GBRAIN_BIN, "get", slug],
         text=True,
         capture_output=True,
+        timeout=15,
     )
     return result.returncode == 0
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Memory Sidecar CLI v3.0 — multi-agent compatible."""
+"""Memory Sidecar CLI v3.1.0 — multi-agent compatible."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
 SCRIPTS_DIR = AGENT_HOME / "scripts"
 PROFILE_PATH = AGENT_HOME / "memory-sidecar" / "install-profile.json"
 
@@ -55,7 +55,7 @@ def cmd_acceptance(_: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.0")
+    parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.1.0")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor", help="Check whether the sidecar is installed")
     sub.add_parser("profile", help="Print install profile metadata")

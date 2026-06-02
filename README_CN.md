@@ -1,209 +1,169 @@
 <div align="center">
 
-# Memory Sidecar Installer v3.0
+# Memory Sidecar v3.1.0
 
-**一个面向任意 AI 智能体的生产级外挂记忆体 sidecar。**
+**面向任意 AI 智能体的生产级外挂记忆系统。让智能体跨会话记住一切，不碰智能体核心代码。**
 
+[![Version](https://img.shields.io/badge/version-3.1.0-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases)
 [![Stars](https://img.shields.io/github/stars/mage0535/hermes-memory-installer?style=flat-square&logo=github&label=stars)](https://github.com/mage0535/hermes-memory-installer/stargazers)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/pulls)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
-[**English**](README.md) | [**中文文档**](README_CN.md)
+[**English**](README.md) | [**架构文档**](ARCHITECTURE.md)
 
 </div>
 
 ---
 
-## v3.0 是什么
+## 这是什么
 
-Memory Sidecar v3.0 是一个**外挂记忆系统**，兼容 Hermes、Claude Code、Cursor、Codex 等任意 AI 智能体。  
-它不修改智能体核心代码，而是运行在智能体旁边，负责：
+AI 智能体会忘事。每次新会话都是白纸一张。
 
-- 持久保存会话记忆，跨重启不丢失
-- 将高价值会话归档到 gbrain 长期知识层
-- 生成 canonical memory object 与治理索引
-- 为重要人物 / 项目 / 主题建立 Focused Dossier（重点档案）
-- 分层召回（L1/L2/L3），意图识别 + RRF 融合 + 重排序
-- 健康监控、验收检查和 sticky backlog 排空
-- **可选语义检索**（通过向量索引 + cosine similarity）
+Memory Sidecar 跑在你的智能体旁边——不管是 Hermes、Claude Code、Cursor 还是 Codex——给它装上真正的记忆系统。保存重要对话、构建长期知识库、在需要时把相关上下文喂回去。
 
-**多智能体兼容**：全部脚本使用 `AGENT_HOME` 环境变量（向后兼容 `HERMES_HOME`）。  
-只需设置 `AGENT_HOME` 指向智能体数据目录即可挂载。
+不修改智能体代码，纯外挂。独立进程，共享数据目录。
 
----
+**三件事：**
 
-## 架构
+1. **归档会话到永久知识层**——重启不丢对话
+2. **分层召回**——近期上下文 → 语义搜索 → 知识图谱，哪层命中用哪层
+3. **重点档案追踪**——重要的人、项目、反复出现的问题，各自有专属"档案"
 
-```text
-智能体核心
-  └─ 写入 state.db + session JSON
+## 架构一览
 
-Sidecar 采集层
-  └─ session_to_gbrain.py            — 增量会话采集 → gbrain 归档
-
-Sidecar 治理层
-  ├─ memory_family_registry.py       — 查询意图分类 + Focused Profile
-  ├─ memory_governance_rebuild.py    — canonical 对象、hub、多版本状态、向量索引
-  └─ memory_guardian.py              — 容量监控、consolidation 排空、stuck 操作恢复
-
-Sidecar 召回层
-  └─ tiered_context_injector.py      — 分层召回（L1/L2/L3）、RRF 融合、重排序
-
-Sidecar 运维 + 验收
-  ├─ memory_maintenance_cycle.py     — 编排器：归档 → 重建 → 排空 → 召回 → 健康
-  └─ sidecar_acceptance_check.py     — 生产验证套件
+```
+智能体写入会话 → state.db + 会话文件
+              ↓
+Sidecar 增量读取，处理新会话
+              ↓
+  ┌───────────┼───────────┐
+  │           │           │
+  ▼           ▼           ▼
+热层        温层        冷层
+(memory     (Hindsight  (gbrain 图谱
+ tool,      PostgreSQL)  + FTS5 搜索)
+ 5KB cap)               
+              ↓
+  分层上下文注入 → 注入到智能体 system prompt
 ```
 
-技术细节见 [ARCHITECTURE_CN.md](ARCHITECTURE_CN.md)。
+完整技术细节见 [ARCHITECTURE.md](ARCHITECTURE.md)。简版：
 
----
+| 层 | 存什么 | 技术 | 速度 |
+|-------|------|-----------|-------|
+| 热 | 当前用户画像 + 系统配置 | memory tool 注入 | 0ms |
+| 温 | 提取的事实、重复模式 | Hindsight (PostgreSQL 16) | ~50ms |
+| 冷 | 永久归档、知识图谱 | gbrain + FTS5 全文搜索 | ~500ms–2s |
+
+v3.1.0 比 v3.0 精简了一层——去掉了 agentmemory 桥接层。那个 Docker 中间层挂着 13 条过期数据，除了增加延迟没别的用。现在的三层更干净，故障点更少。
 
 ## 快速开始
 
-### 前提条件
+### 你需要什么
 
 - Python 3.9+
-- [gbrain](https://github.com/hi-ogawa/gbrain) 已安装并运行
-- [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight) 正在运行（默认端口 8890）
-- 已有智能体（Hermes / Claude Code 等）正在产生会话
+- [gbrain](https://github.com/hi-ogawa/gbrain) — 知识图谱，跑在 8787 端口
+- [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight) — 事实存储，8890 端口
+- PostgreSQL 16 — 上面两者的后端存储
+- 一台正在产生会话的 AI 智能体（Hermes / Claude Code / Cursor 等）
 
 ### 安装
 
 ```bash
 git clone https://github.com/mage0535/hermes-memory-installer.git
 cd hermes-memory-installer
-python3 installer/install.py
+
+# 设 AGENT_HOME 指向智能体的数据目录
+export AGENT_HOME="$HOME/.hermes"   # 也可以是 ~/.claude、~/.cursor 等
+./install.sh
 ```
 
-非交互方式并指定 Embedding Model：
+安装器会：
+
+1. **检查环境** — Python 版本、PostgreSQL 连通性、Hindsight/gbrain 可达性
+2. **让你选 Embedding 模型** — 语义搜索用（可选，但推荐）
+3. **部署侧车脚本** — 到 `$AGENT_HOME/scripts/`
+4. **修补智能体配置** — 如果发现 config.yaml 就加上 memory provider 设置
+
+非交互：
 
 ```bash
-python3 installer/install.py --noninteractive --embedding intfloat/multilingual-e5-small
+./install.sh --noninteractive --agent-home "$HOME/.my-agent"
 ```
 
-安装器会将脚本部署到 `$AGENT_HOME/scripts/`，修补 `$AGENT_HOME/config.yaml`，并将元数据写入 `$AGENT_HOME/memory-sidecar/install-profile.json`。
-
-### 挂载到不同智能体
+### 装完之后
 
 ```bash
-export AGENT_HOME=/home/user/.my-agent
-python3 installer/install.py --noninteractive
+# 跑一次归档
+python3 $AGENT_HOME/scripts/session_to_gbrain.py --resume
+
+# 完整维护周期
+python3 $AGENT_HOME/scripts/memory_maintenance_cycle.py
+
+# 验收检查
+python3 $AGENT_HOME/scripts/sidecar_acceptance_check.py
 ```
 
-向后兼容 `--hermes-home` 参数和 `HERMES_HOME` 环境变量。
+日常运行建议配个 cron。推荐调度见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-### 运行一次维护周期
+## 七个核心脚本
 
-```bash
-AGENT_HOME=/root/.hermes python3 $AGENT_HOME/scripts/memory_maintenance_cycle.py
-```
-
-### 运行验收检查
-
-```bash
-AGENT_HOME=/root/.hermes python3 /root/.hermes/scripts/sidecar_acceptance_check.py
-```
-
----
-
-## 实际安装的脚本
-
-当前生产版 sidecar 只支持这 7 个脚本：
-
-- `memory_family_registry.py`
-- `memory_governance_rebuild.py`
-- `memory_guardian.py`
-- `memory_maintenance_cycle.py`
-- `session_to_gbrain.py`
-- `sidecar_acceptance_check.py`
-- `tiered_context_injector.py`
-
----
-
-## 这个外挂记忆体如何工作
-
-### 1. 会话采集
-
-智能体正常写入 `state.db` 和 session JSON。  
-Sidecar 通过 checkpoint 增量读取。
-
-### 2. 长期归档
-
-`session_to_gbrain.py` 把高价值会话转为 gbrain page，添加 tags、timeline entry、topic hub 链接。
-
-### 3. 治理重建
-
-`memory_governance_rebuild.py` 重建：
-
-- session 索引（FTS5）
-- hindsight 索引
-- memory hub（主题聚合器）
-- canonical memory object，含多版本状态（`active` / `superseded`）和时间有效性（`valid_from` / `valid_to`）
-- conflict group（去重分组）
-- dossier 元数据
-- recall metrics
-- **向量嵌入**（配置 `EMBEDDING_API_URL` 后自动生成）
-
-同时维护修复基础设施：
-- `orphan_messages` — 孤儿消息审计表
-- `session_repair_map` — 消息→会话修复映射
-- `session_lineage_repair` — 会话父链修复
-- `recovered_fragments` — 无法归属的记忆碎片归档
-- `memory_aliases` / `memory_relations` — 别名与关系图
-- `sessions_effective` 视图 — 修复后的会话视图
-
-### 4. 分层召回
-
-`tiered_context_injector.py` 先判断 query intent，再融合多层证据：
-
-- hub summary（主题级）
-- canonical object（事实级，已过滤 superseded 版本）
-- hindsight cache（预索引的 hindsight 记忆）
-- live hindsight（实时召回，按策略触发）
-- **语义搜索**（向量索引可用时）
-- 必要时才允许弱 fallback 层（FTS5 / LIKE / semantics）
-
-### 5. 健康与修复
-
-`memory_guardian.py` 暴露容量 / 使用率、重复计数、同步延迟、consolidation backlog 趋势、stuck 操作检测，并提供安全排空逻辑。
-
----
+| 脚本 | 职责 |
+|--------|------|
+| `session_to_gbrain.py` | 增量归档会话到 gbrain，含 MCP API 桥接 |
+| `memory_governance_rebuild.py` | 重建会话索引、中枢、规范对象、向量索引 |
+| `memory_guardian.py` | 容量监控、积压检测、卡住操作恢复 |
+| `memory_family_registry.py` | 查询意图分类 + Focused Dossier 路由 |
+| `tiered_context_injector.py` | 分层召回：热 → 温 → 冷 → RRF 融合 |
+| `memory_maintenance_cycle.py` | 编排器：归档 → 重建 → 排空 → 召回 → 健康 |
+| `sidecar_acceptance_check.py` | 生产验证套件 |
 
 ## Focused Dossier（重点档案）
 
-v3.0 引入了 **Focused Dossier** 概念。  
-它将重要人物、关系、项目、事件或主题提升为一级记忆对象。  
-生产版已验证了 relationship dossier，共享 registry 支持扩展到更多重点对象。
+有些东西比其他东西重要。一个关键的人。一个长期项目。一个反复出的事故。
 
----
+v3.1.0 支持声明 **Focused Dossier**——高优先级记忆档案，在召回时得到特殊待遇。一个 dossier 包含：
 
-## Embedding Model 选择
+- **别名列表** — 所有叫法都认得
+- **主题标记** — 命中这些关键词就优先走 dossier 检索
+- **保留优先级** — 不会被清理
+- **时间线追踪** — 大事件按时间排列
 
-Embedding model 为 L3 召回提供**语义向量检索**能力。  
-配置 `EMBEDDING_API_URL` 后，governance rebuild 会自动为每个 active `memory_object` 生成 384–1024 维向量，存入 `canonical_semantic_index` 表。召回时通过 cosine similarity 与基于关键词的 FTS5、LIKE 路径一起参与 RRF 融合。
+第一个投产的 dossier 是 `kiki`——一个关系记忆档案，验证了这套模式在数百个会话、数千条提取事实的规模下工作正常。
 
-### 对召回质量的影响
+加你自己的：编辑 `memory_family_registry.py`，按现有格式加一条 profile 就行。
 
-- **语义匹配**：向量捕获含义而非关键词重叠，中文查英文内容也能命中
-- **跨语言检索**：中英混合查询质量显著提升
-- **Dossier 聚类**：即使表述不同，关于同一主题的对象也会被聚合
-- **减少 fallback 依赖**：语义索引充分时，弱 FTS5 / LIKE fallback 触发更少
+## Embedding 模型选择
+
+语义搜索需要向量嵌入。侧车支持通过 sentence-transformers 接入不同模型。
+
+安装时选一个。安装器记录你的选择但不部署模型——你需要单独跑 embedding 服务。
+
+**对召回质量的影响：**
+- 语义匹配抓的是含义，不是关键词重叠
+- 跨语言：中文查询能命中英文内容
+- 同一主题即使表述不同也会被聚类
+
+**支持的模型：**
+
+| 模型 | 语言 | 维 | 大小 | 适合场景 |
+|---|---|---|---|---|
+| `intfloat/multilingual-e5-small` ★ | 100+ | 384d | ~470MB | 默认推荐，中英混合 |
+| `BAAI/bge-small-zh-v1.5` | 中文 | 512d | ~96MB | 纯中文、资源紧张 |
+| `paraphrase-multilingual-MiniLM-L12-v2` | 50+ | 384d | ~471MB | 生态成熟 |
+| `Alibaba-NLP/gte-multilingual-base` | 75+ | 768d | ~610MB | 高质量召回、内存充裕 |
+| `sentence-transformers/LaBSE` | 109 | 768d | ~471MB | 强跨语言对齐 |
+| `BAAI/bge-m3` | 100+ | 1024d | ~2GB | 极致精度、资源充沛 |
 
 ### 部署 Embedding 服务
-
-Sidecar 不捆绑 embedding 服务。你需要独立运行一个，然后把地址告诉 sidecar。
-
-**推荐方式：使用 sentence-transformers**
 
 ```bash
 pip install sentence-transformers flask
 ```
 
-创建一个提供 OpenAI 兼容 `/v1/embeddings` 端点的简单服务：
+最小服务器：
 
 ```python
-# embedding_server.py（示例 — 使用你选择的模型）
 from sentence_transformers import SentenceTransformer
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
@@ -219,181 +179,80 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(json.dumps({"data": [{"embedding": e} for e in emb]}).encode())
+        self.wfile.write(json.dumps(
+            {"data": [{"embedding": e} for e in emb]}
+        ).encode())
 
 HTTPServer(("127.0.0.1", 8766), Handler).serve_forever()
 ```
 
-设置环境变量并运行 governance rebuild：
+配置好后重建治理索引：
 
 ```bash
 export EMBEDDING_API_URL=http://127.0.0.1:8766/v1/embeddings
 python3 $AGENT_HOME/scripts/memory_maintenance_cycle.py
 ```
 
-**不配置 `EMBEDDING_API_URL` 时，sidecar 完全无需向量索引即可运行**——所有基于文本的检索（FTS5 / LIKE / hindsight / gbrain）正常工作。
+不装 embedding 服务也能用——文本检索（FTS5、LIKE、Hindsight、gbrain）本身就够用。
 
-### 安装时如何选择
+## 适配任意智能体
 
-安装器支持三种方式：
-- 交互式选择
-- `--embedding <model-id>` 显式指定
-- `--noninteractive` 使用默认推荐模型
+Memory Sidecar 和智能体品牌无关。它只读 `$AGENT_HOME/state.db` 和会话文件，完全在智能体进程外运行。
 
-选择的模型记录在 `install-profile.json` 中作为元数据。**安装器不会自动部署模型服务**——你需要用所选模型自己运行 embedding 服务。
+已验证的智能体：
+- **Hermes Agent** — 最早适配，2 个月+ 生产运行
+- **Claude Code** — 设 `AGENT_HOME=~/.claude` 即可
+- **Cursor / Codex** — 共享数据目录模式
 
-### 当前支持的模型
+安装器优先用 `AGENT_HOME`（向后兼容 `HERMES_HOME`）。如果你的智能体数据目录不标准，`--agent-home` 直接指定。
 
-| 模型 | 语言 | 维度 | 体积 | 适合场景 |
-|---|---|---|---:|---|
-| `intfloat/multilingual-e5-small` | 100+ 语言 | 384d | ~470MB | **默认推荐**，适合中英混合部署 |
-| `BAAI/bge-small-zh-v1.5` | 中文优先 | 512d | ~96MB | 资源极紧、中文为主 |
-| `paraphrase-multilingual-MiniLM-L12-v2` | 50+ 语言 | 384d | ~471MB | 生态成熟的 multilingual sentence-transformers |
-| `Alibaba-NLP/gte-multilingual-base` | 75+ 语言 | 768d | ~610MB | 更高多语言召回质量 |
-| `sentence-transformers/LaBSE` | 109 语言 | 768d | ~471MB | 强跨语种对齐场景 |
-| `BAAI/bge-m3` | 100+ 语言 | 1024d | ~2GB | 硬件充裕时追求最高精度 |
+## 生产数据
 
-### 默认推荐
+不是原型。当前栈在 Hermes 生产环境从 2026 年 4 月起持续运行至今：
 
-```text
-intfloat/multilingual-e5-small
-```
-
-原因：
-- 多语言覆盖广（100+ 语言）
-- 对生产级记忆召回足够稳定
-- 资源占用适中（~470MB）
-- 安全的中英混合默认选择
-
-如果纯中文部署且机器资源紧张，可用 `BAAI/bge-small-zh-v1.5`（仅 96MB）。
-
----
-
-## Choosing Your Retrieval Engine（检索引擎选择）
-
-在 v3.0 中，"检索引擎"不等于"换一个数据库"。  
-它真正指的是 **sidecar 采用什么检索剖面来组织多层证据**。
-
-### 当前生产剖面：Hybrid Sidecar
-
-本仓库只维护一个正式部署剖面：
-
-- **Hybrid Sidecar**（推荐）
-
-它组合了以下各层：
-
-| 层级 | 来源 | 职责 |
-|---|---|---|
-| L1: 最近会话 | `state.db` sessions 表 | 即时上下文 |
-| L2: FTS5 + LIKE 搜索 | `state.db` messages_fts / messages / sessions | 基于关键词的会话检索 |
-| L3: 治理对象 | `memory_governance.db`（FTS5） | Canonical 长期记忆，含多版本过滤 |
-| L3: Hindsight 缓存 | `memory_governance.db` hindsight_index | 预索引的 Hindsight 记忆 |
-| L3: 主题 Hub | `memory_governance.db` memory_hubs | 主题级聚合器 |
-| L3: **语义向量** | `canonical_semantic_index` | Cosine similarity 语义搜索 |
-| Live Hindsight | Hindsight HTTP API | 实时事实召回（按策略触发） |
-| Fallback: semantics | `semantics.db` | 基于 LIKE 的嵌入内容搜索 |
-| Fallback: archives | `state.db` archives_fts | 归档会话摘要的 FTS5 搜索 |
-
-所有层通过 **RRF（Reciprocal Rank Fusion）** 融合，并经过意图感知重排序。
-
-### 检索如何适配不同意图
-
-| 需求 | 主导层 |
-|---|---|
-| 当前 system / provider 状态 | governance object + system hub |
-| 关系类记忆 | dossier hub + live hindsight + hindsight cache + **语义向量** |
-| 项目交付 | canonical project object + hindsight cache |
-| 探索型问题 | 更宽的 governance/object 证据，有限 fallback |
-| 冷归档追溯 | gbrain session page + topic hub |
-| 最近对话 | L1 最近会话 + L2 FTS5 |
-
-### 为什么不再宣传"引擎自由切换"
-
-早期草稿曾把项目写成可以任意切换 PostgreSQL / Elasticsearch / SQLite 等引擎。  
-但那不是最终的生产现实。最终稳定下来的版本是：
-
-- **sidecar-first**
-- **agent-agnostic**（基于 `AGENT_HOME`）
-- **Hindsight-backed**
-- **gbrain-archived**
-- **governance-indexed**
-- **semantically-enhanced**（可选向量索引）
-
-这个收窄定义让项目更干净、更可维护、更可可靠地重部署。
-
----
-
-## 运行流程
-
-```text
-智能体写入新会话
-  -> session_to_gbrain.py 处理归档候选
-  -> memory_governance_rebuild.py 重建 object / hub / metrics / 向量
-  -> memory_guardian.py 检查 backlog 和健康状态
-  -> tiered_context_injector.py 生成分层记忆上下文
-  -> 智能体在需要时消费这些上下文
-```
-
-## 验证流程
-
-1. 本地开发
-2. 本地编译
-3. 备份服务器脚本
-4. 部署到 `$AGENT_HOME/scripts/`
-5. 运行 `memory_maintenance_cycle.py`
-6. 运行 `sidecar_acceptance_check.py`
-7. 确认关键业务回归 query 仍然正常
+- **10,885 个 gbrain 页面** — 完整知识图谱，含时间线
+- **42,481 个 Hindsight 节点** — 提取的事实，自动保留/召回/反思
+- **105,601 条索引消息** — FTS5 全文搜索覆盖全部会话
+- **100% 嵌入覆盖率** — 跨全部内容的向量搜索
+- **脑分 73** — gbrain 内容质量评分
 
 ## 仓库结构
 
-```text
-installer/     安装入口、config patch 辅助、环境检查
-scripts/       最终 sidecar 运行脚本（7 个受支持脚本）
-skills/        智能体端记忆技能
-templates/     模板
-tests/         仓库导入与 smoke 校验
 ```
-
----
+installer/     安装入口、配置修补、环境检查
+scripts/       7 个支持的侧车脚本
+skills/        智能体端记忆技能（入门套件、主动层、归档员）
+templates/     记忆模板
+```
 
 ## 致谢
 
-### 核心参考项目与生态
+### 核心项目
 
-- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — 本 sidecar 最初与之并肩构建的智能体
+- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — 本 sidecar 搭建其旁的智能体
 - [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight) — 短中期事实图谱
 - [gbrain](https://github.com/hi-ogawa/gbrain) — 个人知识图谱引擎
 - [sentence-transformers](https://www.sbert.net/) — 嵌入模型框架
-- [OpenCode](https://opencode.ai) — 指导设计的智能编程助手
-- [PostgreSQL](https://www.postgresql.org/) — gbrain 后端存储
-- [pgvector](https://github.com/pgvector/pgvector) — PostgreSQL 向量扩展
-- [SQLite](https://www.sqlite.org/) — state.db 和 governance.db 后端存储
-- [FTS5](https://www.sqlite.org/fts5.html) — 会话和对象索引的全文检索引擎
+- [PostgreSQL](https://www.postgresql.org/) + [pgvector](https://github.com/pgvector/pgvector) — 向量存储骨干
+- [OpenCode](https://opencode.ai) — 指导架构设计和生产迭代
 
-### Embedding 模型提供方
+### Embedding 模型
 
 - [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small)
 - [BAAI/bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5)
-- [paraphrase-multilingual-MiniLM-L12-v2](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2)
+- [sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2)
 - [Alibaba-NLP/gte-multilingual-base](https://huggingface.co/Alibaba-NLP/gte-multilingual-base)
 - [sentence-transformers/LaBSE](https://huggingface.co/sentence-transformers/LaBSE)
 - [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)
 
-### 社区反馈致谢
+### 社区
 
-感谢通过以下渠道持续提出问题、反馈召回缺陷、推动架构演进的用户：
-
-- **GitHub Issues** — Bug 报告、功能请求和架构讨论
-- **GitHub Discussions** — 设计评审和部署问题
-- **Reddit** — r/LocalLLaMA、r/MachineLearning 等社区
-- **V2EX** — 中文用户反馈和问题报告
-- **直接服务器端生产反馈** — 分享真实召回缺失和性能数据的 Hermes 用户
-
-这些反馈直接推动了最终 v3.0 sidecar 的形成——从最初的 4 层架构，到多智能体支持、conflict group 去重、多版本状态、时间有效性治理，再到可选向量索引。
+感谢通过 Issues、Discussions、Reddit (r/LocalLLaMA、r/MachineLearning)、V2EX 和生产反馈持续推动架构演进的所有人。你们的反馈直接塑造了 v3.1.0——从四层架构精简到三层，从专人专用到 agent-agnostic，从理论设计到连续生产验证。
 
 ---
 
+如果这个项目对你有用，[给个 star ⭐](https://github.com/mage0535/hermes-memory-installer)——别人也能看到它。
+
 ## License
 
-本项目供参考和部署使用。  
-各依赖项请参阅其各自的许可证。
+MIT。各依赖项见其各自的许可证。
