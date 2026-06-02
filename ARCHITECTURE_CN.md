@@ -181,7 +181,7 @@ L1  L2                              L3
 
 | 领域 | 配额 | 用途 |
 |--------|-------|---------|
-| kiki | 500 | 关系分析 |
+| magic | 500 | 关系分析 |
 | stock | 400 | A股策略 |
 | system | 300 | 系统配置 |
 | promo | 200 | 渠道推广 |
@@ -207,11 +207,11 @@ L1  L2                              L3
 `memory_family_registry.py` 中的档案条目示例：
 
 ```python
-"kiki": {
-    "slug": "hub-kiki-relationship",
-    "title": "Kiki 关系档案",
-    "tags": ["kiki", "relationship"],
-    "keywords": ["kiki", "王钰淇", "聊天", "关系"],
+"magic": {
+    "slug": "hub-magic-relationship",
+    "title": "magic 关系档案",
+    "tags": ["magic", "relationship"],
+    "keywords": ["magic", "m", "聊天", "关系"],
     "aliases": ["御妹儿", "🍡"],
     "retention_priority": "high",
     "enable_timeline": True,
