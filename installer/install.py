@@ -310,7 +310,7 @@ def patch_agent_config(agent_home: Path) -> Path | None:
         note = agent_home / SIDECAR_DIRNAME / "config-note.txt"
         note.parent.mkdir(parents=True, exist_ok=True)
         note.write_text(
-            "Memory Sidecar v{VERSION} installed.\n"
+            f"Memory Sidecar v{VERSION} installed.\n"
             "No agent config detected. Add the sidecar scripts path to your agent's\n"
             "startup hook or run them via cron.\n\n"
             f"Scripts: {agent_home / 'scripts'}\n"
