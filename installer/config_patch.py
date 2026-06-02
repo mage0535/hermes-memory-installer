@@ -1,4 +1,4 @@
-"""Config patch helpers for Memory Sidecar v3.0."""
+"""Config patch helpers for Memory Sidecar v3.1.0."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ DEFAULT_SKILLS = [
 
 def patch(config_path: Path | None = None, profile: str = "hybrid") -> bool:
     if config_path is None:
-        agent_home = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+        agent_home = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
         config_path = agent_home / "config.yaml"
     if not config_path.exists():
         return False
@@ -38,8 +38,8 @@ def patch(config_path: Path | None = None, profile: str = "hybrid") -> bool:
     config["skills"] = skills
 
     config.setdefault("memory_sidecar", {})
-    if config["memory_sidecar"].get("version") != "3.0":
-        config["memory_sidecar"]["version"] = "3.0"
+    if config["memory_sidecar"].get("version") != "3.1.0":
+        config["memory_sidecar"]["version"] = "3.1.0"
         changed = True
     if config["memory_sidecar"].get("profile") != profile:
         config["memory_sidecar"]["profile"] = profile

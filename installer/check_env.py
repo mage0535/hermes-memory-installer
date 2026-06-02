@@ -1,4 +1,4 @@
-"""Environment checks for Memory Sidecar v3.0."""
+"""Environment checks for Memory Sidecar v3.1.0."""
 
 from __future__ import annotations
 
