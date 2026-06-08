@@ -61,7 +61,7 @@ def classify_entry(text, index, total):
         "集成:", "已集成", "集成确认",
         "清理", "磁盘清理",
         "归档:", "修复:",
-        "通过审核", "v3.1.0", "release",
+        "通过审核", "v3.1.1", "release",
         "gbrain修复", "gbrain stale",
         "gbrain supervisor",
         "xmemory 三项",

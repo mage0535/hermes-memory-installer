@@ -1,4 +1,4 @@
-# Memory Sidecar 架构文档 v3.1.0
+# Memory Sidecar 架构文档 v3.1.1
 
 AI 智能体的生产级记忆栈。三层架构，无 Docker 依赖，与智能体无关。
 
