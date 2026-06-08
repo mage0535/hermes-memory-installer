@@ -1,6 +1,6 @@
 <div align="center">
 
-# Memory Sidecar v3.1.0
+# Memory Sidecar v3.1.1
 
 **A production memory system for any AI agent. Keep knowledge across sessions, without touching agent internals.**
 
