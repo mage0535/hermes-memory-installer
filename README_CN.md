@@ -216,12 +216,41 @@ Memory Sidecar 和智能体品牌无关。它只读 `$AGENT_HOME/state.db` 和�
 - **100% 嵌入覆盖率** — 跨全部内容的向量搜索
 - **脑分 73** — gbrain 内容质量评分
 
+## 更新日志
+
+### v3.1.1 (2026-06-08)
+
+- **新增脚本**：`memory_watermark.py`（自动检测记忆体容量，归档过期条目）+ `memory_snapshot_backup.py`（周期性快照备份）
+- **更新**：`hindsight-service.py` — 简化独立守护进程，使用现有 PG（端口 5432）
+- **更新**：`hindsight_mcp_bridge.py` — 清理行尾格式，改进 MCP stdio 桥接
+- **更新**：`session_to_gbrain.py` — 基于环境变量的 Token 配置（不再硬编码密钥）
+- **文档**：仓库结构从 7 个脚本更新为 9 个
+
+### v3.1.0 (2026-06-02)
+
+- 四层架构精简为三层（移除 agentmemory Docker 桥接层）
+- 移除 `memory_index.db`（半成品层）
+- Agent 无关化：通过 `AGENT_HOME` 环境变量适配任意智能体
+- 安装时交互式 Embedding 模型选择
+- 空跑模式（`--dry-run`）
+- 双语 README（中/英）+ 架构文档中文版
+- 聚焦档案模型上线（首个生产实例：Kiki）
+- Embedding 模型选择指南（6 种模型）
+- 生产运行数据：10.8K 页面、42K 节点、100% 嵌入覆盖率
+
+### v3.0.0 (2026-05-29)
+
+- 文档全面重写
+- 新增 HERMES_AUDIT_REPORT.md — 智能体能力全面审计
+- 中文 README 优化 SEO 和搜索意图
+- 四层架构：Hot → Warm → Cold → Archive
+
 ## 仓库结构
 
 ```
 installer/     安装入口、配置修补、环境检查
-scripts/       7 个支持的侧车脚本
-skills/        智能体端记忆技能（入门套件、主动层、归档员）
+|scripts/       9 个支持的侧车脚本（含 memory_watermark、memory_snapshot_backup）
+|skills/        智能体端记忆技能（入门套件、主动层、归档员）
 templates/     记忆模板
 ```
 
