@@ -1,6 +1,6 @@
 <div align="center">
 
-# Memory Sidecar v3.1.0
+# Memory Sidecar v3.1.1
 
 **面向任意 AI 智能体的生产级外挂记忆系统。让智能体跨会话记住一切，不碰智能体核心代码。**
 
