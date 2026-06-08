@@ -1,4 +1,4 @@
-# Memory Sidecar Architecture v3.1.0
+# Memory Sidecar Architecture v3.1.1
 
 The production memory stack for AI agents. Three layers, no Docker dependency, agent-agnostic.
 

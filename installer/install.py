@@ -1,5 +1,5 @@
 """
-Memory Sidecar Installer v3.1.0 — agent-agnostic, environment-aware.
+Memory Sidecar Installer v3.1.1 — agent-agnostic, environment-aware.
 
 Installs the production memory sidecar next to any AI agent (Hermes, Claude Code,
 Cursor, Codex, etc.) without modifying the agent core.
@@ -27,7 +27,7 @@ from pathlib import Path
 
 import yaml
 
-VERSION = "3.1.0"
+VERSION = "3.1.1"
 DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 SIDECAR_DIRNAME = "memory-sidecar"
 
