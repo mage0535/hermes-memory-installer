@@ -225,12 +225,42 @@ This isn't a prototype. The current stack has been running continuously on a pro
 - **100% embedding coverage** — vector search across all content
 - **brain score 73** — gbrain content quality metric
 
+## Changelog
+
+### v3.1.1 (2026-06-08)
+
+- **New scripts**: `memory_watermark.py` (auto-detect memory capacity and archive stale entries) + `memory_snapshot_backup.py` (periodic snapshot backup)
+- **Updated**: `hindsight-service.py` — simplified standalone daemon using existing PG on port 5432
+- **Updated**: `hindsight_mcp_bridge.py` — clean line endings and improved MCP stdio bridge
+- **Updated**: `session_to_gbrain.py` — env-var-based token config (no more hardcoded secrets)
+- **Docs**: repo layout now reflects 9 scripts instead of 7
+
+### v3.1.0 (2026-06-02)
+
+- Simplified 4-tier → 3-tier architecture (removed agentmemory Docker bridge)
+- Removed `memory_index.db` (semi-finished layer)
+- Agent-agnostic via `AGENT_HOME` (not hardcoded to Hermes)
+- Interactive embedding model selection during install
+- Dry-run mode (`--dry-run`)
+- Bilingual README (EN/CN) with language switching
+- ARCHITECTURE_CN.md — Chinese architecture translation
+- Focused Dossier model (first production instance: Kiki)
+- Embedding Model selection guide (6 models)
+- Production track record: 10.8K pages, 42K nodes, 100% embed coverage
+
+### v3.0.0 (2026-05-29)
+
+- Complete documentation overhaul
+- Added HERMES_AUDIT_REPORT.md — comprehensive agent capability audit
+- Optimized Chinese README for SoV/SEO
+- 4-tier architecture: Hot → Warm → Cold → Archive
+
 ## Repository Layout
 
 ```
 installer/     Entry point, config patching, environment checks
-scripts/       7 supported sidecar scripts
-skills/        Agent-side memory skills (starter-kit, proactive, archivist)
+|scripts/       9 supported sidecar scripts (incl. memory_watermark, memory_snapshot_backup)
+|skills/        Agent-side memory skills (starter-kit, proactive, archivist)
 templates/     Memory templates
 ```
 
