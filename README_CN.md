@@ -216,6 +216,12 @@ Memory Sidecar 和智能体品牌无关。它只读 `$AGENT_HOME/state.db` 和�
 - **100% 嵌入覆盖率** — 跨全部内容的向量搜索
 - **脑分 73** — gbrain 内容质量评分
 
+## 另见
+
+- **[Knowledge and Memory Management（知识和记忆体管理）](https://github.com/mage0535/Knowledge-and-Memory-Management)** — 能力扩展层。40+ 采集工具、SenseNova 文档引擎、12+ 云盘驱动、三层知识召回。将记忆体从「记住」扩展到「知识从哪来、如何用」。
+
+---
+
 ## 更新日志
 
 ### v3.2 (2026-06-08)
@@ -277,12 +283,6 @@ templates/     记忆模板
 ### 社区
 
 感谢通过 Issues、Discussions、Reddit (r/LocalLLaMA、r/MachineLearning)、V2EX 和生产反馈持续推动架构演进的所有人。你们的反馈直接塑造了 v3.1.0——从四层架构精简到三层，从专人专用到 agent-agnostic，从理论设计到连续生产验证。
-
----
-
-## 另见
-
-- **[Knowledge and Memory Management（知识和记忆体管理）](https://github.com/mage0535/Knowledge-and-Memory-Management)** — 能力扩展层。40+ 采集工具、SenseNova 文档引擎、12+ 云盘驱动、三层知识召回。将记忆体从「记住」扩展到「知识从哪来、如何用」。
 
 ---
 
