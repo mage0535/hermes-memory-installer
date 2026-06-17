@@ -225,6 +225,10 @@ This isn't a prototype. The current stack has been running continuously on a pro
 - **100% embedding coverage** — vector search across all content
 - **brain score 73** — gbrain content quality metric
 
+## See Also
+
+- **[Knowledge and Memory Management](https://github.com/mage0535/Knowledge-and-Memory-Management)** — Capability extension layer. 40+ collection tools, SenseNova document engine, 12+ cloud sync drivers, and 3-tier knowledge recall. Extends the sidecar from "remembering" to "where knowledge comes from and how to use it".
+
 ## Changelog
 
 ### v3.2 (2026-06-08)
@@ -289,10 +293,6 @@ templates/     Memory templates
 Shoutout to everyone who filed issues, surfaced recall gaps, and pushed the design forward. GitHub Issues, Discussions, Reddit (r/LocalLLaMA, r/MachineLearning), V2EX, and direct production feedback all shaped v3.1.0.
 
 ---
-
-## See Also
-
-- **[Knowledge and Memory Management](https://github.com/mage0535/Knowledge-and-Memory-Management)** — Capability extension layer. 40+ collection tools, SenseNova document engine, 12+ cloud sync drivers, and 3-tier knowledge recall. Extends the sidecar from "remembering" to "where knowledge comes from and how to use it".
 
 ---
 
