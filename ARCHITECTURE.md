@@ -1,296 +1,161 @@
-# Memory Sidecar Architecture v3.2
+# Memory Sidecar Architecture v3.5
 
-The production memory stack for AI agents. Three layers, no Docker dependency, agent-agnostic.
+Memory Sidecar v3.5 is the public, agent-agnostic release of the project. It is designed to sit beside an agent, read its durable data directory, and improve recall without patching the agent itself.
 
-## Design Principles
+Release page: https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5
 
-1. **Lossless durability.** Agent sessions are the source of truth. The sidecar indexes and archives them but never deletes originals.
-2. **Layered recall.** Retrieval isn't one database query. Hot, warm, and cold layers blend through Reciprocal Rank Fusion.
-3. **Focused memory.** Important people, projects, and incidents get explicit dossiers instead of staying buried in session fragments.
-4. **Operational visibility.** Backlog size, sync lag, duplicate ingestion, and rebuild health are visible, not hidden.
-5. **Agent-agnostic.** Works with Hermes, Claude Code, Cursor, Codex — anything that writes sessions to a data directory.
+## Architecture Goals
 
-## What Changed in v3.1.0
+The v3.5 architecture is built around four constraints:
 
-v3.0 had four layers with an `agentmemory` Docker bridge between Hindsight and gbrain. In practice that bridge held 13 stale records and added a Docker dependency for no benefit. v3.1.0 removes it entirely and adds session_search FTS5 as a parallel cold path.
+1. Preserve original session data. The sidecar indexes and archives, but does not delete source data.
+2. Retrieve from multiple layers. Recall should blend session history, Hindsight facts, gbrain pages, and curated knowledge notes.
+3. Stay portable. The same runtime should work with Hermes, Claude Code, Codex, Cursor, and similar agents as long as they expose a writable agent home directory.
+4. Keep the public release safe. Host-specific maintenance helpers remain optional and are not part of the default install set.
 
-**Removed:**
-- agentmemory MCP (Docker container, 51 tools, 13 records)
-- memory_index.db (semi-finished consolidation layer, 100 misc entries)
-- Docker as a sidecar runtime dependency
+## Core Layers
 
-**Added:**
-- session_search FTS5 — PostgreSQL full-text search over 105K messages
-- gbrain MCP bridge — session_to_gbrain.py now calls gbrain via HTTP API instead of CLI
-- consolidated_system.py auto_repair — health checks for all memory services
-- OneDrive knowledge sync pipeline
-- book_cache system for large reference libraries
+### 1. Hot layer
 
-## The Three Layers
+The hot layer is the agent-local memory tool. It keeps short-lived state such as current project context, key preferences, and active corrections. It is intentionally small and is pruned when needed.
 
-```
-┌──────────────────────────────────────────────────┐
-│                   AGENT                          │
-│  writes sessions → state.db + session files      │
-└────────────────────┬─────────────────────────────┘
-                     │
-┌────────────────────▼─────────────────────────────┐
-│              SIDECAR (this project)               │
-│                                                   │
-│  ┌──────────┐  ┌──────────────┐  ┌─────────────┐ │
-│  │  HOT     │  │    WARM      │  │    COLD     │ │
-│  │ memory   │  │  Hindsight   │  │  gbrain     │ │
-│  │ tool     │──│  PostgreSQL  │──│  + FTS5     │ │
-│  │ 5KB cap  │  │  ~50ms       │  │  ~500ms     │ │
-│  └──────────┘  └──────────────┘  └─────────────┘ │
-│                                                   │
-│  ┌─────────────────────────────────────────────┐ │
-│  │        tiered_context_injector.py            │ │
-│  │   RRF fusion → intent routing → injection   │ │
-│  └─────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────┘
-```
+### 2. Warm layer
 
-### Hot Layer — memory tool
+The warm layer is Hindsight. It stores extracted facts and session-level observations in PostgreSQL and provides durable recall for important items that should survive beyond a single conversation.
 
-Lives in the agent's system prompt. Holds user identity, critical preferences, and active context. Cap is 5KB by default. The compact_memory.py script handles pruning and dedup when it fills up.
+### 3. Cold layer
 
-**What goes here:**
-- Who the user is
-- Current project state
-- Recurring corrections (so the agent doesn't repeat mistakes)
-- Critical config (provider chains, auth preferences)
+The cold layer combines gbrain and `session_search`:
 
-### Warm Layer — Hindsight
+- gbrain stores structured pages, topic hubs, timelines, and linked knowledge.
+- `session_search` provides full-text search over the agent session archive.
 
-PostgreSQL-backed fact graph. Hindsight auto-retains key facts from each session, auto-recalls relevant context at query time, and runs a weekly reflect cycle to synthesize patterns.
+### 4. Knowledge layer
 
-**Production numbers (from a live Hermes install):**
-- 21,629 extracted memories
-- 20,543 observations
-- 309 semantic cache entries
-- 42,481 total nodes
+The knowledge layer indexes curated markdown notes, including note collections produced by [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management). This lets cleaned-up knowledge participate in recall without forcing it through raw session ingestion first.
 
-API endpoints for health checking:
-- `GET /health` → `{"status":"healthy","database":"connected"}`
-- `GET /v1/default/banks/hermes/stats` → bank statistics (bank name is deployment-specific; `hermes` is the default)
-- `GET /metrics` → Prometheus-format metrics
+## Retrieval Flow
 
-### Cold Layer — gbrain + session_search
+When a query arrives:
 
-Two parallel paths for long-term retrieval:
+1. The sidecar classifies intent and selects a recall family.
+2. It pulls candidates from hot, warm, cold, and knowledge layers.
+3. It merges candidates with Reciprocal Rank Fusion.
+4. It re-ranks by intent and injects a compact context block back to the agent.
 
-**gbrain knowledge graph** (10,885 pages, brain score 73):
-- Vector search via pgvector (384d embeddings from multilingual-e5-small)
-- Keyword search via FTS
-- Graph traversal via wikilinks and typed edges
-- Timeline entries for chronological queries
-- Tag-based filtering
+This is the main reason the sidecar improves recall quality compared with a single prompt-local memory file.
 
-**session_search FTS5** (105,601 messages, 6,374 sessions):
-- Full-text search over all historical messages
-- Session-level scoping and lineage tracking
-- Chinese text search with trigram indexing
+## Main Scripts
 
-## Core Scripts
+### `session_to_gbrain.py`
 
-### session_to_gbrain.py
+Archives new sessions from `$AGENT_HOME/sessions/` into gbrain and records timeline entries for important events.
 
-The archiving workhorse. Reads agent sessions from `$AGENT_HOME/sessions/`, processes unarchived ones, and writes structured pages to gbrain.
+### `memory_governance_rebuild.py`
 
-v3.1.0 upgrade: Uses a **direct MCP API bridge** instead of the gbrain CLI. The CLI was brittle — path-dependent, occasionally crashing, hard to debug. The MCP bridge calls gbrain's HTTP endpoint at `localhost:8787` with Bearer auth, so it works regardless of CLI state.
+Rebuilds the indexes used by recall:
 
-Session processing flow:
-1. Load checkpoint (which sessions have been processed)
-2. Scan for new session files
-3. For each unprocessed session:
-   - Extract key decisions, learnings, and context
-   - Create gbrain page with frontmatter (tags, date, summary)
-   - Link to relevant topic hubs
-   - Add timeline entries for significant events
-4. Save updated checkpoint
+- session index
+- Hindsight cache index
+- knowledge note index
+- canonical memory objects
+- conflict groups
+- recall metrics
 
-Runs every 6 hours in production: `*/30 */6 * * *`
+### `memory_guardian.py`
 
-### memory_governance_rebuild.py
+Monitors health and capacity:
 
-The indexer. Rebuilds:
-- Session index (FTS5 over state.db)
-- Hindsight index (pre-cached recall results)
-- Memory hubs (topic aggregators)
-- Canonical memory objects with multi-version state (active/superseded) and temporal validity (valid_from/valid_to)
-- Conflict groups (dedup clusters)
-- Dossier metadata
-- Recall metrics
-- Vector embeddings (when EMBEDDING_API_URL is configured)
+- backlog growth
+- duplicate ingestion
+- sync lag
+- stuck operations
+- hot layer fill rate
 
-Infrastructure tables maintained:
-- `orphan_messages` — audit table for unattached messages
-- `session_repair_map` — message→session repair mapping
-- `session_lineage_repair` — parent chain repair for sessions
-- `recovered_fragments` — un-bucketable memory fragments
-- `memory_aliases` / `memory_relations` — alias and relationship graphs
-- `sessions_effective` — repaired session view
+### `memory_family_registry.py`
 
-### memory_guardian.py
+Routes queries into recall families. This is what keeps project lookups, system lookups, and dossier lookups from interfering with each other.
 
-Capacity and health watchdog. Tracks:
-- Hot memory fill rate (5KB cap dashboard)
-- Duplicate detection (same fact stored multiple ways)
-- Backlog trends (are we falling behind on processing?)
-- Stuck operations (jobs that haven't progressed)
-- Sync lag (Hindsight consolidation queue depth)
+### `tiered_context_injector.py`
 
-Provides safe drain paths for backlog and stuck operations.
+Runs layered retrieval and injects the final context block. This is the runtime path that actually surfaces memory back to the agent.
 
-### memory_family_registry.py
+### `memory_maintenance_cycle.py`
 
-Intent classifier + dossier router. Maps query text to retrieval families:
+Runs the full maintenance chain in order:
 
-- **Provider/System** → config-first, governance objects
-- **Project** → delivery-first, canonical project objects
-- **Relationship/Dossier** → dossier-first, live Hindsight + timeline-aware
-- **Exploratory** → broader governance evidence, limited fallback
+1. archive sessions
+2. rebuild governance indexes
+3. drain backlog
+4. generate tiered recall
+5. record health
 
-Contains the active Focused Dossier registry. Add new dossiers by editing the `active_focus_profiles()` dict.
+### `sidecar_acceptance_check.py`
 
-### tiered_context_injector.py
+Runs a regression check against the installed runtime so operators can confirm the sidecar is still behaving as expected.
 
-The recall engine. Three-path parallel retrieval with RRF fusion:
+## Embeddings
 
-```
-Query arrives
-    ↓
-┌───┼───────────────────────────────┐
-│   │                               │
-▼   ▼                               ▼
-L1  L2                              L3
-Hot Warm                            Cold
-    (Hindsight)                     (gbrain + FTS5)
-    │                               │
-    └───────────────┬───────────────┘
-                    ↓
-            RRF fusion (k=60)
-                    ↓
-            Intent re-ranking
-                    ↓
-            Injected to agent context
+Embeddings are optional but recommended. The default recommended model is `intfloat/multilingual-e5-small`.
+
+With embeddings enabled, the sidecar can improve semantic retrieval. Without embeddings, the runtime still works through:
+
+- FTS5 session search
+- Hindsight recall
+- gbrain keyword retrieval
+- curated knowledge note indexing
+
+## Installation Boundary
+
+The public installer focuses on a generic runtime:
+
+- default install flow driven by `AGENT_HOME`
+- bilingual installer output
+- install modes `3 / 2 / 1` with fallback guidance
+- preserved embedding model selection flow
+- clean separation between public runtime scripts and optional host-specific helpers
+
+Optional repository helpers such as `memory_watermark.py` and `memory_snapshot_backup.py` remain in the repo, but are not part of the default public install path.
+
+## Compatibility Position
+
+The project aims for compatibility through stable data boundaries, not through deep internal coupling.
+
+An agent only needs:
+
+- a writable agent home directory
+- `state.db`
+- readable session files
+- the ability to run Python helper scripts outside the agent process
+
+That boundary is what keeps the sidecar usable across multiple agent products.
+
+## Operational Schedule
+
+Typical production cadence:
+
+- `session_to_gbrain.py`: every 6 hours
+- `auto_session_summary.py`: every 6 hours
+- `archive_sessions.py`: daily
+- `consolidated_system` health checks: hourly
+- Hindsight reflect cycle: weekly
+
+## Relation to Knowledge-and-Memory-Management
+
+`hermes-memory-installer` is the runtime and installer layer.
+`Knowledge-and-Memory-Management` is the upstream knowledge curation layer.
+
+Used together:
+
+- KMM curates source knowledge and clean notes
+- Memory Sidecar indexes that knowledge and makes it recallable for agents
+
+## Validation
+
+Operators should validate the installation with:
+
+```bash
+python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 ```
 
-Supports domain routing to prevent one topic from dominating all memory:
-
-| Domain | Quota | Purpose |
-|--------|-------|---------|
-| user-profile | 500 | User profile analysis |
-| stock | 400 | Trading strategies |
-| system | 300 | System configuration |
-| promo | 200 | Channel promotion |
-| misc | 200 | Everything else |
-
-### memory_maintenance_cycle.py
-
-Orchestrator that sequences the full maintenance pipeline:
-1. Session archive intake (session_to_gbrain.py)
-2. Governance rebuild (memory_governance_rebuild.py)
-3. Backlog drain (memory_guardian.py)
-4. Tiered recall generation (tiered_context_injector.py)
-5. Health snapshot (memory_guardian.py --status)
-
-### sidecar_acceptance_check.py
-
-Production validation suite. Runs key regression queries and checks that all layers return expected results.
-
-## Focused Dossier Model
-
-When a person, project, or topic is important enough to track systematically, it becomes a Focused Dossier.
-
-A dossier entry in `memory_family_registry.py`:
-
-```python
-"user-profile": {
-    "slug": "hub-user-profile",
-    "title": "User Profile Archive",
-    "tags": ["user-profile", "profile"],
-    "keywords": ["user", "profile", "preferences"],
-    "aliases": ["user"],
-    "retention_priority": "high",
-    "enable_timeline": True,
-}
-```
-
-When a query matches dossier keywords, the recall engine:
-1. Pulls the dossier hub page from gbrain first
-2. Loads recent timeline entries
-3. Searches Hindsight with dossier-scoped filters
-4. Ranks dossier evidence above general governance results
-
-## Embedding Infrastructure
-
-Semantic search is optional but strongly recommended. The sidecar uses sentence-transformers models served as a local HTTP API.
-
-**Production deployment (live Hermes install):**
-- Model: `intfloat/multilingual-e5-small` (384d)
-- Service: systemd-managed, port 8766
-- Health check: `GET /health` → `{"ok": true, "service": "gbrain-embed"}`
-- Consumption: gbrain chunk embeddings + governance rebuild vector indexing
-
-Without an embedding service, all text-based retrieval paths (FTS5, LIKE, Hindsight, gbrain keyword) continue to work.
-
-## Maintenance Schedule (Production)
-
-From a live Hermes deployment running since April 2026:
-
-| Job | Schedule | Purpose |
-|-----|----------|---------|
-| session_to_gbrain | Every 6h | Incremental session archival |
-| auto_session_summary | Every 6h | Session digest generation |
-| archive_sessions | Daily 02:00 | Bulk session archival |
-| consolidated_system | Hourly :00/:30 | Service health + auto_repair |
-| Hindsight reflect | Weekly Sun 05:30 | Pattern synthesis from accumulated facts |
-| memory maintenance cycle | Manual / on-demand | Full rebuild when needed |
-
-## Data Flow (End-to-End)
-
-```
-1. Agent conversation happens
-   └→ state.db updated + session JSON written
-
-2. session_to_gbrain.py picks up new sessions
-   └→ gbrain pages created with tags, timeline, hub links
-
-3. memory_governance_rebuild.py indexes everything
-   └→ session index, hindsight index, hubs, canonical objects
-
-4. memory_guardian.py checks health
-   └→ backlog trend, capacity, stuck ops
-
-5. Next agent conversation starts
-   └→ tiered_context_injector.py assembles context
-      Hot (memory tool) → Warm (Hindsight) → Cold (gbrain + FTS5)
-      RRF fusion → injected to agent prompt
-```
-
-## Operational Health Signals
-
-When the sidecar is healthy:
-- gbrain page creation is current (no unprocessed session backlog)
-- Hindsight consolidation queue drains steadily
-- memory tool stays under 80% capacity
-- embedding coverage is near 100%
-- session_search FTS5 index is up to date
-
-When something is wrong:
-- `memory_guardian.py --status` shows backlog growth
-- gbrain health endpoint shows missing embeddings
-- tiered_context_injector.py returns fewer results than expected
-- sidecar_acceptance_check.py fails regression queries
-
-## Architecture Boundary
-
-The sidecar's responsibility ends at the agent's data directory. It reads from `$AGENT_HOME/state.db` and `$AGENT_HOME/sessions/`, and writes indexes/archives to its own stores (gbrain, Hindsight). It never modifies agent source code.
-
-This boundary is why the sidecar survives agent upgrades. When Hermes or Claude Code ships a new version, the sidecar keeps working — it only depends on stable data formats (SQLite + JSON files), not agent internals.
-
----
-
-For a high-level overview and setup instructions, see the [README](README.md).
+For the user-facing overview and install instructions, see [README](README.md).
