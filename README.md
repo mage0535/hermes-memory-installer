@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
-[**涓枃璇存槑**](README_CN.md) | [**Architecture**](ARCHITECTURE.md)
+[**中文说明**](README_CN.md) | [**Architecture**](ARCHITECTURE.md)
 
 </div>
 

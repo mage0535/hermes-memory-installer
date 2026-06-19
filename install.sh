@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
-[**涓枃璇存槑**](README_CN.md) | [**Architecture**](ARCHITECTURE.md)
+[**中文说明**](README_CN.md) | [**Architecture**](ARCHITECTURE.md)
 
 </div>
 
@@ -198,12 +198,12 @@ Semantic recall is optional but recommended. The installer records the selected 
 The installer keeps the interactive embedding model selection flow.
 
 - You can pick from multiple built-in models during install.
-- You can still pass a model directly with `--embedding`.
+- You can still pass a model directly with `--embedding`
 - In interactive mode, you can choose a custom model id as well.
 
 Recommended default:
 
-- `intfloat/multilingual-e5-small`
+- ``intfloat/multilingual-e5-small``
 
 Without embeddings, text retrieval still works through:
 
@@ -227,12 +227,12 @@ That boundary is what keeps the project usable across multiple agents.
 
 ## Validation
 
-The repository is validated locally with:
+The repository is still validated locally with:
 
 - unit and regression tests
 - installer rollback tests
 - multi-layer recall tests
-- public repository hygiene checks
+- public repository higiene checks
 
 For operators, the main validation command after install is:
 
@@ -252,12 +252,12 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 
 ### v3.5.1 (2026-06-20)
 
-- added bilingual installer output (`zh` / `en`)
+- added bilingual installer output (`zh / en)
 - added install modes `1 / 2 / 3` with downgrade guidance
 - kept embedding model selection and custom model entry in the installer
 - documented fallback paths for dependency assistance
 
-For the short GitHub release summary, see [docs/release-v3.5.md](docs/release-v3.5.md).
+For the short GitHub release summary, see [docs/release-v3.5.md](../docs/release-v3.5.md).
 
 ### v3.2 (2026-06-08)
 
@@ -283,7 +283,7 @@ Reference projects:
 
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent)
 - [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight)
-- [gbrain](https://github.com/hi-ogawa/gbrain)
+- [mage0535/kith-mer](https://github.com/hi-ogawa/gbrain)
 - [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)
 
 Community and user feedback sources that shaped the current public package:

@@ -2,121 +2,203 @@
 
 # Memory Sidecar v3.5
 
-**A publishable, agent-agnostic memory sidecar for Hermes, Claude Code, Codex, Cursor, and similar agents.**
+**面向 Hermes、Claude Code、Codex、Cursor 等智能体的可发布外挂记忆体。**
 
 [![Version](https://img.shields.io/badge/version-3.5-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases)
 [![Stars](https://img.shields.io/github/stars/mage0535/hermes-memory-installer?style=flat-square&logo=github&label=stars)](https://github.com/mage0535/hermes-memory-installer/stargazers)
 [![Python](https://img.shields.io/badge/python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
-[**涓枃璇存槑**](README_CN.md) | [**Architecture**](ARCHITECTURE.md)
+[**English**](README.md) | [**架构说明**](ARCHITECTURE_CN.md)
 
 </div>
 
-## What This Is
+## 这是什么
 
-Memory Sidecar is an external memory system that runs next to an AI agent without patching the agent itself. It reads the agent's data directory, archives sessions, builds long-term knowledge, and injects relevant recall back into future work.
+Memory Sidecar 是一个跑在智能体旁边的外挂记忆体系统，不修改智能体核心代码，只围绕智能体的数据目录工作。它会读取会话、沉淀长期知识，并在后续任务中把相关记忆重新注入上下文。
 
-Release `3.5` is the public packaging pass for the current architecture:
+`v3.5` 是当前架构的对外发布整理版本，目标很明确：
 
-- agent-agnostic install flow driven by `AGENT_HOME`
-- layered recall across hot, warm, cold, and curated knowledge notes
-- clean public repository with no server-specific paths or credentials
-- install surface aligned with the actual deployed script set
+- 用 `AGENT_HOME` 驱动多智能体安装
+- 让分层召回、知识笔记召回、安装器、CLI、文档口径完全一致
+- 清理公开仓库中的私有路径和部署残留
+- 让项目可以真正放到 GitHub 上供用户安装体验和反馈
 
-This repository is suitable for public install feedback from technical users running their own `Hindsight + gbrain + PostgreSQL` environment.
+## 它真正增强了什么
 
-## How It Works
+这个外挂记忆体主要从 3 个方面增强智能体：
 
-The sidecar follows a simple operational loop:
+1. 把会话沉淀到持久层，而不是只停留在当前对话窗口。
+2. 通过热层、温层、冷层、知识层联合召回，而不是只依赖单一 prompt 内存。
+3. 让整理过的知识笔记也能参与召回，避免项目文档和知识库与会话记忆脱节。
 
-1. Read the agent's state and session data from `AGENT_HOME`
-2. Archive new sessions into gbrain and the session search index
-3. Rebuild governance indexes and curated knowledge note indexes
-4. Generate tiered recall context for the next agent turn
-5. Run health checks and acceptance checks so failures stay visible
+###公开发布边界
 
-## What It Improves
+`v3.5` 明确区分“通用 sidecar”和“宿主专用运维脚本”：
 
-The sidecar is designed to improve memory in three concrete ways:
+- 默认安装：通用多智能体 sidecar 运行时、安装器、CLI、记忆技能。
+- 仓库内保留但默认不安装：`memory_watermark.py`、`memory_snapshot_backup.py`。
 
-1. It archives session output into durable stores instead of letting history disappear with a single conversation window.
-2. It retrieves context from multiple layers instead of relying on one prompt-local memory file.
-3. It lets curated knowledge notes participate in recall, so project playbooks and wiki pages can influence future answers.
+这两个脚本带有更强的 Hermes 和宿主环境假设，所以在公开多智能体安装路径中 **默认不会被安装**，避免降低外部用户的安装成功率。
 
-## Public Release Scope
-
-`v3.5` intentionally separates the generic sidecar from host-specific operations:
-
-- Installed by default: the generic multi-agent sidecar runtime, installer, CLI, and memory skills.
-- In this repository but not installed by default: `memory_watermark.py` and `memory_snapshot_backup.py`.
-
-Those two operational helpers are Hermes-oriented maintenance scripts with stronger host assumptions, so they are **not installed by default** in the public multi-agent path.
-
-## Requirements
+## 依赖要求
 
 - Python `3.9+`
 - PostgreSQL `16`
-- [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight) running and reachable
-- [gbrain](https://github.com/hi-ogawa/gbrain) running and reachable
-- An agent data directory containing `state.db` and session files
+- 可用的 [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight)
+- 可用的 [gbrain](https://github.com/hi-ogawa/gbrain)
+- 一个包含 `state.db` 和会话文件的智能体数据目录
 
-Supported examples:
+当前适配定位：
 
 - Hermes Agent
 - Claude Code
-- Codex / Codex-style local agents
-- Cursor-style shared data directory setups
+- Codex / 类 Codex 本地智能体
+- Cursor 类共享数据目录场景
 
-## Quick Start
+## 快速开始
 
 ```bash
 git clone https://github.com/mage0535/hermes-memory-installer.git
 cd hermes-memory-installer
 
-export AGENT_HOME="$HOME/.hermes"   # or ~/.claude, ~/.cursor, ~/.agent, etc.
+export AGENT_HOME="$HOME/.hermes"   # 也可以是 ~/.claude、~/.cursor、~/.agent 等
 ./install.sh
 ```
 
-Non-interactive mode:
+非交互安装：
 
 ```bash
 ./install.sh --noninteractive --agent-home "$HOME/.my-agent"
 ```
 
-## Install Modes
+## 安装模式
 
-The installer supports three install modes for dependency assistance:
+安装器支持 3 种依赖安装协助模式：
 
 - `--install-mode 3`
-  Default. Tries the most automatic dependency bootstrap path first.
+  默认模式。优先尝试最自动化的依赖引导安装路径。
+
 - `--install-mode 2`
-  Guided dependency assistance. Shows the recommended commands and lets you continue step by step.
+  安装器会根超壨方的后续一迋的新同使地店。如果模式的分胫下绤中文。
 - `--install-mode 1`
-  Detection-only mode. Does not change the system and prints what is missing.
+  回中怅一测不怎失败，中文仵一进程失所.
 
-If mode `3` fails, re-run with:
+/Fallback order:
+
+1. Try mode `3`
+2. If mode `3` fails, switch to mode `2`
+3. If mode `2` still fails, switch to mode `1`
+
+The wrapper installer also supports:
+
+- `--lang en`
+- `--lang zh`
+
+## Embedding Model Selection
+
+The wrapper installer keeps the embedding model selection flow.
+
+- interactive selection from built-in models
+- direct model override with `--embedding`
+- custom model id entry in interactive mode
+
+## Prerequisites
+
+- Python `3.9+`
+- `pip`
+- PostgreSQL `16`
+- reachable Hindsight service
+- reachable gbrain service
+- an agent home directory with `state.db` and session files
+
+Installer helper dependency:
 
 ```bash
-./install.sh --install-mode 2
+python3 -m pip install "PyYAML>=6.0"
 ```
 
-If mode `2` still does not work, fall back to:
+## Core Installed Script Set
+
+Create the target scripts directory:
 
 ```bash
-./install.sh --install-mode 1
+export AGENT_HOME="${AGENT_HOME:-$HOME/.hermes}"
+mkdir -p "$AGENT_HOME/scripts"
 ```
 
-The installer also supports bilingual output:
+Copy the installed runtime entry scripts:
 
 ```bash
-./install.sh --lang en
-./install.sh --lang zh
+cp scripts/session_to_gbrain.py "$AGENT_HOME/scripts/"
+cp scripts/memory_governance_rebuild.py "$AGENT_HOME/scripts/"
+cp scripts/memory_guardian.py "$AGENT_HOME/scripts/"
+cp scripts/memory_family_registry.py "$AGENT_HOME/scripts/"
+cp scripts/tiered_context_injector.py "$AGENT_HOME/scripts/"
+cp scripts/memory_maintenance_cycle.py "$AGENT_HOME/scripts/"
+cp scripts/sidecar_acceptance_check.py "$AGENT_HOME/scripts/"
+cp scripts/archive_sessions.py "$AGENT_HOME/scripts/"
+cp scripts/auto_session_summary.py "$AGENT_HOME/scripts/"
+cp scripts/memory_observability_report.py "$AGENT_HOME/scripts/"
 ```
 
-When `--lang` is omitted, the installer falls back to locale detection.
+Copy the support modules:
 
-After install:
+```bash
+cp scripts/state_db_schema.py "$AGENT_HOME/scripts/"
+cp scripts/knowledge_notes.py "$AGENT_HOME/scripts/"
+cp scripts/recall_samples.py "$AGENT_HOME/scripts/"
+chmod +x "$AGENT_HOME/scripts/"*.py
+```
+
+## Skills
+
+```bash
+mkdir -p "$AGENT_HOME/skills"
+cp -r skills/memory-starter-kit "$AGENT_HOME/skills/"
+cp -r skills/memory-archivist "$AGENT_HOME/skills/"
+cp -r skills/memory-proactive "$AGENT_HOME/skills/"
+```
+
+## Agent Config
+
+If your agent uses `config.yaml`, the minimum expected entries are:
+
+```yaml
+memory:
+  provider: hindsight
+
+skills:
+  - memory-starter-kit
+  - memory-archivist
+  - memory-proactive
+
+memory_sidecar:
+  version: "3.5"
+  profile: hybrid
+  scripts_dir: /path/to/agent-home/scripts
+```
+
+Merge into existing config instead of replacing it wholesale.
+
+## Embedding Profile Metadata
+
+Record the selected embedding model so the deployment is reproducible:
+
+```bash
+mkdir -p "$AGENT_HOME/memory-sidecar"
+cat > "$AGENT_HOME/memory-sidecar/install-profile.json" <<'EOF'
+{
+  "version": "3.5",
+  "profile": "hybrid",
+  "embedding_model": {
+    "model_id": "intfloat/multilingual-e5-small"
+  }
+}
+EOF
+```
+
+## First Run
 
 ```bash
 python3 "$AGENT_HOME/scripts/session_to_gbrain.py" --resume
@@ -124,174 +206,51 @@ python3 "$AGENT_HOME/scripts/memory_maintenance_cycle.py"
 python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 ```
 
-## Installed Script Set
+Expected result:
 
-The public installer deploys 10 runtime entry scripts and 3 support modules into `$AGENT_HOME/scripts/`.
+- maintenance returns `ok: true`
+- archive, governance rebuild, recall generation, and guardian checks succeed
+- acceptance checks return pass output
 
-Entry scripts:
+## Knowledge-and-Memory-Management
 
-- `session_to_gbrain.py`
-- `memory_governance_rebuild.py`
-- `memory_guardian.py`
-- `memory_family_registry.py`
-- `tiered_context_injector.py`
-- `memory_maintenance_cycle.py`
-- `sidecar_acceptance_check.py`
-- `archive_sessions.py`
-- `auto_session_summary.py`
-- `memory_observability_report.py`
+For upstream knowledge collection and curation, pair this sidecar with [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management).
 
-Support modules:
+Operational relationship:
 
-- `state_db_schema.py`
-- `knowledge_notes.py`
-- `recall_samples.py`
+- KMM manages source knowledge, curated notes, ingestion flows, and broader knowledge operations
+- Memory Sidecar indexes curated notes and turns them into recallable context for agents
 
-Optional repository-only helpers:
+The sidecar will index:
+
+- `$AGENT_HOME/knowledge/notes`
+- legacy paths such as `$AGENT_HOME/knowledge/wiki/wiki`
+
+## Gray / Isolated Runtime Variables
+
+For gray testing or isolated deployments, these optional environment variables can override default paths:
+
+- `MEMORY_STATE_DB_PATH`
+- `MEMORY_GOVERNANCE_DB_PATH`
+- `MEMORY_KNOWLEDGE_NOTES_DIR`
+- `MEMORY_OUTPUT_CONTEXT_PATH`
+- `MEMORY_OUTPUT_RECALL_PATH`
+
+## Optional Repository Helpers
+
+These scripts exist in the repository but are not part of the generic public install set:
 
 - `memory_watermark.py`
 - `memory_snapshot_backup.py`
 
-## Repository Structure
+Only add them deliberately if your host environment matches their operational assumptions.
 
-- `installer/` contains the install entrypoint and environment checks
-- `scripts/` contains the runtime sidecar entry scripts and support modules
-- `skills/` contains agent-side memory skills
-- `templates/` contains reusable memory templates
-- `docs/` contains planning, verification, and release notes
+## Troubleshooting
 
-## Knowledge Integration
-
-Memory Sidecar can consume curated markdown knowledge in addition to session history.
-
-By default, governance rebuild checks:
-
-- `$AGENT_HOME/knowledge/notes`
-- legacy knowledge layouts such as `$AGENT_HOME/knowledge/wiki/wiki`
-
-These notes are indexed into a dedicated `knowledge` recall layer and participate in fused retrieval alongside session search, Hindsight facts, and gbrain results.
-
-## Knowledge-and-Memory-Management
-
-For a larger knowledge workflow, pair this project with [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management).
-
-That project extends the sidecar with:
-
-- structured knowledge collection pipelines
-- wiki and note management
-- broader sync and ingestion tooling
-- a larger operating model for "where knowledge comes from and how it is maintained"
-
-Practical boundary:
-
-- `hermes-memory-installer` is the memory sidecar runtime and installer
-- `Knowledge-and-Memory-Management` is the upstream knowledge capture and curation layer
-
-Used together, KMM supplies curated notes and source material, and Memory Sidecar turns that material into recallable context for agents.
-
-## Embeddings
-
-Semantic recall is optional but recommended. The installer records the selected model, while the embedding service itself is run separately.
-
-## Embedding Model Selection
-
-The installer keeps the interactive embedding model selection flow.
-
-- You can pick from multiple built-in models during install.
-- You can still pass a model directly with `--embedding`.
-- In interactive mode, you can choose a custom model id as well.
-
-Recommended default:
-
-- `intfloat/multilingual-e5-small`
-
-Without embeddings, text retrieval still works through:
-
-- FTS5 session search
-- Hindsight recall
-- gbrain keyword retrieval
-- curated knowledge note indexing
-
-## Compatibility Position
-
-The public packaging target is compatibility through stable data boundaries, not through deep agent-specific hooks.
-
-Expected agent-side assumptions:
-
-- a writable agent home directory
-- `state.db`
-- session files in a readable location
-- ability to run Python helper scripts outside the agent process
-
-That boundary is what keeps the project usable across multiple agents.
-
-## Validation
-
-The repository is validated locally with:
-
-- unit and regression tests
-- installer rollback tests
-- multi-layer recall tests
-- public repository hygiene checks
-
-For operators, the main validation command after install is:
-
-```bash
-python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
-```
-
-## Changelog
-
-### v3.5 (2026-06-19)
-
-- public release packaging pass for GitHub distribution
-- version alignment across installer, CLI, architecture docs, and manuals
-- explicit separation between generic installed runtime and optional Hermes operational helpers
-- clearer KMM positioning and integration guidance
-- repository license and release-surface cleanup
-
-### v3.5.1 (2026-06-20)
-
-- added bilingual installer output (`zh` / `en`)
-- added install modes `1 / 2 / 3` with downgrade guidance
-- kept embedding model selection and custom model entry in the installer
-- documented fallback paths for dependency assistance
-
-For the short GitHub release summary, see [docs/release-v3.5.md](docs/release-v3.5.md).
-
-### v3.2 (2026-06-08)
-
-- added observability reporting
-- moved token configuration to environment-driven paths
-- refined sidecar documentation and runtime layout
-
-### v3.1.0 (2026-06-02)
-
-- simplified the architecture to a 3-layer memory stack
-- removed the old agentmemory bridge
-- adopted `AGENT_HOME` for agent-agnostic installs
-
-## See Also
-
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [MANUAL_INSTALL.md](MANUAL_INSTALL.md)
-- [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)
-
-## Acknowledgements
-
-Reference projects:
-
-- [Hermes Agent](https://github.com/NousResearch/hermes-agent)
-- [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight)
-- [gbrain](https://github.com/hi-ogawa/gbrain)
-- [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)
-
-Community and user feedback sources that shaped the current public package:
-
-- GitHub issues and discussions
-- direct production feedback from operators
-- feedback about recall quality, install friction, and multi-agent compatibility
-
-## License
-
-MIT.
+| Problem | Meaning | First check |
+|---------|---------|-------------|
+| `ok=false` in maintenance | One of the sidecar stages failed | Re-run the failed stage directly and inspect stderr |
+| Acceptance fails on one query | Retrieval policy regressed or a dependency is missing | Run `tiered_context_injector.py` directly and inspect results |
+| gbrain lookup fails | Cold layer unavailable | Check gbrain health and credentials |
+| Hindsight lookup fails | Warm layer unavailable | Check Hindsight health and PostgreSQL reachability |
+| Knowledge notes missing | KMM/knowledge path not indexed | Check `MEMORY_KNOWLEDGE_NOTES_DIR` and governance rebuild output |
