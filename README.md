@@ -251,7 +251,7 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 - repository license and release-surface cleanup
 - published release page: [v3.5](https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5)
 
-### v3.2.1 (2026-06-20)
+### v3.5.1 (2026-06-20)
 
 - added bilingual installer output (`zh` / `en`)
 - added install modes `1 / 2 / 3` with downgrade guidance
@@ -276,6 +276,7 @@ For the short GitHub release summary, see [docs/release-v3.5.md](docs/release-v3
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [MANUAL_INSTALL.md](MANUAL_INSTALL.md)
+- [MANUAL_INSTALL_CN.md](MANUAL_INSTALL_CN.md)
 - [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)
 
 ## Acknowledgements
