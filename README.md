@@ -4,7 +4,7 @@
 
 **A publishable, agent-agnostic memory sidecar for Hermes, Claude Code, Codex, Cursor, and similar agents.**
 
-[![Version](https://img.shields.io/badge/version-3.5-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases)
+[![Version](https://img.shields.io/badge/version-3.5-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5)
 [![Stars](https://img.shields.io/github/stars/mage0535/hermes-memory-installer?style=flat-square&logo=github&label=stars)](https://github.com/mage0535/hermes-memory-installer/stargazers)
 [![Python](https://img.shields.io/badge/python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -249,6 +249,7 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 - explicit separation between generic installed runtime and optional Hermes operational helpers
 - clearer KMM positioning and integration guidance
 - repository license and release-surface cleanup
+- published release page: [v3.5](https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5)
 
 ### v3.5.1 (2026-06-20)
 
