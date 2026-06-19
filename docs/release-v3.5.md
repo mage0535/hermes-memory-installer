@@ -4,6 +4,8 @@ Memory Sidecar v3.5 is the public beta release of the agent-agnostic memory side
 
 It is designed for technical users who want to install the sidecar on their own agent home directory, connect it to Hindsight and gbrain, and provide real-world feedback on installation flow, recall quality, and multi-agent compatibility.
 
+Release page: https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5
+
 ## Highlights
 
 - Default install mode is `3`, which tries automatic dependency assistance first
