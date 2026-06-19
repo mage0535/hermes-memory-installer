@@ -230,7 +230,7 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 - 补充 KMM 的正式介绍、作用定位与链接
 - 清理发布面并补齐许可证文件
 
-### v3.2.1 (2026-06-20)
+### v3.5.1 (2026-06-20)
 
 - 安装器新增中英文双语输出
 - 增加 `1 / 2 / 3` 三种安装模式与失败降级说明
@@ -252,6 +252,7 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 ## 相关链接
 
 - [ARCHITECTURE_CN.md](ARCHITECTURE_CN.md)
+- [MANUAL_INSTALL_CN.md](MANUAL_INSTALL_CN.md)
 - [MANUAL_INSTALL.md](MANUAL_INSTALL.md)
 - [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)
 
