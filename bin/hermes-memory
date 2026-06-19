@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Memory Sidecar CLI v3.2 — multi-agent compatible."""
+"""Memory Sidecar CLI v3.5 鈥?multi-agent compatible."""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ from pathlib import Path
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
 SCRIPTS_DIR = AGENT_HOME / "scripts"
 PROFILE_PATH = AGENT_HOME / "memory-sidecar" / "install-profile.json"
+DEFAULT_GRAY_DIR = AGENT_HOME / "gray" / "memory-sidecar"
+STANDARD_KMM_NOTES_REL = Path("knowledge/notes")
+LEGACY_KMM_NOTES_REL = Path("knowledge/wiki/wiki")
 
 
 def run_script(script_name: str) -> int:
@@ -54,13 +57,49 @@ def cmd_acceptance(_: argparse.Namespace) -> int:
     return run_script("sidecar_acceptance_check.py")
 
 
+def cmd_gray_env(args: argparse.Namespace) -> int:
+    gray_dir = Path(args.gray_dir).expanduser() if args.gray_dir else DEFAULT_GRAY_DIR
+    governance_db = gray_dir / "memory_governance.gray.db"
+    context_path = gray_dir / "TIERED_CONTEXT.gray.md"
+    recall_path = gray_dir / "PROACTIVE_RECALL.gray.md"
+    standard_notes = AGENT_HOME / STANDARD_KMM_NOTES_REL
+    legacy_notes = AGENT_HOME / LEGACY_KMM_NOTES_REL
+    print(f"export AGENT_HOME={AGENT_HOME}")
+    print(f"export MEMORY_STATE_DB_PATH={AGENT_HOME / 'state.db'}")
+    print(f"export MEMORY_GOVERNANCE_DB_PATH={governance_db}")
+    print(f"# Preferred KMM notes dir: {standard_notes}")
+    print(f"# Legacy KMM wiki dir: {legacy_notes}")
+    print(f"export MEMORY_KNOWLEDGE_NOTES_DIR={standard_notes}")
+    print(f"export MEMORY_OUTPUT_CONTEXT_PATH={context_path}")
+    print(f"export MEMORY_OUTPUT_RECALL_PATH={recall_path}")
+    return 0
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    script = SCRIPTS_DIR / "memory_observability_report.py"
+    if not script.exists():
+        print(f"Missing script: {script}")
+        return 1
+    db_path = args.db or str(AGENT_HOME / "memory_governance.db")
+    result = subprocess.run(
+        [sys.executable, str(script), "--db", db_path, "--format", args.format],
+        text=True,
+    )
+    return result.returncode
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.1.0")
+    parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.5")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor", help="Check whether the sidecar is installed")
     sub.add_parser("profile", help="Print install profile metadata")
     sub.add_parser("maintenance", help="Run one maintenance cycle")
     sub.add_parser("acceptance", help="Run the acceptance regression suite")
+    gray_env = sub.add_parser("gray-env", help="Print environment variables for a gray deployment")
+    gray_env.add_argument("--gray-dir", help="Override the gray runtime directory")
+    report = sub.add_parser("report", help="Render an observability report from a governance DB")
+    report.add_argument("--db", help="Path to governance DB (defaults to agent home governance DB)")
+    report.add_argument("--format", choices=["json", "markdown"], default="json")
 
     args = parser.parse_args()
     if args.command == "doctor":
@@ -71,6 +110,10 @@ def main() -> int:
         return cmd_maintenance(args)
     if args.command == "acceptance":
         return cmd_acceptance(args)
+    if args.command == "gray-env":
+        return cmd_gray_env(args)
+    if args.command == "report":
+        return cmd_report(args)
     return 1
 
 
