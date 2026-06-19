@@ -2,84 +2,109 @@
 
 # Memory Sidecar v3.5
 
-**闈㈠悜 Hermes銆丆laude Code銆丆odex銆丆ursor 绛夋櫤鑳戒綋鐨勫彲鍙戝竷澶栨寕璁板繂浣撱€?*
+**面向 Hermes、Claude Code、Codex、Cursor 等智能体的可发布外挂记忆体。**
 
 [![Version](https://img.shields.io/badge/version-3.5-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases)
 [![Stars](https://img.shields.io/github/stars/mage0535/hermes-memory-installer?style=flat-square&logo=github&label=stars)](https://github.com/mage0535/hermes-memory-installer/stargazers)
 [![Python](https://img.shields.io/badge/python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
-[**English**](README.md) | [**鏋舵瀯璇存槑**](ARCHITECTURE_CN.md)
+[**English**](README.md) | [**架构说明**](ARCHITECTURE_CN.md)
 
 </div>
 
-## 杩欐槸浠€涔?
-Memory Sidecar 鏄竴涓窇鍦ㄦ櫤鑳戒綋鏃佽竟鐨勫鎸傝蹇嗕綋绯荤粺锛屼笉淇敼鏅鸿兘浣撴牳蹇冧唬鐮侊紝鍙洿缁曟櫤鑳戒綋鐨勬暟鎹洰褰曞伐浣溿€傚畠浼氳鍙栦細璇濄€佹矇娣€闀挎湡鐭ヨ瘑锛屽苟鍦ㄥ悗缁换鍔′腑鎶婄浉鍏宠蹇嗛噸鏂版敞鍏ヤ笂涓嬫枃銆?
-`v3.5` 鏄綋鍓嶆灦鏋勭殑瀵瑰鍙戝竷鏁寸悊鐗堟湰锛岀洰鏍囧緢鏄庣‘锛?
-- 鐢?`AGENT_HOME` 椹卞姩澶氭櫤鑳戒綋瀹夎
-- 璁╁垎灞傚彫鍥炪€佺煡璇嗙瑪璁板彫鍥炪€佸畨瑁呭櫒銆丆LI銆佹枃妗ｅ彛寰勫畬鍏ㄤ竴鑷?- 娓呯悊鍏紑浠撳簱涓殑绉佹湁璺緞鍜岄儴缃叉畫鐣?- 璁╅」鐩彲浠ョ湡姝ｆ斁鍒?GitHub 涓婁緵鐢ㄦ埛瀹夎浣撻獙鍜屽弽棣?
-## 瀹冪湡姝ｅ寮轰簡浠€涔?
-杩欎釜澶栨寕璁板繂浣撲富瑕佷粠 3 涓柟闈㈠寮烘櫤鑳戒綋锛?
-1. 鎶婁細璇濇矇娣€鍒版寔涔呭眰锛岃€屼笉鏄彧鍋滅暀鍦ㄥ綋鍓嶅璇濈獥鍙ｃ€?2. 閫氳繃鐑眰銆佹俯灞傘€佸喎灞傘€佺煡璇嗗眰鑱斿悎鍙洖锛岃€屼笉鏄彧渚濊禆鍗曚竴 prompt 鍐呭瓨銆?3. 璁╂暣鐞嗚繃鐨勭煡璇嗙瑪璁颁篃鑳藉弬涓庡彫鍥烇紝閬垮厤椤圭洰鏂囨。鍜岀煡璇嗗簱涓庝細璇濊蹇嗚劚鑺傘€?
-## 鍏紑鍙戝竷杈圭晫
+## 这是什么
 
-`v3.5` 鏄庣‘鍖哄垎鈥滈€氱敤 sidecar鈥濆拰鈥滃涓讳笓鐢ㄨ繍缁磋剼鏈€濓細
+Memory Sidecar 是一个跑在智能体旁边的外挂记忆体系统，不修改智能体核心代码，只围绕智能体的数据目录工作。它会读取会话、沉淀长期知识，并在后续任务中把相关记忆重新注入上下文。
 
-- 榛樿瀹夎锛氶€氱敤澶氭櫤鑳戒綋 sidecar 杩愯鏃躲€佸畨瑁呭櫒銆丆LI銆佽蹇嗘妧鑳姐€?- 浠撳簱鍐呬繚鐣欎絾榛樿涓嶅畨瑁咃細`memory_watermark.py`銆乣memory_snapshot_backup.py`銆?
-杩欎袱涓剼鏈甫鏈夋洿寮虹殑 Hermes 鍜屽涓荤幆澧冨亣璁撅紝鎵€浠ュ湪鍏紑澶氭櫤鑳戒綋瀹夎璺緞涓?**榛樿涓嶄細琚畨瑁?*锛岄伩鍏嶉檷浣庡閮ㄧ敤鎴风殑瀹夎鎴愬姛鐜囥€?
-## 渚濊禆瑕佹眰
+`v3.5` 是当前架构的对外发布整理版本，目标很明确：
+
+- 用 `AGENT_HOME` 驱动多智能体安装
+- 让分层召回、知识笔记召回、安装器、CLI、文档口径完全一致
+- 清理公开仓库中的私有路径和部署残留
+- 让项目可以真正放到 GitHub 上供用户安装体验和反馈
+
+## 它真正增强了什么
+
+这个外挂记忆体主要从 3 个方面增强智能体：
+
+1. 把会话沉淀到持久层，而不是只停留在当前对话窗口。
+2. 通过热层、温层、冷层、知识层联合召回，而不是只依赖单一 prompt 内存。
+3. 让整理过的知识笔记也能参与召回，避免项目文档和知识库与会话记忆脱节。
+
+## 公开发布边界
+
+`v3.5` 明确区分“通用 sidecar”和“宿主专用运维脚本”：
+
+- 默认安装：通用多智能体 sidecar 运行时、安装器、CLI、记忆技能。
+- 仓库内保留但默认不安装：`memory_watermark.py`、`memory_snapshot_backup.py`。
+
+这两个脚本带有更强的 Hermes 和宿主环境假设，所以在公开多智能体安装路径中 **默认不会被安装**，避免降低外部用户的安装成功率。
+
+## 依赖要求
 
 - Python `3.9+`
 - PostgreSQL `16`
-- 鍙敤鐨?[Hindsight](https://github.com/HindsightTechnologySolutions/hindsight)
-- 鍙敤鐨?[gbrain](https://github.com/hi-ogawa/gbrain)
-- 涓€涓寘鍚?`state.db` 鍜屼細璇濇枃浠剁殑鏅鸿兘浣撴暟鎹洰褰?
-褰撳墠閫傞厤瀹氫綅锛?
+- 可用的 [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight)
+- 可用的 [gbrain](https://github.com/hi-ogawa/gbrain)
+- 一个包含 `state.db` 和会话文件的智能体数据目录
+
+当前适配定位：
+
 - Hermes Agent
 - Claude Code
-- Codex / 绫?Codex 鏈湴鏅鸿兘浣?- Cursor 绫诲叡浜暟鎹洰褰曞満鏅?
-## 蹇€熷紑濮?
+- Codex / 类 Codex 本地智能体
+- Cursor 类共享数据目录场景
+
+## 快速开始
+
 ```bash
 git clone https://github.com/mage0535/hermes-memory-installer.git
 cd hermes-memory-installer
 
-export AGENT_HOME="$HOME/.hermes"   # 涔熷彲浠ユ槸 ~/.claude銆亊/.cursor銆亊/.agent 绛?./install.sh
+export AGENT_HOME="$HOME/.hermes"   # 也可以是 ~/.claude、~/.cursor、~/.agent 等
+./install.sh
 ```
 
-闈炰氦浜掑畨瑁咃細
+非交互安装：
 
 ```bash
 ./install.sh --noninteractive --agent-home "$HOME/.my-agent"
 ```
 
-## 瀹夎妯″紡
+## 安装模式
 
-瀹夎鍣ㄦ敮鎸?3 绉嶄緷璧栧畨瑁呭崗鍔╂ā寮忥細
+安装器支持 3 种依赖安装协助模式：
 
 - `--install-mode 3`
-  榛樿妯″紡銆備紭鍏堝皾璇曟渶鑷姩鍖栫殑渚濊禆寮曞瀹夎璺緞銆?- `--install-mode 2`
-  鍗婅嚜鍔ㄥ崗鍔╂ā寮忋€傝緭鍑烘帹鑽愬懡浠わ紝骞舵敮鎸佺敤鎴锋寜姝ラ缁х画瀹夎銆?- `--install-mode 1`
-  浠呮娴嬫ā寮忋€備笉鏀圭郴缁燂紝鍙憡璇変綘缂轰簡浠€涔堛€?
-濡傛灉妯″紡 `3` 澶辫触锛岃鍒囨崲鍒帮細
+  默认模式。优先尝试最自动化的依赖引导安装路径。
+- `--install-mode 2`
+  半自动协助模式。输出推荐命令，并支持用户按步骤继续安装。
+- `--install-mode 1`
+  仅检测模式。不改系统，只告诉你缺了什么。
+
+如果模式 `3` 失败，请切换到：
 
 ```bash
 ./install.sh --install-mode 2
 ```
 
-濡傛灉妯″紡 `2` 浠嶇劧澶辫触锛屽啀鍒囨崲鍒帮細
+如果模式 `2` 仍然失败，再切换到：
 
 ```bash
 ./install.sh --install-mode 1
 ```
 
-瀹夎鍣ㄥ悓鏃舵敮鎸佷腑鑻辨枃杈撳嚭锛?
+安装器同时支持中英文输出：
+
 ```bash
 ./install.sh --lang zh
 ./install.sh --lang en
 ```
 
-濡傛灉涓嶄紶 `--lang`锛屽畨瑁呭櫒浼氭牴鎹湰鍦扮幆澧冭嚜鍔ㄥ垽鏂€?
-瀹夎鍚庢墽琛岋細
+如果不传 `--lang`，安装器会根据本地环境自动判断。
+
+安装后执行：
 
 ```bash
 python3 "$AGENT_HOME/scripts/session_to_gbrain.py" --resume
@@ -87,10 +112,12 @@ python3 "$AGENT_HOME/scripts/memory_maintenance_cycle.py"
 python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 ```
 
-## 榛樿瀹夎鐨勮剼鏈泦
+## 默认安装的脚本集
 
-鍏紑瀹夎鍣ㄤ細鎶?10 涓繍琛屽叆鍙ｈ剼鏈拰 3 涓敮鎸佹ā鍧楅儴缃插埌 `$AGENT_HOME/scripts/`銆?
-杩愯鍏ュ彛鑴氭湰锛?
+公开安装器会把 10 个运行入口脚本和 3 个支持模块部署到 `$AGENT_HOME/scripts/`。
+
+运行入口脚本：
+
 - `session_to_gbrain.py`
 - `memory_governance_rebuild.py`
 - `memory_guardian.py`
@@ -102,113 +129,147 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 - `auto_session_summary.py`
 - `memory_observability_report.py`
 
-鏀寔妯″潡锛?
+支持模块：
+
 - `state_db_schema.py`
 - `knowledge_notes.py`
 - `recall_samples.py`
 
-浠撳簱鍐呭彲閫夎緟鍔╄剼鏈細
+仓库内可选辅助脚本：
 
 - `memory_watermark.py`
 - `memory_snapshot_backup.py`
 
-## 鐭ヨ瘑绗旇闆嗘垚
+## 知识笔记集成
 
-闄や簡浼氳瘽璁板繂涔嬪锛孧emory Sidecar 杩樿兘鎺ュ叆鏁寸悊鍚庣殑 markdown 鐭ヨ瘑銆?
-榛樿浼氭鏌ワ細
+除了会话记忆之外，Memory Sidecar 还能接入整理后的 markdown 知识。
+
+默认会检查：
 
 - `$AGENT_HOME/knowledge/notes`
-- 鍘嗗彶鐭ヨ瘑鐩綍锛屽 `$AGENT_HOME/knowledge/wiki/wiki`
+- 历史知识目录，如 `$AGENT_HOME/knowledge/wiki/wiki`
 
-杩欎簺鍐呭浼氳繘鍏ョ嫭绔嬬殑 `knowledge` 鍙洖灞傦紝骞朵笌浼氳瘽妫€绱€丠indsight 浜嬪疄銆乬brain 缁撴灉涓€璧峰弬涓庤瀺鍚堝彫鍥炪€?
+这些内容会进入独立的 `knowledge` 召回层，并与会话检索、Hindsight 事实、gbrain 结果一起参与融合召回。
+
 ## Knowledge-and-Memory-Management
 
-濡傛灉浣犲笇鏈涙妸鈥滅煡璇嗛噰闆嗐€佺煡璇嗘暣鐞嗐€佺煡璇嗘帴鍏ヨ蹇嗕綋鈥濆仛瀹屾暣锛屽缓璁厤濂椾娇鐢?[Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)銆?
-瀹冩墿灞曠殑鏄笂娓哥煡璇嗚兘鍔涳紝鍖呮嫭锛?
-- 缁撴瀯鍖栫煡璇嗛噰闆嗘祦绋?- wiki / 绗旇绠＄悊
-- 鏇村鍚屾鍜屾帴鍏ュ伐鍏?- 鏇村畬鏁寸殑鈥滅煡璇嗕粠鍝噷鏉ャ€佸浣曠淮鎶ゃ€佸浣曡璁板繂浣撲娇鐢ㄢ€濈殑宸ヤ綔娴?
-涓よ€呯殑鑱岃矗杈圭晫锛?
-- `hermes-memory-installer`锛氳礋璐ｈ蹇嗕綋 sidecar 杩愯鏃跺拰瀹夎閮ㄧ讲
-- `Knowledge-and-Memory-Management`锛氳礋璐ｇ煡璇嗘潵婧愩€佺煡璇嗘暣鐞嗐€佺煡璇嗕緵缁?
-缁勫悎浣跨敤鏃讹紝KMM 璐熻矗浜у嚭鏁寸悊鍚庣殑鐭ヨ瘑璧勪骇锛孧emory Sidecar 璐熻矗鎶婅繖浜涜祫浜у彉鎴愭櫤鑳戒綋鍙彫鍥炵殑涓婁笅鏂囥€?
-## 鍚戦噺鍙洖
+如果你希望把“知识采集、知识整理、知识接入记忆体”做完整，建议配套使用 [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)。
 
-璇箟鍙洖涓嶆槸寮哄埗渚濊禆锛屼絾寮虹儓寤鸿寮€鍚€傚畨瑁呭櫒鍙褰曚綘閫夋嫨鐨?embedding 妯″瀷锛宔mbedding 鏈嶅姟鏈韩闇€瑕佷綘鍗曠嫭閮ㄧ讲銆?
-榛樿鎺ㄨ崘锛?
+它扩展的是上游知识能力，包括：
+
+- 结构化知识采集流程
+- wiki / 笔记管理
+- 更多同步和接入工具
+- 更完整的“知识从哪里来、如何维护、如何被记忆体使用”的工作流
+
+两者的职责边界：
+
+- `hermes-memory-installer`：负责记忆体 sidecar 运行时和安装部署
+- `Knowledge-and-Memory-Management`：负责知识来源、知识整理、知识供给
+
+组合使用时，KMM 负责产出整理后的知识资产，Memory Sidecar 负责把这些资产变成智能体可召回的上下文。
+
+## 向量召回
+
+语义召回不是强制依赖，但强烈建议开启。安装器只记录你选择的 embedding 模型，embedding 服务本身需要你单独部署。
+
+默认推荐：
+
 - `intfloat/multilingual-e5-small`
 
-鍗充娇涓嶅惎鐢?embeddings锛屼互涓嬭兘鍔涗粛鐒跺彲鐢細
+即使不启用 embeddings，以下能力仍然可用：
 
-- FTS5 浼氳瘽妫€绱?- Hindsight 浜嬪疄鍙洖
-- gbrain 鍏抽敭璇嶆绱?- 鐭ヨ瘑绗旇绱㈠紩鍙洖
+- FTS5 会话检索
+- Hindsight 事实召回
+- gbrain 关键词检索
+- 知识笔记索引召回
 
-## Embedding 妯″瀷閫夋嫨
+## Embedding 模型选择
 
-瀹夎鍣ㄤ細缁х画淇濈暀浜や簰寮?Embedding 妯″瀷閫夋嫨鍔熻兘銆?
-- 瀹夎杩囩▼涓彲浠ヤ粠鍐呯疆鐨勫涓ā鍨嬩腑閫夋嫨銆?- 涔熷彲浠ラ€氳繃 `--embedding` 鐩存帴浼犲叆妯″瀷 ID銆?- 浜や簰妯″紡涓嬩粛鐒舵敮鎸佸～鍐欒嚜瀹氫箟妯″瀷銆?
-## 鍏煎鎬у畾浣?
-杩欎釜椤圭洰杩芥眰鐨勬槸鈥滃熀浜庣ǔ瀹氭暟鎹竟鐣岀殑鍏煎鈥濓紝鑰屼笉鏄€滄繁鍏ユ瘡涓€绉嶆櫤鑳戒綋鍐呴儴鍋氳€﹀悎閫傞厤鈥濄€?
-瀵规帴涓€涓櫤鑳戒綋鑷冲皯闇€瑕侊細
+安装器会继续保留交互式 Embedding 模型选择功能。
 
-- 涓€涓彲鍐欑殑 agent home 鐩綍
+- 安装过程中可以从内置的多个模型中选择。
+- 也可以通过 `--embedding` 直接传入模型 ID。
+- 交互模式下仍然支持填写自定义模型。
+
+## 兼容性定位
+
+这个项目追求的是“基于稳定数据边界的兼容”，而不是“深入每一种智能体内部做耦合适配”。
+
+对接一个智能体至少需要：
+
+- 一个可写的 agent home 目录
 - `state.db`
-- 鍙鍙栫殑浼氳瘽鏂囦欢
-- 鑳藉湪鏅鸿兘浣撹繘绋嬩箣澶栬繍琛?Python 杈呭姪鑴氭湰
+- 可读取的会话文件
+- 能在智能体进程之外运行 Python 辅助脚本
 
-杩欎篃鏄畠鑳芥湇鍔″绉嶆櫤鑳戒綋鐨勫師鍥犮€?
-## 楠岃瘉鏂瑰紡
+这也是它能服务多种智能体的原因。
 
-浠撳簱褰撳墠閫氳繃浠ヤ笅鏈湴楠岃瘉锛?
-- 鍗曞厓娴嬭瘯涓庡洖褰掓祴璇?- 瀹夎鍣ㄥ洖婊氭祴璇?- 澶氬眰鍙洖娴嬭瘯
-- 鍏紑浠撳簱鍗敓妫€鏌?
-閮ㄧ讲鍚庝富瑕侀獙鏀跺懡浠わ細
+## 验证方式
+
+仓库当前通过以下本地验证：
+
+- 单元测试与回归测试
+- 安装器回滚测试
+- 多层召回测试
+- 公开仓库卫生检查
+
+部署后主要验收命令：
 
 ```bash
 python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 ```
 
-## 鏇存柊璁板綍
+## 更新记录
 
 ### v3.5 (2026-06-19)
 
-- 瀹屾垚 GitHub 鍏紑鍙戝竷鏁寸悊
-- 缁熶竴瀹夎鍣ㄣ€丆LI銆佹灦鏋勬枃妗ｃ€佹墜鍐屼腑鐨勭増鏈彿
-- 鏄庣‘鈥滈€氱敤宸插畨瑁呰繍琛屾椂鈥濆拰鈥滃彲閫?Hermes 杩愮淮鑴氭湰鈥濈殑杈圭晫
-- 琛ュ厖 KMM 鐨勬寮忎粙缁嶃€佷綔鐢ㄥ畾浣嶄笌閾炬帴
-- 娓呯悊鍙戝竷闈㈠苟琛ラ綈璁稿彲璇佹枃浠?
+- 完成 GitHub 公开发布整理
+- 统一安装器、CLI、架构文档、手册中的版本号
+- 明确“通用已安装运行时”和“可选 Hermes 运维脚本”的边界
+- 补充 KMM 的正式介绍、作用定位与链接
+- 清理发布面并补齐许可证文件
+
 ### v3.5.1 (2026-06-20)
 
-- 瀹夎鍣ㄦ柊澧炰腑鑻辨枃鍙岃杈撳嚭
-- 澧炲姞 `1 / 2 / 3` 涓夌瀹夎妯″紡涓庡け璐ラ檷绾ц鏄?- 淇濈暀 embedding 妯″瀷閫夋嫨涓庤嚜瀹氫箟妯″瀷杈撳叆
-- 琛ュ厖渚濊禆瀹夎鍗忓姪鐨勯鍏堣鏄?
+- 安装器新增中英文双语输出
+- 增加 `1 / 2 / 3` 三种安装模式与失败降级说明
+- 保留 embedding 模型选择与自定义模型输入
+- 补充依赖安装协助的预先说明
+
 ### v3.2 (2026-06-08)
 
-- 澧炲姞鍙娴嬫€ф姤鍛婅兘鍔?- 杩涗竴姝ユ敹鏁涜繍琛屾椂鍜岀幆澧冨彉閲忛厤缃?- 浼樺寲 sidecar 鏂囨。鍜岀洰褰曠粨鏋?
+- 增加可观测性报告能力
+- 进一步收敛运行时和环境变量配置
+- 优化 sidecar 文档和目录结构
+
 ### v3.1.0 (2026-06-02)
 
-- 绠€鍖栦负涓夊眰璁板繂鏋舵瀯
-- 绉婚櫎鏃х殑 agentmemory 妗ユ帴灞?- 鏀圭敤 `AGENT_HOME` 椹卞姩澶氭櫤鑳戒綋瀹夎
+- 简化为三层记忆架构
+- 移除旧的 agentmemory 桥接层
+- 改用 `AGENT_HOME` 驱动多智能体安装
 
-## 鐩稿叧閾炬帴
+## 相关链接
 
 - [ARCHITECTURE_CN.md](ARCHITECTURE_CN.md)
 - [MANUAL_INSTALL.md](MANUAL_INSTALL.md)
 - [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)
 
-## 鑷磋阿
+## 致谢
 
-鍙傝€冮」鐩細
+参考项目：
 
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent)
 - [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight)
 - [gbrain](https://github.com/hi-ogawa/gbrain)
 - [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)
 
-鎺ㄥ姩褰撳墠鍏紑鍙戝竷褰㈡€佺殑绀惧尯鍜岀敤鎴峰弽棣堜富瑕佹潵鑷細
+推动当前公开发布形态的社区和用户反馈主要来自：
 
-- GitHub issues 鍜?discussions
-- 涓€绾跨敓浜х幆澧冧娇鐢ㄨ€呯殑鐩存帴鍙嶉
-- 鍥寸粫鍙洖璐ㄩ噺銆佸畨瑁呴棬妲涖€佸鏅鸿兘浣撳吋瀹规€х殑鎸佺画鍙嶉
+- GitHub issues 和 discussions
+- 一线生产环境使用者的直接反馈
+- 围绕召回质量、安装门槛、多智能体兼容性的持续反馈
 
-## 璁稿彲璇?
-MIT銆?
+## 许可证
+
+MIT。
