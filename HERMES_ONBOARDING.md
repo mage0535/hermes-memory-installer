@@ -1,5 +1,7 @@
 # AGENTS.md — Hermes Tool Stack 智能体接入指南
 
+> Hermes-specific: this document describes a Hermes deployment and its surrounding tool stack. It is not the generic multi-agent sidecar install guide.
+
 本文档面向将要接入 Hermes Tool Stack 环境的新智能体。请先完整阅读本文档，识别可用工具集和后端服务，再执行具体任务。
 
 ---
@@ -15,7 +17,7 @@ hermes model        # 选择模型/提供商
 hermes gateway start  # 启动网关（如需消息平台）
 ```
 
-### 安装记忆体（Memory Sidecar v3.1.1）
+### 安装记忆体（Memory Sidecar v3.5）
 
 ```bash
 # 方式一：一键安装（推荐）

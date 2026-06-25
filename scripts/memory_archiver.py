@@ -11,7 +11,7 @@ Memory 容量监控 + 自动归档脚本 (no_agent)
 5. 经验类条目同时推送到 Hindsight
 6. 输出归档报告 (stdout → Telegram 推送)
 """
-import re, os, sys, subprocess, json, urllib.request
+import re, os, sys, subprocess, json, urllib.request, shutil
 from datetime import datetime
 import os
 from pathlib import Path
@@ -20,7 +20,7 @@ AGENT_HOME = Path(os.environ.get("HERMES_HOME", os.environ.get("AGENT_HOME", str
 MEMORY_DIR = AGENT_HOME / "memories"
 MEMORY_FILE = MEMORY_DIR / "MEMORY.md"
 USER_FILE = MEMORY_DIR / "USER.md"
-GBRAIN = "/usr/local/bin/gbrain"
+GBRAIN = shutil.which("gbrain") or os.environ.get("GBRAIN_BIN", "gbrain")
 HINDSIGHT_URL = "http://127.0.0.1:8890/v1/default/banks/hermes/memories"
 
 CAPACITY_WARN_PCT = 85
