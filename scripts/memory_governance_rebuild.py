@@ -9,12 +9,22 @@ import os
 import re
 import sqlite3
 import struct
+import sys
 import time
 import urllib.error
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
+import yaml
 
+from knowledge_notes import (
+    build_knowledge_note_rows as _build_knowledge_note_rows,
+    compute_knowledge_notes_signature as _compute_knowledge_notes_signature,
+    parse_knowledge_note as _parse_knowledge_note,
+    refresh_knowledge_note_index as _refresh_knowledge_note_index,
+    resolve_knowledge_notes_dir as _resolve_knowledge_notes_dir,
+)
+from state_db_schema import detect_state_schema, sql_expr
 from memory_family_registry import (
     active_focus_profiles,
     focus_profile_for_text,
@@ -30,9 +40,10 @@ from memory_family_registry import (
     project_query_mode,
 )
 
-AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
-STATE_DB = AGENT_HOME / "state.db"
-GOVERNANCE_DB = AGENT_HOME / "memory_governance.db"
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
+STATE_DB = Path(os.environ.get("MEMORY_STATE_DB_PATH", str(AGENT_HOME / "state.db"))).expanduser()
+GOVERNANCE_DB = Path(os.environ.get("MEMORY_GOVERNANCE_DB_PATH", str(AGENT_HOME / "memory_governance.db"))).expanduser()
+KNOWLEDGE_NOTES_DIR = Path(os.environ.get("MEMORY_KNOWLEDGE_NOTES_DIR", str(AGENT_HOME / "knowledge" / "notes"))).expanduser()
 DEFAULT_MAX_AGE_SECONDS = 900
 HINDSIGHT_BASE_URL = os.environ.get("HINDSIGHT_BASE_URL", "http://127.0.0.1:8890")
 HINDSIGHT_BANK = os.environ.get("HINDSIGHT_BANK", "hermes")
@@ -143,7 +154,6 @@ PROVIDER_GATEWAY_STRONG_MARKERS = (
 HERMES_PROVIDER_CONTEXT_MARKERS = (
     "hermes",
     "config.yaml",
-    "/root/.hermes",
     "custom_providers",
     "ao_wrapper.py",
     "opencode-go",
@@ -357,6 +367,86 @@ def build_fts_query(query: str) -> str:
     return " OR ".join(safe_terms)
 
 
+def resolve_knowledge_notes_dir() -> Path:
+    return _resolve_knowledge_notes_dir(AGENT_HOME, KNOWLEDGE_NOTES_DIR)
+
+
+def _strip_frontmatter(text: str) -> tuple[dict, str]:
+    if not text.startswith("---"):
+        return {}, text
+    match = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", text, re.DOTALL)
+    if not match:
+        return {}, text
+    raw_meta, body = match.groups()
+    try:
+        meta = yaml.safe_load(raw_meta) or {}
+        if not isinstance(meta, dict):
+            meta = {}
+    except Exception:
+        meta = {}
+    return meta, body
+
+
+def _normalize_note_title(path: Path, body: str, meta: dict) -> str:
+    title = str(meta.get("title") or "").strip()
+    if title:
+        return title
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            candidate = stripped.lstrip("#").strip()
+            if candidate:
+                return candidate
+    return path.stem.replace("-", " ").replace("_", " ").strip().title() or path.stem
+
+
+def _summarize_note_body(body: str) -> str:
+    lines = []
+    in_code = False
+    for raw_line in body.splitlines():
+        line = raw_line.rstrip()
+        if line.strip().startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            stripped = stripped.lstrip("#").strip()
+        lines.append(stripped)
+    summary = " ".join(lines)
+    summary = re.sub(r"\s+", " ", summary).strip()
+    return summary[:1200]
+
+
+def parse_knowledge_note(path: Path, root_dir: Path) -> dict | None:
+    return _parse_knowledge_note(path, root_dir)
+
+
+def build_knowledge_note_rows(indexed_at: float) -> tuple[list[tuple], list[tuple]]:
+    return _build_knowledge_note_rows(resolve_knowledge_notes_dir(), indexed_at)
+
+
+def compute_knowledge_notes_signature(notes_dir: Path | None = None) -> str:
+    return _compute_knowledge_notes_signature(notes_dir or resolve_knowledge_notes_dir())
+
+
+def _governance_meta_value(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM governance_meta WHERE key = ?", (key,)).fetchone()
+    return str(row[0]) if row and row[0] is not None else None
+
+
+def refresh_knowledge_note_index(conn: sqlite3.Connection, indexed_at: float, force: bool = False) -> dict:
+    return _refresh_knowledge_note_index(
+        conn,
+        notes_dir=resolve_knowledge_notes_dir(),
+        indexed_at=indexed_at,
+        force=force,
+    )
+
+
 def is_system_query(query: str) -> bool:
     lowered = (query or "").lower()
     if is_system_query_text(query):
@@ -373,9 +463,9 @@ def is_noisy_hindsight_text(query: str, text: str) -> bool:
     )
 
 
-def direct_query_hit(query: str, text: str, entities: str = "") -> bool:
+def direct_query_hit(query: str, *texts: str) -> bool:
     terms = [term.lower() for term in build_query_terms(query) if len(term.strip()) >= 2]
-    haystack = f"{text or ''} {entities or ''}".lower()
+    haystack = " ".join(text or "" for text in texts).lower()
     return bool(terms) and any(term in haystack for term in terms)
 
 
@@ -1313,6 +1403,20 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS knowledge_note_index (
+            note_id TEXT PRIMARY KEY,
+            source_path TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            tags TEXT,
+            search_text TEXT NOT NULL,
+            indexed_at REAL NOT NULL,
+            modified_at REAL NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE VIRTUAL TABLE IF NOT EXISTS session_index_fts USING fts5(
             session_id UNINDEXED,
             source UNINDEXED,
@@ -1354,6 +1458,19 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             title,
             summary,
             entities,
+            search_text,
+            tokenize='unicode61'
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_note_index_fts USING fts5(
+            note_id UNINDEXED,
+            source_path UNINDEXED,
+            title,
+            summary,
+            tags,
             search_text,
             tokenize='unicode61'
         )
@@ -1728,46 +1845,47 @@ def rebuild_index(force: bool = False, max_age_seconds: int = DEFAULT_MAX_AGE_SE
         (started, "rebuild", "session/hindsight/hub governance rebuild"),
     )
     run_id = gov.execute("SELECT last_insert_rowid()").fetchone()[0]
+    schema = detect_state_schema(state)
 
     rows = state.execute(
-        """
+        f"""
         SELECT
             s.id,
-            s.source,
-            COALESCE(s.title, '') AS title,
-            COALESCE(s.summary, '') AS summary,
-            s.started_at,
-            s.ended_at,
-            COALESCE(s.message_count, 0) AS message_count,
-            COALESCE(s.end_reason, '') AS end_reason,
+            COALESCE({sql_expr(schema.session_source, "'unknown'", table_alias="s.")}, 'unknown') AS source,
+            COALESCE({sql_expr(schema.session_title, "''", table_alias="s.")}, '') AS title,
+            COALESCE({sql_expr(schema.session_summary, "''", table_alias="s.")}, '') AS summary,
+            {sql_expr(schema.session_started_at, "0", "started_at", "s.")},
+            {sql_expr(schema.session_ended_at, "0", "ended_at", "s.")},
+            COALESCE({sql_expr(schema.session_message_count, "0", table_alias="s.")}, 0) AS message_count,
+            COALESCE({sql_expr(schema.session_end_reason, "''", table_alias="s.")}, '') AS end_reason,
             COALESCE(
                 (
-                    SELECT content
+                    SELECT {sql_expr(schema.message_content, "''")}
                     FROM messages
                     WHERE session_id = s.id
-                      AND role = 'user'
-                      AND content IS NOT NULL
-                      AND trim(content) <> ''
-                    ORDER BY timestamp, id
+                      AND {sql_expr(schema.message_role, "'user'")} = 'user'
+                      AND {sql_expr(schema.message_content, "NULL")} IS NOT NULL
+                      AND trim({sql_expr(schema.message_content, "''")}) <> ''
+                    ORDER BY {sql_expr(schema.message_timestamp, "0")}, id
                     LIMIT 1
                 ),
                 ''
             ) AS first_user,
             COALESCE(
                 (
-                    SELECT content
+                    SELECT {sql_expr(schema.message_content, "''")}
                     FROM messages
                     WHERE session_id = s.id
-                      AND role = 'assistant'
-                      AND content IS NOT NULL
-                      AND trim(content) <> ''
-                    ORDER BY timestamp DESC, id DESC
+                      AND {sql_expr(schema.message_role, "'assistant'")} = 'assistant'
+                      AND {sql_expr(schema.message_content, "NULL")} IS NOT NULL
+                      AND trim({sql_expr(schema.message_content, "''")}) <> ''
+                    ORDER BY {sql_expr(schema.message_timestamp, "0")} DESC, id DESC
                     LIMIT 1
                 ),
                 ''
             ) AS last_assistant
         FROM sessions s
-        ORDER BY s.started_at DESC
+        ORDER BY {sql_expr(schema.session_started_at, "0", table_alias="s.")} DESC
         """
     ).fetchall()
 
@@ -1781,7 +1899,6 @@ def rebuild_index(force: bool = False, max_age_seconds: int = DEFAULT_MAX_AGE_SE
     gov.execute("DELETE FROM memory_hubs_fts")
     gov.execute("DELETE FROM memory_objects")
     gov.execute("DELETE FROM memory_objects_fts")
-
     session_rows = []
     session_fts_rows = []
     recovered_rows = []
@@ -1961,6 +2078,7 @@ def rebuild_index(force: bool = False, max_age_seconds: int = DEFAULT_MAX_AGE_SE
 
     hub_rows, hub_fts_rows = build_hub_rows(session_dict_rows, hindsight_items, now)
     object_rows, object_fts_rows = build_memory_object_rows(session_dict_rows, hindsight_items, now)
+    knowledge_index_stats = refresh_knowledge_note_index(gov, indexed_at=now, force=force)
     gov.executemany(
         """
         INSERT INTO memory_hubs (
@@ -1996,7 +2114,6 @@ def rebuild_index(force: bool = False, max_age_seconds: int = DEFAULT_MAX_AGE_SE
         """,
         object_fts_rows,
     )
-    gov.execute("DELETE FROM canonical_semantic_index")
     embed_canonical_objects(gov, object_rows)
     gov.execute(
         """
@@ -2033,6 +2150,13 @@ def rebuild_index(force: bool = False, max_age_seconds: int = DEFAULT_MAX_AGE_SE
         """,
         (str(hindsight_duplicate_count),),
     )
+    gov.execute(
+        """
+        INSERT INTO governance_meta (key, value) VALUES ('knowledge_notes_total', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (str(knowledge_index_stats["count"]),),
+    )
     gov.execute("UPDATE repair_runs SET finished_at = ? WHERE id = ?", (time.time(), run_id))
     gov.commit()
     state.close()
@@ -2047,6 +2171,8 @@ def rebuild_index(force: bool = False, max_age_seconds: int = DEFAULT_MAX_AGE_SE
         "hindsight_duplicate_count": hindsight_duplicate_count,
         "memory_hubs": len(hub_rows),
         "memory_objects": len(object_rows),
+        "knowledge_notes": int(knowledge_index_stats["count"]),
+        "knowledge_notes_reused": bool(knowledge_index_stats["reused"]),
     }
 
 
@@ -2331,6 +2457,95 @@ def query_governance_hubs(query: str, top: int = 5) -> list[dict]:
     return results[:top]
 
 
+def query_governance_knowledge(query: str, top: int = 5) -> list[dict]:
+    ensure_governance_db(force=False, max_age_seconds=DEFAULT_MAX_AGE_SECONDS)
+    if not GOVERNANCE_DB.exists():
+        return []
+    conn = sqlite3.connect(str(GOVERNANCE_DB))
+    conn.row_factory = sqlite3.Row
+    results = []
+    seen = set()
+    try:
+        fts_query = build_fts_query(query)
+        if fts_query:
+            rows = conn.execute(
+                """
+                SELECT
+                    f.note_id,
+                    n.source_path,
+                    n.title,
+                    n.summary,
+                    n.tags,
+                    n.modified_at,
+                    bm25(knowledge_note_index_fts) AS rank
+                FROM knowledge_note_index_fts f
+                JOIN knowledge_note_index n ON n.note_id = f.note_id
+                WHERE knowledge_note_index_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+                """,
+                (fts_query, top * 3),
+            ).fetchall()
+            for row in rows:
+                note_id = row["note_id"]
+                if note_id in seen:
+                    continue
+                if not direct_query_hit(query, row["title"], row["summary"], row["tags"] or "", row["source_path"]):
+                    continue
+                seen.add(note_id)
+                score = 0.77
+                if direct_query_hit(query, row["summary"], row["tags"] or ""):
+                    score += 0.05
+                results.append(
+                    {
+                        "note_id": note_id,
+                        "session_id": note_id,
+                        "title": row["title"],
+                        "snippet": row["summary"][:220],
+                        "source": f"knowledge:{row['source_path']}",
+                        "layer": "knowledge",
+                        "score": round(min(score, 0.92), 4),
+                    }
+                )
+                if len(results) >= top:
+                    break
+        if len(results) < top:
+            like_pat = f"%{query.strip()}%"
+            rows = conn.execute(
+                """
+                SELECT note_id, source_path, title, summary, tags, modified_at
+                FROM knowledge_note_index
+                WHERE title LIKE ? OR summary LIKE ? OR tags LIKE ? OR source_path LIKE ? OR search_text LIKE ?
+                ORDER BY modified_at DESC
+                LIMIT ?
+                """,
+                (like_pat, like_pat, like_pat, like_pat, like_pat, top * 3),
+            ).fetchall()
+            for row in rows:
+                note_id = row["note_id"]
+                if note_id in seen:
+                    continue
+                if not direct_query_hit(query, row["title"], row["summary"], row["tags"] or "", row["source_path"]):
+                    continue
+                seen.add(note_id)
+                results.append(
+                    {
+                        "note_id": note_id,
+                        "session_id": note_id,
+                        "title": row["title"],
+                        "snippet": row["summary"][:220],
+                        "source": f"knowledge:{row['source_path']}",
+                        "layer": "knowledge",
+                        "score": 0.71,
+                    }
+                )
+                if len(results) >= top:
+                    break
+    finally:
+        conn.close()
+    return results[:top]
+
+
 def query_governance_objects(query: str, top: int = 5) -> list[dict]:
     global LAST_OBJECT_QUERY_STATS
     ensure_governance_db(force=False, max_age_seconds=DEFAULT_MAX_AGE_SECONDS)
@@ -2342,6 +2557,7 @@ def query_governance_objects(query: str, top: int = 5) -> list[dict]:
     rows_pool = []
     provider_family_query = is_provider_query(query)
     deploy_family_query = is_project_delivery_mode(query)
+    system_family_query = is_system_query_text(query)
     try:
         fts_query = build_fts_query(query)
         if fts_query:
@@ -2424,6 +2640,37 @@ def query_governance_objects(query: str, top: int = 5) -> list[dict]:
                 if not object_candidate_allowed(query, row):
                     continue
                 rows_pool.append(row)
+        if system_family_query:
+            system_terms = [query.strip()]
+            system_expansions = [
+                "model", "usage", "provider", "gateway", "quota", "endpoint", "api key", "base url",
+                "模型", "用量", "配置", "网关",
+            ]
+            for term in system_expansions:
+                if term not in system_terms:
+                    system_terms.append(term)
+            for term in system_terms:
+                like_pat = f"%{term}%"
+                rows = conn.execute(
+                    """
+                    SELECT object_id, object_type, entity_type, source_kind, title, summary, entities, hub_ids, status, confidence, freshness, version_tag, conflict_group, last_seen_at
+                    FROM memory_objects
+                    WHERE status = 'active'
+                      AND object_type IN ('provider_config', 'provider_model_state', 'gateway_restart', 'system_provider')
+                      AND (title LIKE ? OR summary LIKE ? OR search_text LIKE ?)
+                    ORDER BY confidence DESC, freshness DESC, last_seen_at DESC
+                    LIMIT ?
+                    """,
+                    (like_pat, like_pat, like_pat, top * 4),
+                ).fetchall()
+                for row in rows:
+                    if is_low_value_object_text(str(row["title"] or ""), str(row["summary"] or "")):
+                        continue
+                    if is_noisy_hindsight_text(query, f"{row['title']} {row['summary']}"):
+                        continue
+                    if not object_candidate_allowed(query, row):
+                        continue
+                    rows_pool.append(row)
     finally:
         conn.close()
     distinct_rows = choose_distinct_object_rows(rows_pool)
@@ -2548,10 +2795,75 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+def _semantic_text_coverage(query: str, *parts: str) -> int:
+    terms = build_query_terms(query)
+    if not terms:
+        return 0
+    haystack = " ".join(str(part or "") for part in parts).lower()
+    return sum(1 for term in terms if term.lower() in haystack)
+
+
+def _prefilter_semantic_rows(conn: sqlite3.Connection, query: str, top: int) -> list[sqlite3.Row]:
+    terms = build_query_terms(query)
+    limit = max(top * 8, 24)
+    base_sql = """
+        SELECT csi.memory_id, csi.chunk_text, csi.embedding,
+               o.object_type, o.entity_type, o.title, o.summary,
+               o.confidence, o.freshness, o.version_tag, o.last_seen_at
+        FROM canonical_semantic_index csi
+        JOIN memory_objects o ON o.object_id = csi.memory_id
+        WHERE o.status = 'active'
+    """
+    fts_query = build_fts_query(query)
+    if fts_query:
+        rows = conn.execute(
+            """
+            SELECT csi.memory_id, csi.chunk_text, csi.embedding,
+                   o.object_type, o.entity_type, o.title, o.summary,
+                   o.confidence, o.freshness, o.version_tag, o.last_seen_at
+            FROM memory_objects_fts f
+            JOIN memory_objects o ON o.object_id = f.object_id
+            JOIN canonical_semantic_index csi ON csi.memory_id = o.object_id
+            WHERE memory_objects_fts MATCH ?
+              AND o.status = 'active'
+            ORDER BY bm25(memory_objects_fts)
+            LIMIT ?
+            """,
+            (fts_query, limit),
+        ).fetchall()
+        if rows:
+            return rows
+    if not terms:
+        return conn.execute(base_sql + " LIMIT ?", (limit,)).fetchall()
+
+    like_clauses = []
+    params: list[str | int] = []
+    for term in terms:
+        pattern = f"%{term}%"
+        like_clauses.append("(o.title LIKE ? OR o.summary LIKE ? OR csi.chunk_text LIKE ?)")
+        params.extend([pattern, pattern, pattern])
+    sql = base_sql + " AND (" + " OR ".join(like_clauses) + ") LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(sql, params).fetchall()
+    if rows:
+        return rows
+    return conn.execute(base_sql + " LIMIT ?", (limit,)).fetchall()
+
+
 def _get_embedding(text: str) -> list[float] | None:
+    vectors = _get_embeddings([text])
+    if not vectors:
+        return None
+    return vectors[0]
+
+
+def _get_embeddings(texts: list[str]) -> list[list[float]] | None:
     if not EMBEDDING_API_URL:
         return None
-    payload = json.dumps({"input": [text]}).encode("utf-8")
+    normalized = [str(text or "") for text in texts]
+    if not normalized:
+        return []
+    payload = json.dumps({"input": normalized}).encode("utf-8")
     req = urllib.request.Request(
         EMBEDDING_API_URL,
         data=payload,
@@ -2563,42 +2875,53 @@ def _get_embedding(text: str) -> list[float] | None:
             body = json.loads(resp.read().decode("utf-8"))
         embeddings = body.get("embeddings") or body.get("data") or []
         if embeddings and isinstance(embeddings[0], list):
-            return [float(v) for v in embeddings[0]]
+            return [[float(v) for v in row] for row in embeddings]
         if embeddings and isinstance(embeddings[0], dict):
-            return [float(v) for v in embeddings[0].get("embedding", [])]
+            return [[float(v) for v in row.get("embedding", [])] for row in embeddings]
         return None
     except Exception as exc:
         print(f"[governance_rebuild] embedding API call failed: {exc}", file=sys.stderr)
         return None
 
 
-def embed_canonical_objects(conn: sqlite3.Connection, object_rows: list[tuple]) -> None:
+def replace_canonical_semantic_index(conn: sqlite3.Connection, object_rows: list[tuple]) -> bool:
     if not EMBEDDING_API_URL or not object_rows:
-        return
+        return False
     active_rows = [
         (row[0], f"{row[4] or ''} {row[5] or ''}"[:1200])
         for row in object_rows
         if row[9] == "active"
     ]
     if not active_rows:
-        return
+        return False
     now = time.time()
-    batch: list[tuple[str, int, str]] = []
-    for mem_id, chunk_text in active_rows:
-        if not chunk_text.strip():
-            chunk_text = mem_id
-        batch.append((mem_id, 0, chunk_text))
     values: list[tuple[str, int, str, bytes, float]] = []
-    for mem_id, chunk_idx, chunk_text in batch:
-        vec = _get_embedding(chunk_text)
-        if vec is None:
-            return
-        values.append((mem_id, chunk_idx, chunk_text, _pack_embedding(vec), now))
-    if values:
-        conn.executemany(
-            "INSERT OR REPLACE INTO canonical_semantic_index (memory_id, chunk_index, chunk_text, embedding, indexed_at) VALUES (?, ?, ?, ?, ?)",
-            values,
-        )
+    expected_dimension = None
+    for start in range(0, len(active_rows), max(1, EMBEDDING_BATCH_SIZE)):
+        batch = active_rows[start:start + max(1, EMBEDDING_BATCH_SIZE)]
+        chunk_texts = [chunk_text.strip() or mem_id for mem_id, chunk_text in batch]
+        vectors = _get_embeddings(chunk_texts)
+        if not vectors or len(vectors) != len(batch):
+            return False
+        for vec in vectors:
+            if not vec:
+                return False
+            if expected_dimension is None:
+                expected_dimension = len(vec)
+            elif len(vec) != expected_dimension:
+                return False
+        for (mem_id, _chunk_text), chunk_text, vec in zip(batch, chunk_texts, vectors):
+            values.append((mem_id, 0, chunk_text, _pack_embedding(vec), now))
+    conn.execute("DELETE FROM canonical_semantic_index")
+    conn.executemany(
+        "INSERT INTO canonical_semantic_index (memory_id, chunk_index, chunk_text, embedding, indexed_at) VALUES (?, ?, ?, ?, ?)",
+        values,
+    )
+    return True
+
+
+def embed_canonical_objects(conn: sqlite3.Connection, object_rows: list[tuple]) -> bool:
+    return replace_canonical_semantic_index(conn, object_rows)
 
 
 def query_canonical_semantic(query: str, top: int = 5) -> list[dict]:
@@ -2613,22 +2936,22 @@ def query_canonical_semantic(query: str, top: int = 5) -> list[dict]:
     conn = sqlite3.connect(str(gov_path))
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute(
-            """
-            SELECT csi.memory_id, csi.chunk_text, csi.embedding,
-                   o.object_type, o.entity_type, o.title, o.summary,
-                   o.confidence, o.freshness, o.version_tag, o.last_seen_at
-            FROM canonical_semantic_index csi
-            JOIN memory_objects o ON o.object_id = csi.memory_id
-            WHERE o.status = 'active'
-            """
-        ).fetchall()
+        rows = _prefilter_semantic_rows(conn, query, top)
     finally:
         conn.close()
+    max_coverage = max(
+        (_semantic_text_coverage(query, row["title"], row["summary"], row["chunk_text"]) for row in rows),
+        default=0,
+    )
+    if max_coverage > 0:
+        rows = [
+            row for row in rows
+            if _semantic_text_coverage(query, row["title"], row["summary"], row["chunk_text"]) == max_coverage
+        ]
     scored = []
     for row in rows:
         emb = _unpack_embedding(row["embedding"])
-        if not isinstance(emb, list):
+        if not isinstance(emb, list) or len(emb) != len(query_vec):
             continue
         sim = _cosine_similarity(query_vec, emb)
         scored.append(

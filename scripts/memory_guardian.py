@@ -20,10 +20,10 @@ from urllib.error import HTTPError
 from memory_family_registry import active_focus_profiles
 
 # ─── Constants ──────────────────────────────────────────────────────────
-AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
 HINDSIGHT_BANK = os.environ.get("HINDSIGHT_BANK", "hermes")
 HINDSIGHT_URL = os.environ.get("HINDSIGHT_BASE_URL", "http://127.0.0.1:8890") + f"/v1/default/banks/{HINDSIGHT_BANK}"
-MEMORY_LIMIT = 5000  # Total Hindsight memory nodes before lifecycle action
+DEFAULT_MEMORY_LIMIT = 20000  # Default Hindsight node budget for multi-agent installs
 WARN = 0.75       # 75% — 开始分类预备
 ACTION = 0.85     # 85% — 执行转移+压缩
 CRITICAL = 0.95   # 95% — 强制紧急处理
@@ -31,7 +31,7 @@ CRITICAL = 0.95   # 95% — 强制紧急处理
 INDEX_DB = AGENT_HOME / 'memory_index.db'
 GOVERNANCE_DB = AGENT_HOME / 'memory_governance.db'
 SCRIPTS_DIR = AGENT_HOME / 'scripts'
-GBRAIN = shutil.which('gbrain') or os.environ.get('GBRAIN_BIN', '/usr/local/bin/gbrain')
+GBRAIN = shutil.which('gbrain') or os.environ.get('GBRAIN_BIN', 'gbrain')
 METRICS_DIR = AGENT_HOME / 'metrics'
 GUARDIAN_HISTORY = METRICS_DIR / 'guardian_status_history.jsonl'
 
@@ -103,6 +103,30 @@ CONSOLIDATION_DRAIN_POLL_SECONDS = 8
 CONSOLIDATION_STUCK_NONZERO_RUN = 8
 HINDSIGHT_RESTART_COOLDOWN_SECONDS = 6 * 3600
 HINDSIGHT_RESTART_GUARD = AGENT_HOME / '.hindsight_restart_guard.json'
+
+
+def resolve_memory_limit() -> int:
+    raw = os.environ.get("MEMORY_GUARDIAN_NODE_LIMIT", "").strip()
+    if not raw:
+        return DEFAULT_MEMORY_LIMIT
+    try:
+        value = int(raw)
+    except ValueError:
+        print(
+            f"[memory_guardian] invalid MEMORY_GUARDIAN_NODE_LIMIT={raw!r}, using default {DEFAULT_MEMORY_LIMIT}",
+            file=sys.stderr,
+        )
+        return DEFAULT_MEMORY_LIMIT
+    if value <= 0:
+        print(
+            f"[memory_guardian] non-positive MEMORY_GUARDIAN_NODE_LIMIT={raw!r}, using default {DEFAULT_MEMORY_LIMIT}",
+            file=sys.stderr,
+        )
+        return DEFAULT_MEMORY_LIMIT
+    return value
+
+
+MEMORY_LIMIT = resolve_memory_limit()
 
 # ─── Hindsight API ──────────────────────────────────────────────────────
 def hs(method, path, body=None, timeout=10):
@@ -436,6 +460,7 @@ def monitor(verbose=True):
         'pending_operations': pending_ops,
         'failed_operations': failed_ops,
         'last_consolidated_at': last_consolidated_at,
+        'node_limit': MEMORY_LIMIT,
         'usage_pct': pct,
         'remaining': max(0, MEMORY_LIMIT - nodes),
         'level': 'ok' if pct < WARN*100 else ('warn' if pct < ACTION*100 else

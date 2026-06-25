@@ -1,5 +1,7 @@
 # Hermes Agent — Pre-Audit Capability Report
 
+> Historical audit snapshot: this report captures a pre-sidecar-cleanup Hermes deployment and is background material, not the current portable multi-agent contract. Use `README.md`, `ARCHITECTURE.md`, and `docs/compatibility-matrix.md` for the maintained local/public build.
+
 **Generated**: 2026-05-29
 **Host**: Linux 6.8.0-48-generic
 **Hermes Home**: $AGENT_HOME

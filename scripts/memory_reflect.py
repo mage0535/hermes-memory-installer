@@ -13,7 +13,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
+HERMES_HOME = Path(os.environ.get("HERMES_HOME", os.environ.get("AGENT_HOME", "~/.agent"))).expanduser()
 sys.path.insert(0, str(HERMES_HOME / "hermes-agent"))
 
 logging.basicConfig(
@@ -53,7 +53,11 @@ def _call_gbrain(slug: str, content: str) -> bool:
 
 def reflect():
     """Run Hindsight reflect and archive results."""
-    from hindsight_client import Hindsight
+    try:
+        from hindsight_client import Hindsight
+    except ModuleNotFoundError as exc:
+        logger.error("Hermes-only dependency missing: %s", exc)
+        return False
     
     h = Hindsight(base_url="http://localhost:8890", api_key=None, timeout=120)
     

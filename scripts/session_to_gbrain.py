@@ -29,8 +29,7 @@ import json as _json
 
 _GBRAIN_MCP = os.environ.get("GBRAIN_MCP_URL", "http://localhost:8787/mcp")
 _GBRAIN_TOKEN = os.environ.get("GBRAIN_MCP_TOKEN", "")
-# Set GBRAIN_MCP_TOKEN env var, or paste your token above
-# or paste your raw token here: _GBRAIN_TOKEN="your-token-here"
+# Configure authentication through GBRAIN_MCP_TOKEN.
 
 def _mcp_call(method, params, req_id=1):
     """Call gbrain via MCP API directly (bypasses broken CLI)"""
@@ -42,9 +41,18 @@ def _mcp_call(method, params, req_id=1):
         result = _json.loads(resp.read())
         if "error" in result:
             raise subprocess.CalledProcessError(1, "gbrain-mcp", result["error"].get("message",""))
+        tool_result = result.get("result") or {}
+        if tool_result.get("isError"):
+            content = tool_result.get("content") or []
+            message = "; ".join(
+                str(item.get("text") or "")
+                for item in content
+                if isinstance(item, dict) and item.get("text")
+            ) or "MCP tool call failed"
+            raise RuntimeError(message)
         return result
     except Exception as e:
-        raise subprocess.CalledProcessError(1, "gbrain-mcp", str(e))
+        raise subprocess.CalledProcessError(1, ["gbrain-mcp", str(e)]) from e
 
 def run_gbrain_mcp(args, input_text=None):
     """MCP-based replacement for run_gbrain(). Same interface, uses MCP API."""
@@ -142,7 +150,7 @@ def merge_focus_profile_hubs(topic_hubs):
 
 TOPIC_HUBS = merge_focus_profile_hubs(TOPIC_HUBS)
 
-GBRAIN_BIN = shutil.which("gbrain") or os.environ.get("GBRAIN_BIN", "/usr/local/bin/gbrain")
+GBRAIN_BIN = shutil.which("gbrain") or os.environ.get("GBRAIN_BIN", "gbrain")
 
 
 def load_checkpoint():
@@ -214,6 +222,27 @@ def _load_session_payload(content: str):
         return json.loads(sanitized), sanitized, True
 
 
+def normalize_message_content(value) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                item_type = str(item.get("type") or "").lower()
+                if item_type and item_type not in {"text", "input_text", "output_text"}:
+                    continue
+                text = normalize_message_content(item.get("text") or item.get("content"))
+                if text:
+                    parts.append(text)
+        return "\n".join(part.strip() for part in parts if part and part.strip())
+    if isinstance(value, dict):
+        return normalize_message_content(value.get("text") or value.get("content") or value.get("value"))
+    return ""
+
+
 def extract_session_info(filepath: Path) -> dict:
     """从会话文件中提取关键信息"""
     try:
@@ -235,8 +264,9 @@ def extract_session_info(filepath: Path) -> dict:
                 title = data.get("title", "")
             if was_sanitized:
                 filepath.with_suffix(filepath.suffix + ".repaired").write_text(cleaned_content, encoding='utf-8')
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[session_to_gbrain] unable to parse session {filepath.name}: {exc}", file=sys.stderr)
+            return None
         
         # Extract first user message as title hint
         first_user_msg = ""
@@ -244,7 +274,7 @@ def extract_session_info(filepath: Path) -> dict:
             if isinstance(msg, dict):
                 role = msg.get("role", "")
                 if role == "user":
-                    first_user_msg = msg.get("content", "")[:200]
+                    first_user_msg = normalize_message_content(msg.get("content"))[:200]
                     break
         
         if not title and first_user_msg:
@@ -270,8 +300,8 @@ def extract_session_info(filepath: Path) -> dict:
         summary = ""
         for msg in messages:
             if isinstance(msg, dict) and msg.get("role") == "assistant":
-                c = msg.get("content", "")
-                if len(c) > 100:
+                c = normalize_message_content(msg.get("content"))
+                if c:
                     summary = c[:500].strip()
                     break
         
@@ -324,14 +354,14 @@ def _ensure_patterns():
 
 # 中文专名列表（用于辅助实体识别）
 KNOWN_ENTITIES = {
-    'person': ['宁宁', 'Hermes', '郑大姐'],
+    'person': ['Hermes'],
     'company': ['字节跳动', '抖音', '腾讯', '阿里巴巴', '百度', '华为', '小米', '美团',
                 '宁德时代', '茅台', '比亚迪', 'OpenAI', 'Anthropic', 'Google'],
-    'project': ['MagicMusic', 'Hermes Agent', 'Hermes', 'gbrain', 'LightGBM', 'CodeX',
+    'project': ['Hermes Agent', 'Hermes', 'gbrain', 'LightGBM', 'CodeX',
                 'WeChat', 'v2raya', 'SearXNG'],
     'platform': ['抖音', 'TikTok', 'YouTube', '微信', 'Telegram', 'GitHub', 'Twitter', '小红书'],
     'venue': ['斑马', '斑马驻唱', '烟台', '车展'],
-    'product': ['MagicMusic'],
+    'product': [],
 }
 
 # 构建专名正则（用于提取关系中的主体）
@@ -443,7 +473,7 @@ def run_gbrain(args: list[str], *, input_text: str | None = None) -> subprocess.
         )
 
 
-def ensure_gbrain_page(slug: str, content: str, tags: list[str], *, timeline_entry: tuple[str, str] | None = None) -> None:
+def ensure_gbrain_page(slug: str, content: str, tags: list[str], *, timeline_entry: tuple[str, str] | None = None) -> bool:
     """Persist a page into gbrain and attach metadata idempotently."""
     try:
         run_gbrain(["put", slug], input_text=content)
@@ -452,8 +482,10 @@ def ensure_gbrain_page(slug: str, content: str, tags: list[str], *, timeline_ent
         if timeline_entry:
             date_value, text_value = timeline_entry
             run_gbrain(["timeline-add", slug, date_value, text_value])
-    except subprocess.CalledProcessError as exc:
+        return True
+    except (subprocess.SubprocessError, OSError) as exc:
         print(f"[session_to_gbrain] gbrain command failed for slug={slug}: {exc}", file=sys.stderr)
+        return False
 
 
 def ensure_gbrain_link(from_slug: str, to_slug: str, *, link_type: str = "belongs_to") -> None:
@@ -466,18 +498,18 @@ def ensure_gbrain_link(from_slug: str, to_slug: str, *, link_type: str = "belong
 
 
 def gbrain_page_exists(slug: str) -> bool:
-    result = subprocess.run(
-        [GBRAIN_BIN, "get", slug],
-        text=True,
-        capture_output=True,
-        timeout=15,
-    )
-    return result.returncode == 0
+    try:
+        run_gbrain(["get", slug])
+        return True
+    except (subprocess.SubprocessError, OSError):
+        return False
 
 
 def create_gbrain_page(info: dict, dry_run=False):
     """通过 MCP 创建 gbrain 页面"""
     slug = f"session-{info['session_id'][:16]}"
+    raw_title = str(info.get("title") or "")[:100]
+    display_title = " ".join(raw_title.split())
     
     # Build page content
     tags = ["session", f"date-{info['created_at'][:10]}"] + info["topics"]
@@ -490,13 +522,13 @@ def create_gbrain_page(info: dict, dry_run=False):
     relations = extract_chinese_relations(session_text)
     
     content = f"""---
-title: "{info['title'][:100]}"
+title: {json.dumps(raw_title, ensure_ascii=False)}
 type: session
 tags: [{tags_str}]
 created: "{info['created_at']}"
 ---
 
-# {info['title'][:100]}
+# {display_title}
 
 **会话ID**: {info['session_id']}
 **日期**: {info['created_at'][:10]}
@@ -532,13 +564,13 @@ created: "{info['created_at']}"
         return slug
     
     timeline_text = info['summary'][:180] if info.get('summary') else info['first_msg'][:180]
-    ensure_gbrain_page(
+    persisted = ensure_gbrain_page(
         slug,
         content,
         tags,
         timeline_entry=(info['created_at'][:10], timeline_text) if timeline_text else None,
     )
-    return slug
+    return slug if persisted else None
 
 
 def create_topic_hubs(dry_run=False, refresh=False):
@@ -622,7 +654,7 @@ def main():
         print("   ✅ No new sessions. Done.")
         cp["last_run"] = datetime.now(CST).isoformat()
         save_checkpoint(cp)
-        return
+        return 0
     
     # Step 3: Process sessions
     results = {"created": 0, "skipped": 0, "errors": 0}
@@ -634,12 +666,16 @@ def main():
             continue
         
         slug = create_gbrain_page(info, dry_run=dry_run)
+        if dry_run:
+            results["created"] += 1
+            continue
         if slug:
             results["created"] += 1
             if info["topics"]:
                 link_session_to_hubs(slug, info["topics"], dry_run=dry_run)
-        
-        processed.add(sf.name)
+            processed.add(sf.name)
+        else:
+            results["errors"] += 1
         
         if (i + 1) % 10 == 0:
             print(f"   ... {i+1}/{len(unprocessed)}")
@@ -651,7 +687,8 @@ def main():
     
     print(f"\n📊 Results: {results['created']} created, {results['skipped']} skipped, {results['errors']} errors")
     print(f"✅ Done. Next batch starts from checkpoint.")
+    return 1 if results["errors"] else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
