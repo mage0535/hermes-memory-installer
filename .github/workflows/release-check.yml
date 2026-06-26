@@ -27,3 +27,9 @@ jobs:
           python installer/install.py --dry-run --skip-checks --noninteractive --agent-home /tmp/hermes-release-check --lang en
       - name: Profile isolation soak
         run: python scripts/profile_isolation_soak.py --repo-root . --iterations 2 --interval-s 0
+      - name: Synthetic recall benchmark
+        run: python scripts/synthetic_recall_benchmark.py
+      - name: Release checksums
+        run: |
+          python scripts/release_checksums.py --output dist/SHA256SUMS
+          python scripts/release_checksums.py --verify dist/SHA256SUMS

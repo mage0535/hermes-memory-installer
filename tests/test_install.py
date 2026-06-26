@@ -52,8 +52,10 @@ def test_supported_script_set_covers_runtime_and_cli_utilities():
         "alert_webhook_receiver.py",
         "metrics_dashboard.py",
         "metrics_dashboard_server.py",
+        "openmetrics_exporter.py",
         "profile_isolation_soak.py",
         "hindsight_security_audit.py",
+        "synthetic_recall_benchmark.py",
     }
     assert expected.issubset(set(install.SUPPORTED_SCRIPT_NAMES))
     assert "memory_watermark.py" not in install.SUPPORTED_SCRIPT_NAMES

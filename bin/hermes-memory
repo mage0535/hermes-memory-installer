@@ -47,8 +47,10 @@ CORE_DEPLOY_SCRIPTS = [
     "alert_webhook_receiver.py",
     "metrics_dashboard.py",
     "metrics_dashboard_server.py",
+    "openmetrics_exporter.py",
     "profile_isolation_soak.py",
     "hindsight_security_audit.py",
+    "synthetic_recall_benchmark.py",
 ]
 REQUIRED_REPO_FILES = [
     "README.md",
@@ -484,6 +486,37 @@ def cmd_dashboard_info(args: argparse.Namespace) -> int:
     return 0 if payload["token_configured"] else 1
 
 
+def cmd_openmetrics(args: argparse.Namespace) -> int:
+    extra_args = ["--metrics-dir", args.metrics_dir] if args.metrics_dir else []
+    if args.output:
+        extra_args.extend(["--output", args.output])
+    return run_script("openmetrics_exporter.py", extra_args)
+
+
+def cmd_replay_dead_letter(args: argparse.Namespace) -> int:
+    extra_args = ["--replay-dead-letter"]
+    if args.dead_letter:
+        extra_args.extend(["--dead-letter", args.dead_letter])
+    if args.forward_url:
+        extra_args.extend(["--forward-url", args.forward_url])
+    if args.forward_kind:
+        extra_args.extend(["--forward-kind", args.forward_kind])
+    extra_args.extend(["--forward-timeout", str(args.forward_timeout)])
+    extra_args.extend(["--retry-attempts", str(args.retry_attempts)])
+    extra_args.extend(["--retry-backoff-s", str(args.retry_backoff_s)])
+    extra_args.extend(["--max-replay", str(args.max_replay)])
+    if args.dry_run:
+        extra_args.append("--dry-run")
+    return run_script("alert_webhook_receiver.py", extra_args)
+
+
+def cmd_synthetic_recall(args: argparse.Namespace) -> int:
+    extra_args = []
+    if args.output:
+        extra_args.extend(["--output", args.output])
+    return run_script("synthetic_recall_benchmark.py", extra_args)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.5.1")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -515,6 +548,20 @@ def main() -> int:
     dashboard_info.add_argument("--url", default="http://127.0.0.1:9500/dashboard")
     dashboard_info.add_argument("--token-file", help="Token file path (defaults to AGENT_HOME/private/dashboard-token)")
     dashboard_info.add_argument("--format", choices=["json", "text"], default="text")
+    openmetrics = sub.add_parser("openmetrics", help="Export runtime metrics in OpenMetrics text format")
+    openmetrics.add_argument("--metrics-dir", help="Metrics artifact directory")
+    openmetrics.add_argument("--output", help="Write metrics to this path")
+    replay = sub.add_parser("replay-dead-letter", help="Replay failed external alert forwards")
+    replay.add_argument("--dead-letter", help="Dead-letter JSONL path")
+    replay.add_argument("--forward-url", default=os.environ.get("MEMORY_ALERT_FORWARD_URL", ""))
+    replay.add_argument("--forward-kind", default=os.environ.get("MEMORY_ALERT_FORWARD_KIND", ""))
+    replay.add_argument("--forward-timeout", type=int, default=10)
+    replay.add_argument("--retry-attempts", type=int, default=int(os.environ.get("MEMORY_ALERT_FORWARD_RETRY_ATTEMPTS", "3")))
+    replay.add_argument("--retry-backoff-s", type=float, default=float(os.environ.get("MEMORY_ALERT_FORWARD_RETRY_BACKOFF_S", "1.0")))
+    replay.add_argument("--max-replay", type=int, default=100)
+    replay.add_argument("--dry-run", action="store_true")
+    synthetic = sub.add_parser("synthetic-recall", help="Run public synthetic recall regression benchmark")
+    synthetic.add_argument("--output", help="Write JSON result to this path")
 
     args = parser.parse_args()
     if args.command == "doctor":
@@ -539,6 +586,12 @@ def main() -> int:
         return cmd_drift_check(args)
     if args.command == "dashboard-info":
         return cmd_dashboard_info(args)
+    if args.command == "openmetrics":
+        return cmd_openmetrics(args)
+    if args.command == "replay-dead-letter":
+        return cmd_replay_dead_letter(args)
+    if args.command == "synthetic-recall":
+        return cmd_synthetic_recall(args)
     return 1
 
 

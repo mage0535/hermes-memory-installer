@@ -73,6 +73,27 @@ def summarize(name: str, payload: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
+def build_dashboard_payload(metrics_dir: Path) -> dict[str, Any]:
+    artifacts = []
+    for name, filename in ARTIFACTS.items():
+        payload = load_json(metrics_dir / filename)
+        artifacts.append(
+            {
+                "name": name,
+                "filename": filename,
+                "summary": summarize(name, payload),
+                "raw": payload,
+            }
+        )
+    ok = all(item["summary"].get("ok") for item in artifacts)
+    return {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "ok": ok,
+        "metrics_dir": str(metrics_dir),
+        "artifacts": artifacts,
+    }
+
+
 def render_dashboard(metrics_dir: Path) -> str:
     captured_at = datetime.now(timezone.utc).isoformat()
     cards = []

@@ -27,8 +27,10 @@ import alert_queue
 import alert_webhook_receiver
 import metrics_dashboard
 import metrics_dashboard_server
+import openmetrics_exporter
 import gbrain_stale_maintenance
 import profile_isolation_soak
+import synthetic_recall_benchmark
 
 
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
@@ -546,6 +548,25 @@ def test_alert_webhook_receiver_writes_dead_letter_on_forward_failure(tmp_path: 
     assert json.loads(status.read_text(encoding="utf-8"))["dead_letter_written"] is True
 
 
+def test_alert_webhook_receiver_replays_dead_letter_successfully(tmp_path: Path, monkeypatch):
+    dead_letter = tmp_path / "failed.jsonl"
+    alert_webhook_receiver.append_jsonl(dead_letter, {"received_at": "t1", "payload": {"status": "action-needed"}})
+    monkeypatch.setattr(alert_webhook_receiver, "forward_payload", lambda *args, **kwargs: {"status": 200, "attempts": 1})
+
+    report = alert_webhook_receiver.replay_dead_letters(
+        dead_letter,
+        "http://example.test",
+        timeout=1,
+        attempts=1,
+        backoff_s=0,
+    )
+
+    assert report["ok"] is True
+    assert report["replayed"] == 1
+    assert report["remaining"] == 0
+    assert dead_letter.read_text(encoding="utf-8") == ""
+
+
 def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
     metrics = tmp_path / "metrics"
     metrics.mkdir()
@@ -561,6 +582,8 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
     assert "Runtime Drift" in html
     assert "gbrain Stale" in html
     assert "47" in html
+    payload = metrics_dashboard.build_dashboard_payload(metrics)
+    assert payload["artifacts"][0]["name"] == "Runtime Drift"
 
 
 def test_metrics_dashboard_server_requires_token(tmp_path: Path):
@@ -579,10 +602,55 @@ def test_metrics_dashboard_server_requires_token(tmp_path: Path):
         with urllib.request.urlopen(f"{base}/dashboard?token=secret", timeout=5) as response:
             assert response.status == 200
             assert b"Hermes Memory Metrics" in response.read()
+        with urllib.request.urlopen(f"{base}/api/status?token=secret", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            assert response.status == 200
+            assert "artifacts" in payload
+        with urllib.request.urlopen(f"{base}/metrics?token=secret", timeout=5) as response:
+            text = response.read().decode("utf-8")
+            assert response.status == 200
+            assert "hermes_memory_component_status" in text
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_openmetrics_exporter_counts_alert_queues(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "health-summary-latest.json").write_text(json.dumps({"status": "healthy", "alert_count": 2}), encoding="utf-8")
+    (metrics / "webhook-receiver-latest.json").write_text(
+        json.dumps({"status": "degraded", "last_forward": {"error": "forward_failed", "attempts": 3}}),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(
+        json.dumps(
+            {
+                "status": "healthy",
+                "after": {"health_score": 9},
+                "classifications": [{"category": "upstream_gbrain_gap"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics / "inbound-alert-webhook.jsonl").write_text("{}\n{}\n", encoding="utf-8")
+    (metrics / "failed-alert-webhook.jsonl").write_text("{}\n", encoding="utf-8")
+
+    text = openmetrics_exporter.render_openmetrics(metrics)
+
+    assert 'hermes_memory_alert_count 2' in text
+    assert 'hermes_memory_webhook_queue_lines{queue="inbound"} 2' in text
+    assert 'hermes_memory_webhook_queue_lines{queue="dead_letter"} 1' in text
+    assert 'hermes_memory_gbrain_upstream_gap_active 1' in text
+
+
+def test_synthetic_recall_benchmark_passes_public_dataset():
+    payload = synthetic_recall_benchmark.run_benchmark()
+
+    assert payload["ok"] is True
+    assert payload["sample_count"] >= 5
+    assert payload["errors"] == []
 
 
 def test_gbrain_stale_upstream_gap_is_explicit_for_panel_only_debt():
