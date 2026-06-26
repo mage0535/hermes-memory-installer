@@ -24,6 +24,25 @@ Expose one of the following stable interfaces:
 - `gbrain embed --stale` returning zero work must not leave an unexplained stale-page deduction.
 - `gbrain orphans --count` returning zero must not coexist with an unexplained orphan-page deduction, or the health output must label it as a non-actionable cached counter.
 
+## Proposed JSON Shape
+
+```json
+{
+  "health_score": 10,
+  "contributors": [
+    {
+      "code": "stale_pages",
+      "severity": "info",
+      "count": 0,
+      "actionable": false,
+      "pages": []
+    }
+  ]
+}
+```
+
+For non-zero contributors, `pages` should include stable page IDs, paths or slugs, page type, and recommended repair command.
+
 ## Current Sidecar Mitigation
 
 `gbrain_stale_maintenance.py` treats non-actionable stale and orphan counter discrepancies as `info` when:

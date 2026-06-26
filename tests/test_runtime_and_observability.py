@@ -489,6 +489,63 @@ def test_alert_webhook_receiver_formats_telegram_payload(monkeypatch):
     assert "Hermes Memory alert" in body["text"]
 
 
+def test_alert_webhook_receiver_retries_forward(monkeypatch):
+    calls = {"count": 0}
+
+    def flaky_forward(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise OSError("temporary failure")
+        return {"status": 200, "reason": "OK"}
+
+    monkeypatch.setattr(alert_webhook_receiver, "forward_payload_once", flaky_forward)
+    monkeypatch.setattr(alert_webhook_receiver.time, "sleep", lambda _: None)
+
+    result = alert_webhook_receiver.forward_payload("http://example.test", {"status": "action-needed"}, 1, attempts=2)
+
+    assert result["status"] == 200
+    assert result["attempts"] == 2
+
+
+def test_alert_webhook_receiver_writes_dead_letter_on_forward_failure(tmp_path: Path, monkeypatch):
+    queue = tmp_path / "inbound.jsonl"
+    dead_letter = tmp_path / "failed.jsonl"
+    status = tmp_path / "status.json"
+    monkeypatch.setattr(
+        alert_webhook_receiver,
+        "forward_payload",
+        lambda *args, **kwargs: {"error": "forward_failed", "attempts": 1},
+    )
+    handler = alert_webhook_receiver.make_handler(
+        queue,
+        status,
+        "http://example.test",
+        1,
+        dead_letter_path=dead_letter,
+        retry_attempts=1,
+        retry_backoff_s=0,
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.server_address[1]}/alerts",
+            data=json.dumps({"status": "action-needed"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert response.status == 202
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert dead_letter.exists()
+    assert json.loads(status.read_text(encoding="utf-8"))["dead_letter_written"] is True
+
+
 def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
     metrics = tmp_path / "metrics"
     metrics.mkdir()
@@ -578,6 +635,32 @@ def test_profile_isolation_soak_uses_separate_agent_homes():
 
     assert report["ok"] is True
     assert len({row["profile"] for row in report["runs"]}) == 2
+
+
+def test_dashboard_info_command_does_not_print_token(tmp_path: Path):
+    token_file = tmp_path / "dashboard-token"
+    token_file.write_text("secret-token", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO / "bin" / "hermes-memory"),
+            "dashboard-info",
+            "--token-file",
+            str(token_file),
+            "--format",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["token_configured"] is True
+    assert "secret-token" not in result.stdout
+    assert payload["token_file"] == str(token_file)
 
 
 def test_recall_sample_suite_enforces_intent_and_source_thresholds():

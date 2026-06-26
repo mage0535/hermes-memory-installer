@@ -188,6 +188,8 @@ MEMORY_ALERT_TELEGRAM_CHAT_ID="..."
 
 `metrics_dashboard.py` 会生成静态 HTML 状态页。`metrics_dashboard_server.py` 可以在本机提供 token-gated 访问，默认绑定 `127.0.0.1`，避免把记忆指标暴露到公网。
 
+反向代理模板见 [docs/dashboard-reverse-proxy.md](docs/dashboard-reverse-proxy.md)。发布前检查清单见 [docs/release-checklist.md](docs/release-checklist.md)。
+
 ## Knowledge-and-Memory-Management
 
 如果你希望把“知识采集、知识整理、知识接入记忆体”做成完整工作流，建议配套使用 [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)。

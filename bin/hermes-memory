@@ -466,6 +466,24 @@ def cmd_drift_check(args: argparse.Namespace) -> int:
     return 1 if args.strict and report["status"] == "action-needed" else 0
 
 
+def cmd_dashboard_info(args: argparse.Namespace) -> int:
+    token_file = Path(args.token_file).expanduser() if args.token_file else AGENT_HOME / "private" / "dashboard-token"
+    payload = {
+        "url": args.url,
+        "token_file": str(token_file),
+        "token_configured": token_file.exists() and bool(token_file.read_text(encoding="utf-8", errors="replace").strip()),
+        "note": "Use the token as an Authorization: Bearer value. The token is not printed by this command.",
+    }
+    if args.format == "json":
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"Dashboard URL: {payload['url']}")
+        print(f"Token file: {payload['token_file']}")
+        print(f"Token configured: {payload['token_configured']}")
+        print(payload["note"])
+    return 0 if payload["token_configured"] else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.5.1")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -493,6 +511,10 @@ def main() -> int:
     drift.add_argument("--output", help="Output JSON path (defaults to AGENT_HOME metrics)")
     drift.add_argument("--format", choices=["json", "text"], default="json")
     drift.add_argument("--strict", action="store_true", help="Return non-zero when action-needed drift is found")
+    dashboard_info = sub.add_parser("dashboard-info", help="Print dashboard access metadata without exposing the token")
+    dashboard_info.add_argument("--url", default="http://127.0.0.1:9500/dashboard")
+    dashboard_info.add_argument("--token-file", help="Token file path (defaults to AGENT_HOME/private/dashboard-token)")
+    dashboard_info.add_argument("--format", choices=["json", "text"], default="text")
 
     args = parser.parse_args()
     if args.command == "doctor":
@@ -515,6 +537,8 @@ def main() -> int:
         return cmd_manifest(args)
     if args.command == "drift-check":
         return cmd_drift_check(args)
+    if args.command == "dashboard-info":
+        return cmd_dashboard_info(args)
     return 1
 
 
