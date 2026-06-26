@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -16,6 +17,27 @@ PROFILE_PATH = AGENT_HOME / "memory-sidecar" / "install-profile.json"
 DEFAULT_GRAY_DIR = AGENT_HOME / "gray" / "memory-sidecar"
 STANDARD_KMM_NOTES_REL = Path("knowledge/notes")
 LEGACY_KMM_NOTES_REL = Path("knowledge/wiki/wiki")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_SCRIPTS_DIR = REPO_ROOT / "scripts"
+CORE_DEPLOY_SCRIPTS = [
+    "session_to_gbrain.py",
+    "memory_governance_rebuild.py",
+    "memory_guardian.py",
+    "memory_maintenance_cycle.py",
+    "sidecar_acceptance_check.py",
+    "tiered_context_injector.py",
+    "archive_sessions.py",
+    "auto_session_summary.py",
+    "gbrain_deorphan_index.py",
+    "memory_observability_report.py",
+    "memory_storage_cross_check.py",
+    "state_db_schema.py",
+    "knowledge_notes.py",
+    "recall_samples.py",
+    "langsmith_monitor.py",
+    "langsmith_task_wrapper.py",
+    "langsmith_trend_report.py",
+]
 
 
 def run_script(script_name: str) -> int:
@@ -88,6 +110,96 @@ def cmd_report(args: argparse.Namespace) -> int:
     return result.returncode
 
 
+def sha256_file(path: Path) -> str | None:
+    if not path.exists() or not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def run_capture(cmd: list[str], timeout: int = 10) -> tuple[int, str]:
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        return 127, ""
+    except subprocess.TimeoutExpired:
+        return 124, ""
+    return result.returncode, (result.stdout + result.stderr).strip()
+
+
+def build_deploy_audit(repo_root: Path) -> dict:
+    repo_scripts_dir = repo_root / "scripts"
+    script_rows = []
+    missing = []
+    mismatched = []
+    for name in CORE_DEPLOY_SCRIPTS:
+        deployed_path = SCRIPTS_DIR / name
+        repo_path = repo_scripts_dir / name
+        deployed_hash = sha256_file(deployed_path)
+        repo_hash = sha256_file(repo_path)
+        row = {
+            "name": name,
+            "deployed": deployed_hash is not None,
+            "deployed_hash": deployed_hash,
+            "repo_hash": repo_hash,
+            "matches_repo": deployed_hash == repo_hash if repo_hash and deployed_hash else None,
+        }
+        script_rows.append(row)
+        if deployed_hash is None:
+            missing.append(name)
+        elif repo_hash and deployed_hash != repo_hash:
+            mismatched.append(name)
+
+    cron_code, cron_text = run_capture(["crontab", "-l"], timeout=10)
+    cron_available = cron_code == 0
+    cron_lines = cron_text.splitlines() if cron_available else []
+    relevant_cron = [
+        line for line in cron_lines
+        if any(token in line for token in ("langsmith", "gbrain-bulk-deorphan", "memory_guardian", "session_to_gbrain", "archive_sessions"))
+    ]
+
+    timer_active_code, timer_active = run_capture(["systemctl", "is-active", "memory-guardian.timer"], timeout=10)
+    timer_enabled_code, timer_enabled = run_capture(["systemctl", "is-enabled", "memory-guardian.timer"], timeout=10)
+
+    return {
+        "agent_home": str(AGENT_HOME),
+        "scripts_dir": str(SCRIPTS_DIR),
+        "repo_root": str(repo_root),
+        "scripts": script_rows,
+        "missing_scripts": missing,
+        "mismatched_scripts": mismatched,
+        "cron_available": cron_available,
+        "relevant_cron": relevant_cron,
+        "langsmith_uses_gray_path": any("/gray/" in line and "langsmith" in line for line in relevant_cron),
+        "gbrain_deorphan_scheduled": any("gbrain-bulk-deorphan-wrapper.sh" in line for line in relevant_cron),
+        "memory_guardian_timer": {
+            "active": timer_active if timer_active_code == 0 else "unknown",
+            "enabled": timer_enabled if timer_enabled_code == 0 else "unknown",
+        },
+    }
+
+
+def cmd_audit_deploy(args: argparse.Namespace) -> int:
+    repo_root = Path(args.repo_root).expanduser() if args.repo_root else REPO_ROOT
+    audit = build_deploy_audit(repo_root)
+    if args.format == "json":
+        print(json.dumps(audit, ensure_ascii=False, indent=2))
+    else:
+        print(f"Agent home: {audit['agent_home']}")
+        print(f"Scripts dir: {audit['scripts_dir']}")
+        print(f"Missing scripts: {len(audit['missing_scripts'])}")
+        print(f"Mismatched scripts: {len(audit['mismatched_scripts'])}")
+        print(f"LangSmith gray cron reference: {audit['langsmith_uses_gray_path']}")
+        print(f"gbrain deorphan scheduled: {audit['gbrain_deorphan_scheduled']}")
+        timer = audit["memory_guardian_timer"]
+        print(f"memory-guardian.timer: active={timer['active']} enabled={timer['enabled']}")
+    failed = bool(audit["missing_scripts"] or audit["langsmith_uses_gray_path"])
+    return 1 if failed else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.5")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -100,6 +212,9 @@ def main() -> int:
     report = sub.add_parser("report", help="Render an observability report from a governance DB")
     report.add_argument("--db", help="Path to governance DB (defaults to agent home governance DB)")
     report.add_argument("--format", choices=["json", "markdown"], default="json")
+    audit = sub.add_parser("audit-deploy", help="Audit deployed sidecar scripts, cron, and timers")
+    audit.add_argument("--repo-root", help="Repository root to compare deployed scripts against")
+    audit.add_argument("--format", choices=["json", "text"], default="json")
 
     args = parser.parse_args()
     if args.command == "doctor":
@@ -114,6 +229,8 @@ def main() -> int:
         return cmd_gray_env(args)
     if args.command == "report":
         return cmd_report(args)
+    if args.command == "audit-deploy":
+        return cmd_audit_deploy(args)
     return 1
 
 
