@@ -575,13 +575,19 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
         json.dumps({"status": "healthy", "ok": True, "after": {"health_score": 9, "stale_pages": 47}}),
         encoding="utf-8",
     )
+    (metrics / "webhook-receiver-latest.json").write_text(
+        json.dumps({"status": "healthy", "ok": True, "last_forward": {"status": 200, "reason": "OK", "attempts": 1}}),
+        encoding="utf-8",
+    )
 
     html = metrics_dashboard.render_dashboard(metrics)
 
-    assert "Hermes Memory Metrics" in html
-    assert "Runtime Drift" in html
-    assert "gbrain Stale" in html
+    assert "Hermes 记忆体仪表板" in html
+    assert "运行漂移" in html
+    assert "gbrain 健康" in html
     assert "47" in html
+    assert "成功，HTTP 200，尝试 1 次" in html
+    assert "{&#x27;status&#x27;: 200" not in html
     payload = metrics_dashboard.build_dashboard_payload(metrics)
     assert payload["artifacts"][0]["name"] == "Runtime Drift"
 
@@ -601,7 +607,7 @@ def test_metrics_dashboard_server_requires_token(tmp_path: Path):
             raise AssertionError("dashboard should require a token")
         with urllib.request.urlopen(f"{base}/dashboard?token=secret", timeout=5) as response:
             assert response.status == 200
-            assert b"Hermes Memory Metrics" in response.read()
+            assert "Hermes 记忆体仪表板" in response.read().decode("utf-8")
         with urllib.request.urlopen(f"{base}/api/status?token=secret", timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
             assert response.status == 200
