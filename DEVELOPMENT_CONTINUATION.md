@@ -1433,3 +1433,13 @@ These are now product/quality enhancements, not blockers for complete operationa
 3. Add a true Hindsight token/auth layer if the service gains native support or moves beyond localhost-only exposure.
 4. Reduce full acceptance p95 by profiling the knowledge query path separately from the fast monitor path.
 5. Add multi-agent profile isolation tests for non-Hermes agent homes.
+
+### 19.5 Final commit and post-commit verification
+
+- Git commit pushed: `75a8f81 feat: complete operational health and alerting loop`.
+- Post-commit repository audit: clean; private path refs `0`, secret-like refs `0`, compile failures `0`.
+- Post-commit drift status: `healthy`, reasons `0`.
+- Post-commit manifest: wrapper `env_default_safe`, missing scripts `0`, mismatched scripts `0`, relevant cron entries `8`.
+- Fast acceptance: `ok=true`, recall timings about `1.9s + 0.1s`.
+- Full acceptance: `ok=true`, `reason_buckets={}`.
+- Health summary: `status=healthy`, `ok=true`; only historical acceptance failures remain as `info`.
