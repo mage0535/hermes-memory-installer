@@ -138,6 +138,8 @@ def monitor_metrics(runs: list[Any]) -> dict:
     latest_gbrain = {}
     latest_storage_ok = None
     failure_reasons: dict[str, int] = {}
+    recent_failures = []
+    recall_stage_timings: dict[str, list[float]] = {"l2_s": [], "l3_s": [], "fusion_s": [], "total_s": []}
 
     for run in monitor_runs:
         payload = output_payload(run)
@@ -148,8 +150,19 @@ def monitor_metrics(runs: list[Any]) -> dict:
         if ok_value is None:
             ok_value = acceptance_payload.get("ok")
         acceptance_ok.append(bool(ok_value))
-        for code in acceptance_reason_codes(acceptance_payload):
+        reason_codes = acceptance_reason_codes(acceptance_payload)
+        for code in reason_codes:
             failure_reasons[code] = failure_reasons.get(code, 0) + 1
+        if reason_codes:
+            recent_failures.append(
+                {
+                    "run_name": getattr(run, "name", None),
+                    "status": getattr(run, "status", None),
+                    "reasons": reason_codes,
+                    "returncode": acceptance.get("returncode"),
+                    "elapsed_s": acceptance.get("elapsed_s"),
+                }
+            )
         if isinstance(acceptance.get("elapsed_s"), (int, float)):
             acceptance_elapsed.append(float(acceptance["elapsed_s"]))
         guardian = acceptance.get("guardian") or acceptance_payload.get("guardian")
@@ -166,6 +179,12 @@ def monitor_metrics(runs: list[Any]) -> dict:
         for row in recalls:
             if isinstance(row, dict) and isinstance(row.get("elapsed_s"), (int, float)):
                 recall_elapsed.append(float(row["elapsed_s"]))
+        acceptance_recalls = acceptance_payload.get("recalls") if isinstance(acceptance_payload.get("recalls"), list) else []
+        for row in acceptance_recalls:
+            timings = row.get("timings") if isinstance(row, dict) and isinstance(row.get("timings"), dict) else {}
+            for key in recall_stage_timings:
+                if isinstance(timings.get(key), (int, float)):
+                    recall_stage_timings[key].append(float(timings[key]))
 
     return {
         "count": len(monitor_runs),
@@ -180,7 +199,11 @@ def monitor_metrics(runs: list[Any]) -> dict:
         "latest_gbrain_missing_embeddings": latest_gbrain.get("missing_embeddings"),
         "latest_gbrain_orphans": latest_gbrain.get("orphan_pages_actual", latest_gbrain.get("orphan_pages")),
         "failure_reasons": dict(sorted(failure_reasons.items())),
+        "recent_failures": recent_failures[:5],
         "lag": lag_summary(lag_values_from_monitor_runs(monitor_runs)),
+        "acceptance_recall_stage_latency": {
+            key: summarize_values(values) for key, values in recall_stage_timings.items()
+        },
     }
 
 
@@ -231,6 +254,7 @@ def build_trend_report(runs: list[Any]) -> dict:
         "performance": {
             "acceptance_latency": monitor["acceptance_latency"],
             "recall_latency": monitor["recall_latency"],
+            "acceptance_recall_stage_latency": monitor["acceptance_recall_stage_latency"],
             "slowest_task_by_p95": {"name": slowest[0], "p95_s": slowest[1]} if slowest else None,
         },
     }

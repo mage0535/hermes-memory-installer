@@ -1355,3 +1355,81 @@ Secondary optimization targets:
 - Post-commit manifest: missing scripts `0`, mismatched scripts `0`, relevant cron entries `7`.
 - Latest production acceptance: `ok=true`, `reason_buckets={}`.
 - Server pytest is not available in either system Python or the LangSmith venv; server verification used py_compile plus live runtime checks. Local workstation pytest remained `134 passed` before deployment.
+
+## 19. Execution Report - Complete-System Hardening Batch
+
+Completed on 2026-06-26 against the live production runtime.
+
+### 19.1 Implemented scope
+
+1. Fast/full acceptance split
+   - `sidecar_acceptance_check.py` now supports `--mode fast` and `--mode full`.
+   - `hermes-memory acceptance --mode fast|full` forwards the mode.
+   - Fast mode is a lightweight runtime check for frequent monitoring.
+   - Full mode preserves the complete recall regression suite for release/day-level validation.
+
+2. Recall performance profiling
+   - Acceptance recall rows now include per-query timings: `l2_s`, `l3_s`, `fusion_s`, `total_s`.
+   - LangSmith trend now aggregates `acceptance_recall_stage_latency`.
+
+3. LangSmith monitor performance improvement
+   - `langsmith_monitor.py` now defaults to fast acceptance via `MEMORY_MONITOR_ACCEPTANCE_MODE=fast`.
+   - Full acceptance remains available by setting `MEMORY_MONITOR_ACCEPTANCE_MODE=full` or running the CLI manually.
+
+4. Unified alert queue
+   - Added `alert_queue.py`.
+   - Writes `<agent-home>/metrics/health-summary-latest.json` and appends informational/actionable records to `<agent-home>/metrics/alerts.jsonl`.
+   - Added cron: `45 */6 * * * AGENT_HOME=<agent-home> <agent-home>/scripts/alert_queue.py >> /var/log/alert-queue.log 2>&1 # alert-queue`.
+
+5. Hindsight security audit
+   - Added `hindsight_security_audit.py`.
+   - Confirms Hindsight is locally reachable, not publicly reachable, and bound to localhost.
+   - Token absence is recorded as `info`, not an outage, because the service is currently localhost-only.
+   - Added cron: `40 */6 * * * AGENT_HOME=<agent-home> <agent-home>/scripts/hindsight_security_audit.py --public-host <server-ip> >> /var/log/hindsight-security-audit.log 2>&1 # hindsight-security-audit`.
+
+6. gbrain stale closure policy
+   - `gbrain_stale_maintenance.py` now checks actual orphan count and distinguishes panel counter noise from actionable orphan/stale problems.
+   - Current stale result is `healthy` with info-only classifications:
+     - `stale_health_counter_not_embedding_stale`, count `47`
+     - `reported_orphans_counter_discrepancy`, count `1`, actual orphan count `0`
+
+### 19.2 Verification evidence
+
+Local workstation:
+
+- `python -m pytest -q` -> `134 passed`
+- `python bin/hermes-memory audit-repo --format text` -> clean
+
+Production server:
+
+- `hermes-memory acceptance --mode fast` -> `ok=true`, total recall timings about `1.6s`
+- `hermes-memory acceptance --mode full` -> `ok=true`, `reason_buckets={}`
+- `memory_storage_cross_check.py` -> `ok=true`, warnings `[]`
+- `hindsight_security_audit.py` -> `status=healthy`, `public_reachable=false`, `localhost_bound=true`, `wildcard_bound=false`
+- `gbrain_stale_maintenance.py` -> `status=healthy`, info-only stale/orphan counter classifications
+- `alert_queue.py` -> `status=healthy`, only historical acceptance failures recorded as `info`
+- `audit-deploy` -> missing scripts `0`, mismatched scripts `0`
+- `manifest` -> wrapper `env_default_safe`, missing scripts `0`, mismatched scripts `0`, relevant cron entries `8`
+
+### 19.3 Current complete-system status
+
+The system now satisfies the complete operational target:
+
+- live runtime is healthy
+- repository/runtime drift is checked and currently absent except while pending commit work is in progress
+- fast monitoring is lightweight enough for frequent cron use
+- full acceptance remains available for release confidence
+- gbrain stale health debt is no longer unexplained or actionable by default
+- Hindsight is confirmed localhost-only from this audit path
+- action-needed events have a unified local queue
+- historical failures are visible as info rather than mixed with current outages
+
+### 19.4 Remaining optional enhancements
+
+These are now product/quality enhancements, not blockers for complete operational status:
+
+1. Add an external notification sink for `<agent-home>/metrics/alerts.jsonl`.
+2. Investigate whether gbrain can expose exact stale-page IDs upstream.
+3. Add a true Hindsight token/auth layer if the service gains native support or moves beyond localhost-only exposure.
+4. Reduce full acceptance p95 by profiling the knowledge query path separately from the fast monitor path.
+5. Add multi-agent profile isolation tests for non-Hermes agent homes.

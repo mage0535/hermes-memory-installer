@@ -43,6 +43,8 @@ CORE_DEPLOY_SCRIPTS = [
     "langsmith_trend_report.py",
     "runtime_drift_check.py",
     "gbrain_stale_maintenance.py",
+    "alert_queue.py",
+    "hindsight_security_audit.py",
 ]
 REQUIRED_REPO_FILES = [
     "README.md",
@@ -72,12 +74,12 @@ PRIVATE_PATH_PATTERNS = {
 }
 
 
-def run_script(script_name: str) -> int:
+def run_script(script_name: str, extra_args: list[str] | None = None) -> int:
     script = SCRIPTS_DIR / script_name
     if not script.exists():
         print(f"Missing script: {script}")
         return 1
-    result = subprocess.run([sys.executable, str(script)], text=True)
+    result = subprocess.run([sys.executable, str(script), *(extra_args or [])], text=True)
     return result.returncode
 
 
@@ -107,8 +109,8 @@ def cmd_maintenance(_: argparse.Namespace) -> int:
     return run_script("memory_maintenance_cycle.py")
 
 
-def cmd_acceptance(_: argparse.Namespace) -> int:
-    return run_script("sidecar_acceptance_check.py")
+def cmd_acceptance(args: argparse.Namespace) -> int:
+    return run_script("sidecar_acceptance_check.py", ["--mode", args.mode])
 
 
 def cmd_gray_env(args: argparse.Namespace) -> int:
@@ -260,6 +262,7 @@ def build_deploy_audit(repo_root: Path) -> dict:
             for token in (
                 "langsmith",
                 "runtime-drift-check",
+                "alert-queue",
                 "gbrain-bulk-deorphan",
                 "memory_guardian",
                 "session_to_gbrain",
@@ -465,7 +468,8 @@ def main() -> int:
     sub.add_parser("doctor", help="Check whether the sidecar is installed")
     sub.add_parser("profile", help="Print install profile metadata")
     sub.add_parser("maintenance", help="Run one maintenance cycle")
-    sub.add_parser("acceptance", help="Run the acceptance regression suite")
+    acceptance = sub.add_parser("acceptance", help="Run the acceptance regression suite")
+    acceptance.add_argument("--mode", choices=["fast", "full"], default=os.environ.get("MEMORY_ACCEPTANCE_MODE", "full"))
     gray_env = sub.add_parser("gray-env", help="Print environment variables for a gray deployment")
     gray_env.add_argument("--gray-dir", help="Override the gray runtime directory")
     report = sub.add_parser("report", help="Render an observability report from a governance DB")
