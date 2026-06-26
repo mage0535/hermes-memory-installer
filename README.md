@@ -126,7 +126,7 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 
 ## Installed Script Set
 
-The public installer deploys 22 runtime, support, and observability scripts into `$AGENT_HOME/scripts/`.
+The public installer deploys 24 runtime, support, and observability scripts into `$AGENT_HOME/scripts/`.
 
 Entry scripts:
 
@@ -145,6 +145,8 @@ Entry scripts:
 - `runtime_drift_check.py`
 - `gbrain_stale_maintenance.py`
 - `alert_queue.py`
+- `alert_webhook_receiver.py`
+- `metrics_dashboard.py`
 - `hindsight_security_audit.py`
 
 Support modules:

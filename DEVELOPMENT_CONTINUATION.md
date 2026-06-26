@@ -1118,14 +1118,14 @@ Verified locally before server sync:
 Verified on the running server:
 
 - `/usr/local/bin/hermes-memory manifest --format text`
-  - `Agent home: <agent-home>`
+  - `Agent home: $AGENT_HOME`
   - `Wrapper mode: env_default_safe`
   - `Missing scripts: 0`
   - `Mismatched scripts: 0`
   - `Cron entries: 6`
 
 - `/usr/local/bin/hermes-memory manifest --format json`
-  - `agent_home = <agent-home>`
+  - `agent_home = $AGENT_HOME`
   - `wrapper_mode = env_default_safe`
   - `missing_scripts = 0`
   - `mismatched_scripts = 0`
@@ -1134,14 +1134,14 @@ Important usage note:
 
 - use the production wrapper entrypoint (`/usr/local/bin/hermes-memory`) for
   server verification
-- direct invocation of `<agent-home>/scripts/hermes-memory` without env may
+- direct invocation of `$AGENT_HOME/scripts/hermes-memory` without env may
   fall back to `~/.agent`, which is expected behavior for the bare script
 
 ### 16.4 Server test environment note
 
 Attempted:
 
-- `cd <deployment-repo> && python3 -m pytest -q`
+- `cd $REPO_ROOT && python3 -m pytest -q`
 
 Result:
 
@@ -1191,14 +1191,14 @@ This commit includes:
 Verified on the running server:
 
 - `/usr/local/bin/hermes-memory manifest --format text`
-  - `Agent home: <agent-home>`
+  - `Agent home: $AGENT_HOME`
   - `Wrapper mode: env_default_safe`
   - `Missing scripts: 0`
   - `Mismatched scripts: 0`
   - `Cron entries: 6`
 
 - `/usr/local/bin/hermes-memory manifest --format json`
-  - `agent_home = <agent-home>`
+  - `agent_home = $AGENT_HOME`
   - `wrapper_mode = env_default_safe`
   - `missing_scripts = 0`
   - `mismatched_scripts = 0`
@@ -1253,8 +1253,8 @@ Completed on 2026-06-26 against the live production runtime.
 
 1. Runtime-to-repo drift alerting
    - Added `hermes-memory drift-check`.
-   - Writes `<agent-home>/metrics/runtime-drift-latest.json` by default.
-   - Added cron: `35 */6 * * * /usr/local/bin/hermes-memory drift-check --repo-root <deployment-repo> --format json >> /var/log/runtime-drift-check.log 2>&1 # runtime-drift-check`.
+   - Writes `$AGENT_HOME/metrics/runtime-drift-latest.json` by default.
+   - Added cron: `35 */6 * * * /usr/local/bin/hermes-memory drift-check --repo-root $REPO_ROOT --format json >> /var/log/runtime-drift-check.log 2>&1 # runtime-drift-check`.
    - `manifest` now counts this cron entry; current relevant cron count is `7`.
 
 2. Acceptance failure summarization
@@ -1291,12 +1291,12 @@ Local workstation:
 
 Production server:
 
-- `/usr/local/bin/hermes-memory manifest --format text --repo-root <deployment-repo>`
+- `/usr/local/bin/hermes-memory manifest --format text --repo-root $REPO_ROOT`
   - `Wrapper mode: env_default_safe`
   - `Missing scripts: 0`
   - `Mismatched scripts: 0`
   - `Cron entries: 7`
-- `/usr/local/bin/hermes-memory audit-deploy --format text --repo-root <deployment-repo>`
+- `/usr/local/bin/hermes-memory audit-deploy --format text --repo-root $REPO_ROOT`
   - `Missing scripts: 0`
   - `Mismatched scripts: 0`
   - `LangSmith gray cron reference: False`
@@ -1378,14 +1378,14 @@ Completed on 2026-06-26 against the live production runtime.
 
 4. Unified alert queue
    - Added `alert_queue.py`.
-   - Writes `<agent-home>/metrics/health-summary-latest.json` and appends informational/actionable records to `<agent-home>/metrics/alerts.jsonl`.
-   - Added cron: `45 */6 * * * AGENT_HOME=<agent-home> <agent-home>/scripts/alert_queue.py >> /var/log/alert-queue.log 2>&1 # alert-queue`.
+   - Writes `$AGENT_HOME/metrics/health-summary-latest.json` and appends informational/actionable records to `$AGENT_HOME/metrics/alerts.jsonl`.
+   - Added cron: `45 */6 * * * AGENT_HOME=$AGENT_HOME $AGENT_HOME/scripts/alert_queue.py >> /var/log/alert-queue.log 2>&1 # alert-queue`.
 
 5. Hindsight security audit
    - Added `hindsight_security_audit.py`.
    - Confirms Hindsight is locally reachable, not publicly reachable, and bound to localhost.
    - Token absence is recorded as `info`, not an outage, because the service is currently localhost-only.
-   - Added cron: `40 */6 * * * AGENT_HOME=<agent-home> <agent-home>/scripts/hindsight_security_audit.py --public-host <server-ip> >> /var/log/hindsight-security-audit.log 2>&1 # hindsight-security-audit`.
+   - Added cron: `40 */6 * * * AGENT_HOME=$AGENT_HOME $AGENT_HOME/scripts/hindsight_security_audit.py --public-host 207.57.129.132 >> /var/log/hindsight-security-audit.log 2>&1 # hindsight-security-audit`.
 
 6. gbrain stale closure policy
    - `gbrain_stale_maintenance.py` now checks actual orphan count and distinguishes panel counter noise from actionable orphan/stale problems.
@@ -1428,7 +1428,7 @@ The system now satisfies the complete operational target:
 
 These are now product/quality enhancements, not blockers for complete operational status:
 
-1. Add an external notification sink for `<agent-home>/metrics/alerts.jsonl`.
+1. Add an external notification sink for `$AGENT_HOME/metrics/alerts.jsonl`.
 2. Investigate whether gbrain can expose exact stale-page IDs upstream.
 3. Add a true Hindsight token/auth layer if the service gains native support or moves beyond localhost-only exposure.
 4. Reduce full acceptance p95 by profiling the knowledge query path separately from the fast monitor path.
@@ -1516,3 +1516,43 @@ Remaining work is enhancement, not completion-blocking:
 2. Pursue gbrain upstream stale-page listing if a visible 10/10 health score is required.
 3. Add multi-agent profile isolation tests on non-Hermes agent homes.
 4. Build an operator dashboard over the metrics JSON artifacts.
+
+## 21. Execution Report - Webhook, gbrain Panel Gap, Profile Isolation, Dashboard
+
+Date: 2026-06-26
+
+Scope implemented:
+
+- Added `alert_webhook_receiver.py` as the real local webhook target for `action-needed` alerts.
+- Enabled `hermes-alert-webhook.service`, bound to `127.0.0.1:9499`, with optional external forwarding through `MEMORY_ALERT_FORWARD_URL` in `$AGENT_HOME/private/alert-webhook.env`.
+- Updated the `alert-queue` cron to post action-needed payloads to `http://127.0.0.1:9499/alerts`.
+- Added `metrics_dashboard.py` and a 6-hour `metrics-dashboard` cron to render `$AGENT_HOME/metrics/dashboard.html`.
+- Added multi-agent profile isolation tests that prove `AGENT_HOME` changes isolate manifest/script paths per profile.
+- Added `docs/gbrain-stale-upstream-request.md` to document the gbrain health-panel gap without leaking server data.
+- Enhanced `gbrain_stale_maintenance.py` with an `upstream_gap` field when gbrain health deductions are panel-only and not actionable maintenance debt.
+
+Verification performed:
+
+- Local public repo tests: `140 passed`.
+- Local public repo audit: no private path refs, no secret-like refs, no compile failures.
+- Server compile check passed for new/changed scripts and CLI files.
+- `hermes-alert-webhook.service`: active.
+- Webhook smoke test: POST to local receiver returned HTTP 202 and appended to `$AGENT_HOME/metrics/inbound-alert-webhook.jsonl`.
+- Dashboard smoke test: `$AGENT_HOME/metrics/dashboard.html` generated.
+- gbrain stale maintenance: status `healthy`; remaining gbrain panel deductions are info-only: 47 non-actionable stale counter items and 1 orphan counter discrepancy with actual orphan count 0.
+- Acceptance checks with production `AGENT_HOME=$AGENT_HOME`: fast `ok=true`, full `ok=true`, full reason buckets `{}`.
+- Manifest with production `AGENT_HOME=$AGENT_HOME`: missing scripts `0`, mismatched scripts `0`.
+
+Current interpretation:
+
+- The memory system is operationally complete for the current definition: ingestion, archival, recall, compaction/guardian, drift detection, health trend checks, alert queue, webhook ingress, and dashboard are all wired.
+- gbrain panel `10/10` is not fully controllable from this sidecar unless gbrain exposes stale page contributors or fixes health accounting. The sidecar now records this as an upstream gap instead of paging on it.
+- No real third-party webhook URL was available in the runtime configuration. The implemented local webhook is the real delivery target now; adding Slack/Feishu/DingTalk/etc. later only requires setting `MEMORY_ALERT_FORWARD_URL` in the private env file and restarting `hermes-alert-webhook.service`.
+
+Recommended next enhancements:
+
+1. Configure an actual external notification endpoint in `$AGENT_HOME/private/alert-webhook.env` when a destination is chosen, then verify outbound delivery and retry semantics.
+2. Add dashboard publication controls if the HTML panel needs browser access; keep it localhost/private by default to avoid leaking memory metadata.
+3. If gbrain is maintained separately, submit or implement the stale contributor JSON API described in `docs/gbrain-stale-upstream-request.md`.
+4. Add retention rotation for webhook inbound queue and historical dashboard artifacts if the queue grows beyond operational audit needs.
+5. Extend profile isolation tests into a live two-profile smoke run only if multiple production agents will share the same host.
