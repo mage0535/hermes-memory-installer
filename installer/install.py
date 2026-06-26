@@ -57,6 +57,8 @@ SUPPORTED_SCRIPT_NAMES = [
     "runtime_drift_check.py",
     "gbrain_stale_maintenance.py",
     "alert_queue.py",
+    "alert_webhook_receiver.py",
+    "metrics_dashboard.py",
     "hindsight_security_audit.py",
 ]
 

@@ -115,6 +115,25 @@ def classify_health(health: dict, effects: dict | None = None) -> list[dict]:
     return items
 
 
+def upstream_gap(classifications: list[dict]) -> dict:
+    codes = {item.get("code") for item in classifications}
+    panel_only_codes = {
+        "stale_health_counter_not_embedding_stale",
+        "reported_orphans_counter_discrepancy",
+    }
+    active = bool(codes & panel_only_codes)
+    return {
+        "active": active,
+        "reason": "gbrain health reports non-actionable panel counters" if active else None,
+        "required_capability": (
+            "Expose stale/orphan contributors via JSON, or stop counting non-actionable cached counters in health score."
+            if active
+            else None
+        ),
+        "public_request": "docs/gbrain-stale-upstream-request.md" if active else None,
+    }
+
+
 def actual_orphan_count() -> int | None:
     result = run(["gbrain", "orphans", "--count"], timeout=60)
     match = re.search(r"(\d+)", (result.get("stdout") or "") + (result.get("stderr") or ""))
@@ -153,6 +172,7 @@ def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> d
         "before": before,
         "after": after,
         "classifications": classifications,
+        "upstream_gap": upstream_gap(classifications),
         "action_effects": effects,
         "actions": actions,
     }

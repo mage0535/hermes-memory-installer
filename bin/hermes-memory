@@ -44,6 +44,8 @@ CORE_DEPLOY_SCRIPTS = [
     "runtime_drift_check.py",
     "gbrain_stale_maintenance.py",
     "alert_queue.py",
+    "alert_webhook_receiver.py",
+    "metrics_dashboard.py",
     "hindsight_security_audit.py",
 ]
 REQUIRED_REPO_FILES = [

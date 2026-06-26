@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from http.server import ThreadingHTTPServer
 import importlib
 import json
 import os
 import sqlite3
+import subprocess
 import sys
+import threading
+import urllib.request
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
@@ -19,6 +23,9 @@ import recall_samples
 import sidecar_acceptance_check as acceptance_check
 import tiered_context_injector as injector
 import alert_queue
+import alert_webhook_receiver
+import metrics_dashboard
+import gbrain_stale_maintenance
 
 
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
@@ -426,6 +433,95 @@ def test_alert_queue_treats_historical_failures_as_info(tmp_path: Path):
             "detail": {"acceptance_ok_rate": 0.5, "failure_reasons": {"guardian": 1}, "recent_failures": []},
         }
     ]
+
+
+def test_alert_webhook_receiver_queues_payload(tmp_path: Path):
+    queue = tmp_path / "inbound.jsonl"
+    status = tmp_path / "status.json"
+    handler = alert_webhook_receiver.make_handler(queue, status, "", 1)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/alerts"
+        request = urllib.request.Request(
+            url,
+            data=json.dumps({"status": "action-needed", "alerts": [{"code": "x"}]}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert response.status == 202
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    rows = [json.loads(line) for line in queue.read_text(encoding="utf-8").splitlines()]
+    assert rows[0]["payload"]["status"] == "action-needed"
+    assert json.loads(status.read_text(encoding="utf-8"))["status"] == "healthy"
+
+
+def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(json.dumps({"status": "healthy", "ok": True}), encoding="utf-8")
+    (metrics / "gbrain-stale-latest.json").write_text(
+        json.dumps({"status": "healthy", "ok": True, "after": {"health_score": 9, "stale_pages": 47}}),
+        encoding="utf-8",
+    )
+
+    html = metrics_dashboard.render_dashboard(metrics)
+
+    assert "Hermes Memory Metrics" in html
+    assert "Runtime Drift" in html
+    assert "gbrain Stale" in html
+    assert "47" in html
+
+
+def test_gbrain_stale_upstream_gap_is_explicit_for_panel_only_debt():
+    classifications = [
+        {
+            "code": "stale_health_counter_not_embedding_stale",
+            "severity": "info",
+            "count": 47,
+        }
+    ]
+
+    gap = gbrain_stale_maintenance.upstream_gap(classifications)
+
+    assert gap["active"] is True
+    assert "JSON" in gap["required_capability"]
+    assert gap["public_request"] == "docs/gbrain-stale-upstream-request.md"
+
+
+def test_manifest_respects_agent_home_per_profile(tmp_path: Path):
+    homes = [tmp_path / "agent-a", tmp_path / "agent-b"]
+    outputs = []
+    for home in homes:
+        (home / "scripts").mkdir(parents=True)
+        env = {**os.environ, "AGENT_HOME": str(home)}
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO / "bin" / "hermes-memory"),
+                "manifest",
+                "--format",
+                "json",
+                "--repo-root",
+                str(REPO),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=True,
+        )
+        outputs.append(json.loads(result.stdout))
+
+    assert outputs[0]["agent_home"] == str(homes[0])
+    assert outputs[1]["agent_home"] == str(homes[1])
+    assert outputs[0]["scripts_dir"] != outputs[1]["scripts_dir"]
 
 
 def test_recall_sample_suite_enforces_intent_and_source_thresholds():
