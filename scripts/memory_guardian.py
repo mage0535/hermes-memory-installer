@@ -468,6 +468,10 @@ def monitor(verbose=True):
     }
     cap.update(read_governance_meta())
     cap.update(summarize_guardian_history())
+    if int(cap.get('pending_consolidation') or 0) <= 0 and int(cap.get('failed_consolidation') or 0) <= 0:
+        cap['pending_consolidation_sticky'] = False
+        cap['pending_consolidation_nonzero_run'] = 0
+        cap['pending_consolidation_trend'] = 'clear'
     synced_at = cap.get('hindsight_synced_at')
     if synced_at is not None:
         try:

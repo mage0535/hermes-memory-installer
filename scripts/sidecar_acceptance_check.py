@@ -129,6 +129,24 @@ def evaluate_payload(payload: dict) -> tuple[bool, list[str]]:
     return len(errors) == 0, errors
 
 
+def bucket_acceptance_errors(errors: list[str]) -> dict[str, int]:
+    buckets: dict[str, int] = {}
+    for error in errors:
+        text = error.lower()
+        if "guardian" in text:
+            bucket = "guardian"
+        elif "hindsight" in text or "lag" in text:
+            bucket = "hindsight_lag"
+        elif "knowledge" in text:
+            bucket = "knowledge_recall"
+        elif "recall" in text or "candidate" in text or "top title" in text:
+            bucket = "recall_coverage"
+        else:
+            bucket = "acceptance_error"
+        buckets[bucket] = buckets.get(bucket, 0) + 1
+    return dict(sorted(buckets.items()))
+
+
 def validate_runtime_config() -> list[str]:
     configured_home = os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME")
     configured_state = os.environ.get("MEMORY_STATE_DB_PATH")
@@ -167,6 +185,7 @@ def main() -> int:
     ok, errors = evaluate_payload(payload)
     payload["ok"] = ok
     payload["errors"] = errors
+    payload["reason_buckets"] = bucket_acceptance_errors(errors)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if ok else 1
 

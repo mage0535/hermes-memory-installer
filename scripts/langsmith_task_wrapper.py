@@ -5,11 +5,16 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import time
+
+
+INCLUDE_RAW_OUTPUT = os.environ.get("LANGSMITH_INCLUDE_RAW_OUTPUT", "").lower() in {"1", "true", "yes"}
 
 
 def run_task(command: list[str], timeout: int) -> dict:
@@ -26,14 +31,46 @@ def run_task(command: list[str], timeout: int) -> dict:
     }
 
 
+def _safe_command(command: list[str]) -> list[str]:
+    safe = []
+    for part in command:
+        if part.endswith(".py") or "/" in part or "\\" in part:
+            safe.append(Path(part).name)
+        elif part.startswith("-"):
+            safe.append(part)
+        else:
+            safe.append(f"arg:{hashlib.sha256(part.encode('utf-8')).hexdigest()[:12]}")
+    return safe
+
+
+def sanitize_task_payload(payload: dict) -> dict:
+    stdout_tail = payload.get("stdout_tail") or ""
+    stderr_tail = payload.get("stderr_tail") or ""
+    sanitized = {
+        "command": _safe_command(payload.get("command") or []),
+        "command_hash": hashlib.sha256(" ".join(payload.get("command") or []).encode("utf-8")).hexdigest()[:16],
+        "returncode": payload.get("returncode"),
+        "elapsed_s": payload.get("elapsed_s"),
+        "stdout_len": len(stdout_tail),
+        "stderr_len": len(stderr_tail),
+        "stderr_present": bool(stderr_tail),
+        "captured_at": payload.get("captured_at"),
+    }
+    if INCLUDE_RAW_OUTPUT:
+        sanitized["stdout_tail"] = stdout_tail
+        sanitized["stderr_tail"] = stderr_tail
+    return sanitized
+
+
 def publish_langsmith(task_name: str, payload: dict) -> dict:
     from langsmith import traceable
 
     project_name = os.environ.get("LANGSMITH_PROJECT", "hermes-memory-installer")
+    safe_payload = sanitize_task_payload(payload)
 
     @traceable(run_type="tool", name=task_name, project_name=project_name)
     def _emit() -> dict:
-        return payload
+        return safe_payload
 
     result = _emit()
     return {"published": True, "project": project_name, "result": result}

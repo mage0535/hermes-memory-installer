@@ -140,12 +140,9 @@ def compute_knowledge_notes_signature(notes_dir: Path) -> str:
     for path in sorted(notes_dir.rglob("*.md")):
         if not path.is_file():
             continue
+        stat = path.stat()
         rel = str(path.relative_to(notes_dir)).replace("\\", "/")
-        content_hash = hashlib.sha1()
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                content_hash.update(chunk)
-        parts.append(f"{rel}:{content_hash.hexdigest()}")
+        parts.append(f"{rel}:{int(stat.st_mtime)}:{stat.st_size}")
     return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()
 
 
