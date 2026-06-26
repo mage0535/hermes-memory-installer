@@ -74,11 +74,11 @@ def detect_state_schema(conn: sqlite3.Connection) -> StateSchema:
     session_columns = table_columns(conn, "sessions")
     message_columns = table_columns(conn, "messages")
     return StateSchema(
-        session_source=first_present(session_columns, "source", "origin", default="source"),
-        session_ended_at=first_present(session_columns, "ended_at", "updated_at", "finished_at", default="ended_at"),
-        session_started_at=first_present(session_columns, "started_at", "created_at", default="started_at"),
-        session_summary=first_present(session_columns, "summary", default="summary"),
-        session_title=first_present(session_columns, "title", "name", default="title"),
+        session_source=first_present(session_columns, "source", "origin"),
+        session_ended_at=first_present(session_columns, "ended_at", "updated_at", "finished_at"),
+        session_started_at=first_present(session_columns, "started_at", "created_at"),
+        session_summary=first_present(session_columns, "summary"),
+        session_title=first_present(session_columns, "title", "name"),
         session_message_count=first_present(session_columns, "message_count", "messages_count"),
         session_input_tokens=first_present(session_columns, "input_tokens", "prompt_tokens"),
         session_output_tokens=first_present(session_columns, "output_tokens", "completion_tokens"),
@@ -87,7 +87,7 @@ def detect_state_schema(conn: sqlite3.Connection) -> StateSchema:
         session_parent_id=first_present(session_columns, "parent_session_id"),
         session_end_reason=first_present(session_columns, "end_reason"),
         message_content=first_present(message_columns, "content", "text", "body", default="content"),
-        message_timestamp=first_present(message_columns, "timestamp", "created_at", "time", default="timestamp"),
+        message_timestamp=first_present(message_columns, "timestamp", "created_at", "time"),
         message_role=first_present(message_columns, "role", default="role"),
         message_tool_name=first_present(message_columns, "tool_name"),
     )
