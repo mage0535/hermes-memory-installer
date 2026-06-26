@@ -61,6 +61,7 @@ SUPPORTED_SCRIPT_NAMES = [
     "metrics_dashboard.py",
     "metrics_dashboard_server.py",
     "openmetrics_exporter.py",
+    "slo_rollup.py",
     "profile_isolation_soak.py",
     "hindsight_security_audit.py",
     "synthetic_recall_benchmark.py",

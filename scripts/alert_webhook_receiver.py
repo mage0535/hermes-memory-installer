@@ -312,6 +312,7 @@ def main() -> int:
     parser.add_argument("--replay-dead-letter", action="store_true", help="Replay rows from the dead-letter queue and exit")
     parser.add_argument("--max-replay", type=int, default=100)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--output", default=str(METRICS_DIR / "dead-letter-replay-latest.json"))
     args = parser.parse_args()
 
     queue_path = Path(args.queue).expanduser()
@@ -327,6 +328,9 @@ def main() -> int:
             args.max_replay,
             args.dry_run,
         )
+        output = Path(args.output).expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0 if payload["ok"] else 1
 

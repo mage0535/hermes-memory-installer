@@ -38,6 +38,7 @@ ARTIFACTS = {
     "gbrain_stale": "gbrain-stale-latest.json",
     "hindsight_security": "hindsight-security-latest.json",
     "webhook_receiver": "webhook-receiver-latest.json",
+    "slo_rollup": "slo-rollup-latest.json",
 }
 
 
@@ -134,6 +135,44 @@ def render_openmetrics(metrics_dir: Path) -> str:
                 metric_line("hermes_memory_langsmith_recent_acceptance_ok_rate", float(recent_rate)),
             ]
         )
+
+    slo = payloads["slo_rollup"]
+    if slo.get("acceptance_ok_rate") is not None:
+        lines.extend(
+            [
+                "# HELP hermes_memory_slo_acceptance_ok_rate Rolled-up acceptance success rate.",
+                "# TYPE hermes_memory_slo_acceptance_ok_rate gauge",
+                metric_line("hermes_memory_slo_acceptance_ok_rate", float(slo["acceptance_ok_rate"])),
+            ]
+        )
+    if slo.get("alert_queue_growth") is not None:
+        lines.extend(
+            [
+                "# HELP hermes_memory_slo_alert_queue_growth Alert queue line growth since previous SLO rollup.",
+                "# TYPE hermes_memory_slo_alert_queue_growth gauge",
+                metric_line("hermes_memory_slo_alert_queue_growth", int(slo["alert_queue_growth"])),
+            ]
+        )
+    if slo.get("dead_letter_replay_success_rate") is not None:
+        lines.extend(
+            [
+                "# HELP hermes_memory_slo_dead_letter_replay_success_rate Dead-letter replay success rate from latest replay report.",
+                "# TYPE hermes_memory_slo_dead_letter_replay_success_rate gauge",
+                metric_line("hermes_memory_slo_dead_letter_replay_success_rate", float(slo["dead_letter_replay_success_rate"])),
+            ]
+        )
+    recall_latency = slo.get("recall_latency") if isinstance(slo.get("recall_latency"), dict) else {}
+    for quantile, key in (("0.50", "p50_s"), ("0.95", "p95_s"), ("1.00", "max_s")):
+        value = recall_latency.get(key)
+        if value is not None:
+            if quantile == "0.50":
+                lines.extend(
+                    [
+                        "# HELP hermes_memory_slo_recall_latency_seconds Rolled-up recall latency quantiles.",
+                        "# TYPE hermes_memory_slo_recall_latency_seconds gauge",
+                    ]
+                )
+            lines.append(metric_line("hermes_memory_slo_recall_latency_seconds", float(value), {"quantile": quantile}))
 
     generated = int(datetime.now(timezone.utc).timestamp())
     lines.extend(

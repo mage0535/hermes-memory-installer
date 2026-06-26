@@ -48,6 +48,7 @@ CORE_DEPLOY_SCRIPTS = [
     "metrics_dashboard.py",
     "metrics_dashboard_server.py",
     "openmetrics_exporter.py",
+    "slo_rollup.py",
     "profile_isolation_soak.py",
     "hindsight_security_audit.py",
     "synthetic_recall_benchmark.py",
@@ -393,6 +394,16 @@ def default_metrics_path(filename: str) -> Path:
     return AGENT_HOME / "metrics" / filename
 
 
+def load_json_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def write_json_if_requested(path_value: str | None, payload: dict) -> None:
     if not path_value:
         return
@@ -493,6 +504,52 @@ def cmd_openmetrics(args: argparse.Namespace) -> int:
     return run_script("openmetrics_exporter.py", extra_args)
 
 
+def cmd_slo_rollup(args: argparse.Namespace) -> int:
+    extra_args = ["--metrics-dir", args.metrics_dir] if args.metrics_dir else []
+    if args.output:
+        extra_args.extend(["--output", args.output])
+    if args.history:
+        extra_args.extend(["--history", args.history])
+    if args.no_history:
+        extra_args.append("--no-history")
+    return run_script("slo_rollup.py", extra_args)
+
+
+def format_rate(value) -> str:
+    if isinstance(value, (int, float)):
+        return f"{float(value) * 100:.1f}%"
+    return "unknown"
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    metrics_dir = Path(args.metrics_dir).expanduser() if args.metrics_dir else AGENT_HOME / "metrics"
+    health = load_json_file(metrics_dir / "health-summary-latest.json")
+    trend = load_json_file(metrics_dir / "langsmith-trend-latest.json")
+    slo = load_json_file(metrics_dir / "slo-rollup-latest.json")
+    webhook = load_json_file(metrics_dir / "webhook-receiver-latest.json")
+    monitor = trend.get("monitor") if isinstance(trend.get("monitor"), dict) else {}
+
+    status = str(health.get("status") or slo.get("status") or "unknown")
+    alerts = health.get("alert_count")
+    if alerts is None and isinstance(health.get("alerts"), list):
+        alerts = len(health["alerts"])
+    acceptance = slo.get("acceptance_ok_rate", monitor.get("recent_acceptance_ok_rate"))
+    queue_growth = slo.get("alert_queue_growth", "unknown")
+    replay_rate = slo.get("dead_letter_replay_success_rate")
+    recall_latency = slo.get("recall_latency") if isinstance(slo.get("recall_latency"), dict) else {}
+    recall_p95 = recall_latency.get("p95_s")
+    forward = webhook.get("last_forward") if isinstance(webhook.get("last_forward"), dict) else {}
+    forward_ok = "ok" if forward and not forward.get("error") else ("unknown" if not forward else "failed")
+
+    print(
+        f"{status} alerts={alerts if alerts is not None else 'unknown'} "
+        f"acceptance={format_rate(acceptance)} queue_growth={queue_growth} "
+        f"dead_letter_replay={format_rate(replay_rate)} recall_p95_s={recall_p95 if recall_p95 is not None else 'unknown'} "
+        f"forward={forward_ok}"
+    )
+    return 0 if status == "healthy" else 1
+
+
 def cmd_replay_dead_letter(args: argparse.Namespace) -> int:
     extra_args = ["--replay-dead-letter"]
     if args.dead_letter:
@@ -507,6 +564,8 @@ def cmd_replay_dead_letter(args: argparse.Namespace) -> int:
     extra_args.extend(["--max-replay", str(args.max_replay)])
     if args.dry_run:
         extra_args.append("--dry-run")
+    if args.output:
+        extra_args.extend(["--output", args.output])
     return run_script("alert_webhook_receiver.py", extra_args)
 
 
@@ -551,6 +610,13 @@ def main() -> int:
     openmetrics = sub.add_parser("openmetrics", help="Export runtime metrics in OpenMetrics text format")
     openmetrics.add_argument("--metrics-dir", help="Metrics artifact directory")
     openmetrics.add_argument("--output", help="Write metrics to this path")
+    slo = sub.add_parser("slo-rollup", help="Roll up SLO metrics from existing runtime artifacts")
+    slo.add_argument("--metrics-dir", help="Metrics artifact directory")
+    slo.add_argument("--output", help="Write SLO rollup JSON to this path")
+    slo.add_argument("--history", help="SLO history JSONL path")
+    slo.add_argument("--no-history", action="store_true")
+    status = sub.add_parser("status", help="Print a one-line operator status summary")
+    status.add_argument("--metrics-dir", help="Metrics artifact directory")
     replay = sub.add_parser("replay-dead-letter", help="Replay failed external alert forwards")
     replay.add_argument("--dead-letter", help="Dead-letter JSONL path")
     replay.add_argument("--forward-url", default=os.environ.get("MEMORY_ALERT_FORWARD_URL", ""))
@@ -560,6 +626,7 @@ def main() -> int:
     replay.add_argument("--retry-backoff-s", type=float, default=float(os.environ.get("MEMORY_ALERT_FORWARD_RETRY_BACKOFF_S", "1.0")))
     replay.add_argument("--max-replay", type=int, default=100)
     replay.add_argument("--dry-run", action="store_true")
+    replay.add_argument("--output", help="Write replay report JSON (defaults to AGENT_HOME metrics)")
     synthetic = sub.add_parser("synthetic-recall", help="Run public synthetic recall regression benchmark")
     synthetic.add_argument("--output", help="Write JSON result to this path")
 
@@ -588,6 +655,10 @@ def main() -> int:
         return cmd_dashboard_info(args)
     if args.command == "openmetrics":
         return cmd_openmetrics(args)
+    if args.command == "slo-rollup":
+        return cmd_slo_rollup(args)
+    if args.command == "status":
+        return cmd_status(args)
     if args.command == "replay-dead-letter":
         return cmd_replay_dead_letter(args)
     if args.command == "synthetic-recall":

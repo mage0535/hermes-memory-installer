@@ -55,6 +55,7 @@ def make_handler(metrics_dir: Path, token: str, metrics_public: bool = False) ->
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             query = parse_qs(parsed.query)
+            lang_requested = "lang" in query
             lang = query.get("lang", ["zh"])[0].lower()
             if lang not in {"zh", "en"}:
                 lang = "zh"
@@ -78,7 +79,10 @@ def make_handler(metrics_dir: Path, token: str, metrics_public: bool = False) ->
                 self._send(401, b"unauthorized", "text/plain; charset=utf-8")
                 return
             if parsed.path == "/api/status":
-                body = json.dumps(metrics_dashboard.build_dashboard_payload(metrics_dir), ensure_ascii=False).encode("utf-8")
+                payload = metrics_dashboard.build_dashboard_payload(metrics_dir)
+                if lang_requested:
+                    payload["summary_text"] = metrics_dashboard.human_summary(payload, lang)
+                body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
                 self._send(200, body, "application/json")
                 return
             if parsed.path == "/metrics":

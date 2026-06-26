@@ -28,6 +28,7 @@ import alert_webhook_receiver
 import metrics_dashboard
 import metrics_dashboard_server
 import openmetrics_exporter
+import slo_rollup
 import gbrain_stale_maintenance
 import profile_isolation_soak
 import synthetic_recall_benchmark
@@ -654,6 +655,15 @@ def test_metrics_dashboard_server_requires_token(tmp_path: Path):
             payload = json.loads(response.read().decode("utf-8"))
             assert response.status == 200
             assert "artifacts" in payload
+            assert "summary_text" not in payload
+        with urllib.request.urlopen(f"{base}/api/status?token=secret&lang=en", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            assert response.status == 200
+            assert payload["summary_text"].startswith("Overall status:")
+        with urllib.request.urlopen(f"{base}/api/status?token=secret&lang=zh", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            assert response.status == 200
+            assert payload["summary_text"].startswith("整体状态：")
         with urllib.request.urlopen(f"{base}/metrics?token=secret", timeout=5) as response:
             text = response.read().decode("utf-8")
             assert response.status == 200
@@ -708,6 +718,100 @@ def test_openmetrics_exporter_counts_alert_queues(tmp_path: Path):
     assert 'hermes_memory_webhook_queue_lines{queue="inbound"} 2' in text
     assert 'hermes_memory_webhook_queue_lines{queue="dead_letter"} 1' in text
     assert 'hermes_memory_gbrain_upstream_gap_active 1' in text
+
+
+def test_slo_rollup_summarizes_acceptance_queue_replay_and_recall(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps(
+            {
+                "monitor": {"recent_acceptance_ok_rate": 0.8},
+                "performance": {"recall_latency": {"p50_s": 0.12, "p95_s": 0.45, "max_s": 0.9}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics / "dead-letter-replay-latest.json").write_text(
+        json.dumps({"replayed": 5, "failed": 1}),
+        encoding="utf-8",
+    )
+    (metrics / "inbound-alert-webhook.jsonl").write_text("{}\n{}\n{}\n", encoding="utf-8")
+    history = metrics / "slo-rollup-history.jsonl"
+    history.write_text(json.dumps({"alert_queue_lines": 1}) + "\n", encoding="utf-8")
+
+    payload = slo_rollup.build_slo_rollup(metrics)
+
+    assert payload["status"] == "degraded"
+    assert payload["acceptance_ok_rate"] == 0.8
+    assert payload["alert_queue_lines"] == 3
+    assert payload["alert_queue_growth"] == 2
+    assert payload["dead_letter_replay_success_rate"] == 0.8
+    assert payload["recall_latency"]["p95_s"] == 0.45
+
+
+def test_openmetrics_exporter_includes_slo_rollup(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "slo-rollup-latest.json").write_text(
+        json.dumps(
+            {
+                "status": "healthy",
+                "acceptance_ok_rate": 0.95,
+                "alert_queue_growth": 2,
+                "dead_letter_replay_success_rate": 1.0,
+                "recall_latency": {"p50_s": 0.1, "p95_s": 0.3},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    text = openmetrics_exporter.render_openmetrics(metrics)
+
+    assert "hermes_memory_slo_acceptance_ok_rate 0.95" in text
+    assert "hermes_memory_slo_alert_queue_growth 2" in text
+    assert "hermes_memory_slo_dead_letter_replay_success_rate 1.0" in text
+    assert 'hermes_memory_slo_recall_latency_seconds{quantile="0.95"} 0.3' in text
+
+
+def test_grafana_dashboard_template_consumes_openmetrics():
+    dashboard = json.loads((REPO / "docs" / "grafana" / "hermes-memory-openmetrics-dashboard.json").read_text(encoding="utf-8"))
+    serialized = json.dumps(dashboard)
+
+    assert dashboard["title"] == "Hermes Memory OpenMetrics"
+    assert "hermes_memory_component_status" in serialized
+    assert "hermes_memory_slo_acceptance_ok_rate" in serialized
+    assert "hermes_memory_slo_recall_latency_seconds" in serialized
+
+
+def test_status_command_prints_one_line_summary(tmp_path: Path):
+    home = tmp_path / "home"
+    metrics = home / "metrics"
+    metrics.mkdir(parents=True)
+    (metrics / "health-summary-latest.json").write_text(json.dumps({"status": "healthy", "alert_count": 0}), encoding="utf-8")
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps({"monitor": {"recent_acceptance_ok_rate": 1.0}}),
+        encoding="utf-8",
+    )
+    (metrics / "slo-rollup-latest.json").write_text(
+        json.dumps({"acceptance_ok_rate": 1.0, "alert_queue_growth": 0}),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(REPO / "bin" / "hermes-memory"), "status"],
+        env={**os.environ, "AGENT_HOME": str(home)},
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=True,
+    )
+
+    line = result.stdout.strip()
+    assert "\n" not in line
+    assert line.startswith("healthy")
+    assert "alerts=0" in line
+    assert "acceptance=100.0%" in line
 
 
 def test_synthetic_recall_benchmark_passes_public_dataset():

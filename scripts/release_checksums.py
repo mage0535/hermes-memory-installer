@@ -17,6 +17,8 @@ DEFAULT_FILES = [
     "installer/check_env.py",
     "installer/config_patch.py",
     "bin/hermes-memory",
+    "scripts/slo_rollup.py",
+    "docs/grafana/hermes-memory-openmetrics-dashboard.json",
     "README.md",
     "README_CN.md",
     "ARCHITECTURE.md",
