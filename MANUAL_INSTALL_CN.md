@@ -1,10 +1,10 @@
-# Hermes Memory Installer v3.5 手动安装说明
+# Hermes Memory Installer v3.5.1 手动安装说明
 
 本指南面向希望手动安装公开版 sidecar 的用户，不使用 `./install.sh` 也能完成部署。
 
 ## 适用范围
 
-手动安装路径部署的是公开的 `v3.5` sidecar 运行时，包括：
+手动安装路径部署的是公开的 `v3.5.1` sidecar 运行时，包括：
 
 - 会话归档到 gbrain
 - 治理索引重建
@@ -118,7 +118,7 @@ skills:
   - memory-proactive
 
 memory_sidecar:
-  version: "3.5"
+  version: "3.5.1"
   profile: hybrid
   scripts_dir: /path/to/agent-home/scripts
 ```
@@ -133,7 +133,7 @@ memory_sidecar:
 mkdir -p "$AGENT_HOME/memory-sidecar"
 cat > "$AGENT_HOME/memory-sidecar/install-profile.json" <<'EOF'
 {
-  "version": "3.5",
+  "version": "3.5.1",
   "profile": "hybrid",
   "embedding_model": {
     "model_id": "intfloat/multilingual-e5-small"

@@ -1,10 +1,10 @@
 <div align="center">
 
-# Memory Sidecar v3.5
+# Memory Sidecar v3.5.1
 
 **面向 Hermes、Claude Code、Codex、Cursor 等智能体的可发布外挂记忆体。**
 
-[![Version](https://img.shields.io/badge/version-3.5-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5)
+[![Version](https://img.shields.io/badge/version-3.5.1-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5.1)
 [![Stars](https://img.shields.io/github/stars/mage0535/hermes-memory-installer?style=flat-square&logo=github&label=stars)](https://github.com/mage0535/hermes-memory-installer/stargazers)
 [![Python](https://img.shields.io/badge/python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -15,54 +15,69 @@
 
 ## 这是什么
 
-Memory Sidecar 是一个跑在智能体旁边的外挂记忆体系统，不修改智能体核心代码，只围绕智能体的数据目录工作。它会读取会话、沉淀长期知识，并在后续任务中把相关记忆重新注入上下文。
+Memory Sidecar 是一个运行在智能体旁边的外置记忆系统。它不修改智能体核心代码，而是读取智能体的数据目录，归档会话、沉淀长期知识，并在后续任务中把相关记忆重新注入上下文。
 
-`v3.5` 是当前架构的对外发布整理版本，目标很明确：
+`v3.5.1` 是当前公开版的稳定性和可观测性增强版本，重点解决：
 
-- 用 `AGENT_HOME` 驱动多智能体安装
-- 让分层召回、知识笔记召回、安装器、CLI、文档口径完全一致
-- 清理公开仓库中的私有路径和部署残留
-- 让项目可以真正放到 GitHub 上供用户安装体验和反馈
+- 多智能体安装路径统一由 `AGENT_HOME` 驱动
+- 会话、Hindsight、gbrain、知识笔记的分层召回
+- 公开仓库去除服务器路径、密钥和真实业务数据
+- 运行健康检查、告警队列、webhook 转发和 dashboard 可视化
+- 安装器保留 Embedding 模型选择：默认模型、常用模型、自定义模型
 
-## 它真正增强了什么
+## 开发原因
 
-这个外挂记忆体主要从 3 个方面增强智能体：
+很多智能体的记忆能力依赖当前会话窗口或单个本地文件，长期使用后会出现三个问题：
 
-1. 把会话沉淀到持久层，而不是只停留在当前对话窗口。
-2. 通过热层、温层、冷层、知识层联合召回，而不是只依赖单一 prompt 内存。
-3. 让整理过的知识笔记也能参与召回，避免项目文档和知识库与会话记忆脱节。
+- 重要上下文随着会话结束而丢失。
+- 项目文档、历史决策、知识库与当前任务召回脱节。
+- 记忆管线故障时缺少健康检查、告警和回归验证。
 
-## 公开发布边界
+Memory Sidecar 的目标是把记忆能力从智能体主进程中解耦出来，形成一个可以安装、验证、监控、迁移的外置记忆层。
 
-`v3.5` 明确区分“通用 sidecar”和“宿主专用运维脚本”：
+## 设计思路
 
-- 默认安装：通用多智能体 sidecar 运行时、安装器、CLI、记忆技能。
-- 仓库内保留但默认不安装：`memory_watermark.py`、`memory_snapshot_backup.py`。
+项目采用 sidecar 架构：智能体继续使用自己的运行目录，Memory Sidecar 只读取必要数据并写入独立索引和上下文产物。
 
-这两个脚本带有更强的 Hermes 和宿主环境假设，所以在公开多智能体安装路径中 **默认不会被安装**，避免降低外部用户的安装成功率。
+核心设计原则：
+
+- 不侵入智能体核心代码。
+- 通过稳定数据边界适配多种智能体。
+- 使用热层、温层、冷层、知识层联合召回。
+- 把运行健康状态输出为机器可读指标。
+- 公开仓库只保留可复用逻辑，不包含任何私有部署数据。
+
+## 实现目标
+
+- 归档会话到可检索的长期存储。
+- 从 Hindsight、gbrain、FTS5 和知识笔记中融合召回。
+- 自动运行维护、压缩、孤页修复、健康检查和验收检查。
+- 对 action-needed 状态生成本地队列并可转发到外部通知系统。
+- 通过静态 dashboard 和 token-gated dashboard server 查看运行状态。
+- 支持多 profile 隔离测试，降低多智能体共用主机时的串写风险。
 
 ## 依赖要求
 
 - Python `3.9+`
 - PostgreSQL `16`
-- 可用的 [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight)
-- 可用的 [gbrain](https://github.com/hi-ogawa/gbrain)
+- [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight)
+- [gbrain](https://github.com/hi-ogawa/gbrain)
 - 一个包含 `state.db` 和会话文件的智能体数据目录
 
-当前适配定位：
+适配目标包括：
 
 - Hermes Agent
 - Claude Code
-- Codex / 类 Codex 本地智能体
-- Cursor 类共享数据目录场景
+- Codex / Codex 风格本地智能体
+- Cursor 风格共享数据目录
 
-## 快速开始
+## 快速安装
 
 ```bash
 git clone https://github.com/mage0535/hermes-memory-installer.git
 cd hermes-memory-installer
 
-export AGENT_HOME="$HOME/.hermes"   # 也可以是 ~/.claude、~/.cursor、~/.agent 等
+export AGENT_HOME="$HOME/.hermes"
 ./install.sh
 ```
 
@@ -72,39 +87,7 @@ export AGENT_HOME="$HOME/.hermes"   # 也可以是 ~/.claude、~/.cursor、~/.ag
 ./install.sh --noninteractive --agent-home "$HOME/.my-agent"
 ```
 
-## 安装模式
-
-安装器支持 3 种依赖安装协助模式：
-
-- `--install-mode 3`
-  默认模式。优先尝试最自动化的依赖引导安装路径。
-- `--install-mode 2`
-  半自动协助模式。输出推荐命令，并支持用户按步骤继续安装。
-- `--install-mode 1`
-  仅检测模式。不改系统，只告诉你缺了什么。
-
-如果模式 `3` 失败，请切换到：
-
-```bash
-./install.sh --install-mode 2
-```
-
-如果模式 `2` 仍然失败，再切换到：
-
-```bash
-./install.sh --install-mode 1
-```
-
-安装器同时支持中英文输出：
-
-```bash
-./install.sh --lang zh
-./install.sh --lang en
-```
-
-如果不传 `--lang`，安装器会根据本地环境自动判断。
-
-安装后执行：
+安装后建议执行：
 
 ```bash
 python3 "$AGENT_HOME/scripts/session_to_gbrain.py" --resume
@@ -112,11 +95,46 @@ python3 "$AGENT_HOME/scripts/memory_maintenance_cycle.py"
 python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 ```
 
-## 默认安装的脚本集
+## 安装模式
 
-公开安装器会把 10 个运行入口脚本和 3 个支持模块部署到 `$AGENT_HOME/scripts/`。
+安装器支持三种依赖辅助模式：
 
-运行入口脚本：
+- `--install-mode 3`：默认模式，优先尝试自动依赖引导。
+- `--install-mode 2`：半自动模式，输出推荐命令并引导用户逐步完成。
+- `--install-mode 1`：仅检测模式，不修改系统。
+
+安装器支持中英文输出：
+
+```bash
+./install.sh --lang zh
+./install.sh --lang en
+```
+
+## Embedding 模型选择
+
+Embedding 用于语义召回：它把文本转换成向量，让“意思相近但文字不同”的内容也能被召回。没有 Embedding 时，系统仍可使用 FTS5、Hindsight、gbrain 关键词和知识笔记索引；启用 Embedding 后，跨语言和语义相似召回质量通常更好。
+
+安装器会记录所选模型，但 Embedding 服务本身需要单独部署。
+
+默认推荐模型：
+
+- `intfloat/multilingual-e5-small`：默认推荐，体积适中，适合中英文混合和多语言项目。
+
+常用内置模型：
+
+- `BAAI/bge-small-zh-v1.5`：中文优先，轻量，适合内存较小环境。
+- `paraphrase-multilingual-MiniLM-L12-v2`：成熟 sentence-transformers 生态，多语言覆盖好。
+- `Alibaba-NLP/gte-multilingual-base`：质量更高，内存需求也更高。
+- `sentence-transformers/LaBSE`：跨语言对齐较强，适合中文查询英文资料。
+- `BAAI/bge-m3`：召回能力强，但模型较大，需要更多内存和磁盘。
+
+也可以通过 `--embedding` 直接指定模型，或在交互安装时输入自定义模型 ID。
+
+## 已安装脚本
+
+公开安装器会部署 26 个运行、支持和可观测性脚本到 `$AGENT_HOME/scripts/`。
+
+主要入口：
 
 - `session_to_gbrain.py`
 - `memory_governance_rebuild.py`
@@ -127,94 +145,71 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 - `sidecar_acceptance_check.py`
 - `archive_sessions.py`
 - `auto_session_summary.py`
+- `gbrain_deorphan_index.py`
 - `memory_observability_report.py`
+- `memory_storage_cross_check.py`
+- `runtime_drift_check.py`
+- `gbrain_stale_maintenance.py`
+- `alert_queue.py`
+- `alert_webhook_receiver.py`
+- `metrics_dashboard.py`
+- `metrics_dashboard_server.py`
+- `profile_isolation_soak.py`
+- `hindsight_security_audit.py`
 
 支持模块：
 
 - `state_db_schema.py`
 - `knowledge_notes.py`
 - `recall_samples.py`
+- `langsmith_monitor.py`
+- `langsmith_task_wrapper.py`
+- `langsmith_trend_report.py`
 
-仓库内可选辅助脚本：
+## 外部通知
 
-- `memory_watermark.py`
-- `memory_snapshot_backup.py`
+`alert_queue.py` 会把健康检查结果标准化为本地告警队列。`alert_webhook_receiver.py` 提供真实 webhook 入口，并支持通过私有环境变量转发到外部系统。
 
-## 知识笔记集成
+公开仓库不会硬编码任何第三方 webhook 地址或 token。生产环境可在私有文件中配置：
 
-除了会话记忆之外，Memory Sidecar 还能接入整理后的 markdown 知识。
+```bash
+MEMORY_ALERT_FORWARD_URL="https://example.com/webhook"
+MEMORY_ALERT_FORWARD_KIND="telegram"   # generic/slack/feishu/lark/dingtalk/telegram
+MEMORY_ALERT_QUEUE_MAX_LINES="5000"
+```
 
-默认会检查：
+Telegram 还需要：
 
-- `$AGENT_HOME/knowledge/notes`
-- 历史知识目录，如 `$AGENT_HOME/knowledge/wiki/wiki`
+```bash
+MEMORY_ALERT_TELEGRAM_CHAT_ID="..."
+```
 
-这些内容会进入独立的 `knowledge` 召回层，并与会话检索、Hindsight 事实、gbrain 结果一起参与融合召回。
+## Dashboard
+
+`metrics_dashboard.py` 会生成静态 HTML 状态页。`metrics_dashboard_server.py` 可以在本机提供 token-gated 访问，默认绑定 `127.0.0.1`，避免把记忆指标暴露到公网。
 
 ## Knowledge-and-Memory-Management
 
-如果你希望把“知识采集、知识整理、知识接入记忆体”做完整，建议配套使用 [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)。
+如果你希望把“知识采集、知识整理、知识接入记忆体”做成完整工作流，建议配套使用 [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)。
 
-它扩展的是上游知识能力，包括：
+两个项目的边界：
 
-- 结构化知识采集流程
-- wiki / 笔记管理
-- 更多同步和接入工具
-- 更完整的“知识从哪里来、如何维护、如何被记忆体使用”的工作流
+- `hermes-memory-installer`：负责记忆体 sidecar 运行时、安装、召回和健康检查。
+- `Knowledge-and-Memory-Management`：负责知识来源、知识整理、笔记同步和上游知识生产。
 
-两者的职责边界：
+组合使用时，KMM 产出整理后的知识资产，Memory Sidecar 把这些资产变成智能体可召回的上下文。
 
-- `hermes-memory-installer`：负责记忆体 sidecar 运行时和安装部署
-- `Knowledge-and-Memory-Management`：负责知识来源、知识整理、知识供给
+## 验证
 
-组合使用时，KMM 负责产出整理后的知识资产，Memory Sidecar 负责把这些资产变成智能体可召回的上下文。
+仓库验证包括：
 
-## 向量召回
-
-语义召回不是强制依赖，但强烈建议开启。安装器只记录你选择的 embedding 模型，embedding 服务本身需要你单独部署。
-
-默认推荐：
-
-- `intfloat/multilingual-e5-small`
-
-即使不启用 embeddings，以下能力仍然可用：
-
-- FTS5 会话检索
-- Hindsight 事实召回
-- gbrain 关键词检索
-- 知识笔记索引召回
-
-## Embedding 模型选择
-
-安装器会继续保留交互式 Embedding 模型选择功能。
-
-- 安装过程中可以从内置的多个模型中选择。
-- 也可以通过 `--embedding` 直接传入模型 ID。
-- 交互模式下仍然支持填写自定义模型。
-
-## 兼容性定位
-
-这个项目追求的是“基于稳定数据边界的兼容”，而不是“深入每一种智能体内部做耦合适配”。
-
-对接一个智能体至少需要：
-
-- 一个可写的 agent home 目录
-- `state.db`
-- 可读取的会话文件
-- 能在智能体进程之外运行 Python 辅助脚本
-
-这也是它能服务多种智能体的原因。
-
-## 验证方式
-
-仓库当前通过以下本地验证：
-
-- 单元测试与回归测试
+- 单元测试和回归测试
 - 安装器回滚测试
 - 多层召回测试
+- 多 profile 隔离测试
 - 公开仓库卫生检查
 
-部署后主要验收命令：
+部署后的主要验收命令：
 
 ```bash
 python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
@@ -222,54 +217,46 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 
 ## 更新记录
 
+### v3.5.1 (2026-06-26)
+
+- 统一安装器、CLI、文档和发布说明版本号。
+- 新增本机 action-needed webhook receiver。
+- 支持 Telegram、Slack、飞书/Lark、钉钉等外部通知格式。
+- 新增 webhook 入站队列轮转。
+- 新增 token-gated dashboard server。
+- 新增双 profile 隔离长跑测试。
+- 保留 Embedding 默认模型、常用模型和自定义模型选择。
+
 ### v3.5 (2026-06-19)
 
-- 完成 GitHub 公开发布整理
-- 统一安装器、CLI、架构文档、手册中的版本号
-- 明确“通用已安装运行时”和“可选 Hermes 运维脚本”的边界
-- 补充 KMM 的正式介绍、作用定位与链接
-- 清理发布面并补齐许可证文件
-
-### v3.5.1 (2026-06-20)
-
-- 安装器新增中英文双语输出
-- 增加 `1 / 2 / 3` 三种安装模式与失败降级说明
-- 保留 embedding 模型选择与自定义模型输入
-- 补充依赖安装协助的预先说明
+- 完成 GitHub 公开发布整理。
+- 统一安装器、CLI、架构文档和手册中的版本号。
+- 明确通用 sidecar 与宿主专用运维脚本的边界。
+- 补充 KMM 的定位和集成说明。
+- 清理公开发布面并补齐许可证文件。
 
 ### v3.2 (2026-06-08)
 
-- 增加可观测性报告能力
-- 进一步收敛运行时和环境变量配置
-- 优化 sidecar 文档和目录结构
+- 增加可观测性报告能力。
+- 收敛运行时和环境变量配置。
+- 优化 sidecar 文档和目录结构。
 
 ### v3.1.0 (2026-06-02)
 
-- 简化为三层记忆架构
-- 移除旧的 agentmemory 桥接层
-- 改用 `AGENT_HOME` 驱动多智能体安装
-
-## 相关链接
-
-- [ARCHITECTURE_CN.md](ARCHITECTURE_CN.md)
-- [MANUAL_INSTALL_CN.md](MANUAL_INSTALL_CN.md)
-- [MANUAL_INSTALL.md](MANUAL_INSTALL.md)
-- [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)
+- 简化为三层记忆架构。
+- 移除旧 agentmemory bridge。
+- 改用 `AGENT_HOME` 驱动多智能体安装。
 
 ## 致谢
 
-参考项目：
+参考和依赖项目：
 
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent)
 - [Hindsight](https://github.com/HindsightTechnologySolutions/hindsight)
 - [gbrain](https://github.com/hi-ogawa/gbrain)
 - [Knowledge-and-Memory-Management](https://github.com/mage0535/Knowledge-and-Memory-Management)
 
-推动当前公开发布形态的社区和用户反馈主要来自：
-
-- GitHub issues 和 discussions
-- 一线生产环境使用者的直接反馈
-- 围绕召回质量、安装门槛、多智能体兼容性的持续反馈
+感谢生产使用者、GitHub 用户、社区交流群和技术讨论中的反馈。当前版本中的安装降级、Embedding 选择、召回质量校验、多智能体隔离和告警可观测性改进，都来自持续使用过程中的问题反馈和优化建议。
 
 ## 许可证
 

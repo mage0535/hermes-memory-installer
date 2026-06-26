@@ -1,10 +1,10 @@
 <div align="center">
 
-# Memory Sidecar v3.5
+# Memory Sidecar v3.5.1
 
 **A publishable, agent-agnostic memory sidecar for Hermes, Claude Code, Codex, Cursor, and similar agents.**
 
-[![Version](https://img.shields.io/badge/version-3.5-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5)
+[![Version](https://img.shields.io/badge/version-3.5.1-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5.1)
 [![Stars](https://img.shields.io/github/stars/mage0535/hermes-memory-installer?style=flat-square&logo=github&label=stars)](https://github.com/mage0535/hermes-memory-installer/stargazers)
 [![Python](https://img.shields.io/badge/python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -17,7 +17,7 @@
 
 Memory Sidecar is an external memory system that runs next to an AI agent without patching the agent itself. It reads the agent's data directory, archives sessions, builds long-term knowledge, and injects relevant recall back into future work.
 
-Release `3.5` is the public packaging pass for the current architecture:
+Release `3.5.1` is the operational hardening release for the current public architecture:
 
 - agent-agnostic install flow driven by `AGENT_HOME`
 - layered recall across hot, warm, cold, and curated knowledge notes
@@ -25,6 +25,20 @@ Release `3.5` is the public packaging pass for the current architecture:
 - install surface aligned with the actual deployed script set
 
 This repository is suitable for public install feedback from technical users running their own `Hindsight + gbrain + PostgreSQL` environment.
+
+## Why It Was Built
+
+Long-running AI agents tend to lose useful context when work spans many sessions, projects, and knowledge sources. A single prompt-local memory file is not enough for durable recall, and operators need to know when archival, recall, or compaction silently stops working.
+
+Memory Sidecar was built to make memory an installable, observable sidecar rather than a hidden agent-core modification.
+
+## Design Goals
+
+- Keep the agent core untouched.
+- Use stable data boundaries such as `AGENT_HOME`, `state.db`, sessions, Hindsight, gbrain, and markdown notes.
+- Combine hot, warm, cold, and curated knowledge recall.
+- Emit machine-readable health artifacts for automation.
+- Keep the public repository free of private server paths, credentials, and production data.
 
 ## How It Works
 
@@ -46,7 +60,7 @@ The sidecar is designed to improve memory in three concrete ways:
 
 ## Public Release Scope
 
-`v3.5` intentionally separates the generic sidecar from host-specific operations:
+`v3.5.1` intentionally separates the generic sidecar from host-specific operations:
 
 - Installed by default: the generic multi-agent sidecar runtime, installer, CLI, and memory skills.
 - In this repository but not installed by default: `memory_watermark.py` and `memory_snapshot_backup.py`.
@@ -126,7 +140,7 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 
 ## Installed Script Set
 
-The public installer deploys 24 runtime, support, and observability scripts into `$AGENT_HOME/scripts/`.
+The public installer deploys 26 runtime, support, and observability scripts into `$AGENT_HOME/scripts/`.
 
 Entry scripts:
 
@@ -147,6 +161,8 @@ Entry scripts:
 - `alert_queue.py`
 - `alert_webhook_receiver.py`
 - `metrics_dashboard.py`
+- `metrics_dashboard_server.py`
+- `profile_isolation_soak.py`
 - `hindsight_security_audit.py`
 
 Support modules:
@@ -216,6 +232,20 @@ Recommended default:
 
 - `intfloat/multilingual-e5-small`
 
+Common alternatives:
+
+- `BAAI/bge-small-zh-v1.5`: lightweight Chinese-first deployments.
+- `paraphrase-multilingual-MiniLM-L12-v2`: mature sentence-transformers ecosystem.
+- `Alibaba-NLP/gte-multilingual-base`: higher quality when RAM headroom is available.
+- `sentence-transformers/LaBSE`: cross-language alignment.
+- `BAAI/bge-m3`: maximum recall quality with higher resource cost.
+
+## Alerts And Dashboard
+
+`alert_queue.py` normalizes health artifacts into a local queue. `alert_webhook_receiver.py` provides a real local webhook target and can forward `action-needed` alerts to generic webhooks, Slack, Feishu/Lark, DingTalk, or Telegram via private environment variables.
+
+`metrics_dashboard.py` renders a static HTML dashboard. `metrics_dashboard_server.py` can serve it behind a bearer/query token and binds to `127.0.0.1` by default.
+
 Without embeddings, text retrieval still works through:
 
 - FTS5 session search
@@ -253,6 +283,15 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 
 ## Changelog
 
+### v3.5.1 (2026-06-26)
+
+- added local action-needed webhook receiver with optional external forwarding
+- added Telegram, Slack, Feishu/Lark, and DingTalk webhook payload adapters
+- added inbound webhook queue rotation and token-gated dashboard serving
+- added dual-profile isolation soak checks for multi-agent deployments
+- unified public version metadata across installer, CLI, docs, and release notes
+- kept embedding model selection: recommended default, common presets, and custom model entry
+
 ### v3.5 (2026-06-19)
 
 - public release packaging pass for GitHub distribution
@@ -262,14 +301,7 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 - repository license and release-surface cleanup
 - published release page: [v3.5](https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5)
 
-### v3.5.1 (2026-06-20)
-
-- added bilingual installer output (`zh` / `en`)
-- added install modes `1 / 2 / 3` with downgrade guidance
-- kept embedding model selection and custom model entry in the installer
-- documented fallback paths for dependency assistance
-
-For the short GitHub release summary, see [docs/release-v3.5.md](docs/release-v3.5.md).
+For the short GitHub release summary, see [docs/release-v3.5.1.md](docs/release-v3.5.1.md).
 
 ### v3.2 (2026-06-08)
 

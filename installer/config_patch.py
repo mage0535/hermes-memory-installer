@@ -1,4 +1,4 @@
-"""Config patch helpers for Memory Sidecar v3.5."""
+"""Config patch helpers for Memory Sidecar v3.5.1."""
 
 from __future__ import annotations
 
@@ -38,8 +38,8 @@ def patch(config_path: Path | None = None, profile: str = "hybrid") -> bool:
     config["skills"] = skills
 
     config.setdefault("memory_sidecar", {})
-    if config["memory_sidecar"].get("version") != "3.5":
-        config["memory_sidecar"]["version"] = "3.5"
+    if config["memory_sidecar"].get("version") != "3.5.1":
+        config["memory_sidecar"]["version"] = "3.5.1"
         changed = True
     if config["memory_sidecar"].get("profile") != profile:
         config["memory_sidecar"]["profile"] = profile

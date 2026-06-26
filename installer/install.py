@@ -1,5 +1,5 @@
 """
-Memory Sidecar Installer v3.5 - agent-agnostic, environment-aware.
+Memory Sidecar Installer v3.5.1 - agent-agnostic, environment-aware.
 
 Installs the production memory sidecar next to any AI agent (Hermes, Claude Code,
 Cursor, Codex, etc.) without modifying the agent core.
@@ -31,7 +31,7 @@ from urllib.request import urlopen
 
 import yaml
 
-VERSION = "3.5"
+VERSION = "3.5.1"
 DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 SIDECAR_DIRNAME = "memory-sidecar"
 
@@ -59,6 +59,8 @@ SUPPORTED_SCRIPT_NAMES = [
     "alert_queue.py",
     "alert_webhook_receiver.py",
     "metrics_dashboard.py",
+    "metrics_dashboard_server.py",
+    "profile_isolation_soak.py",
     "hindsight_security_audit.py",
 ]
 
@@ -201,6 +203,73 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
 }
 
+TRANSLATIONS["zh"].update(
+    {
+        "environment_check_title": "== 环境检查 ==",
+        "status_ok": "通过",
+        "status_fail": "失败",
+        "python_required": "需要 Python 3.9+，安装终止。",
+        "checks_failed_notice": (
+            "部分检查未通过。记忆召回依赖 PostgreSQL、Hindsight 和 gbrain。\n"
+            "安装器仍可继续，或切换安装模式获取依赖安装协助。"
+        ),
+        "dry_run_scripts_source": "  脚本来源: {src_dir}",
+        "dry_run_scripts": "  将部署脚本: {scripts}",
+        "dry_run_mode": "  安装模式: {install_mode}",
+        "dry_run_lang": "  输出语言: {lang}",
+        "agent_home_missing_1": "目标 agent home {agent_home} 不存在，请先创建，或设置",
+        "agent_home_missing_2": "AGENT_HOME 环境变量指向一个已存在的智能体目录。",
+        "embedding_title": "== Embedding 模型选择 ==",
+        "embedding_intro": "请选择用于语义召回的 embedding 模型。",
+        "embedding_custom_prompt": "请输入 [1-6]，或输入 c 使用自定义模型（默认: 1）：",
+        "embedding_custom_id": "请输入自定义 embedding 模型 ID：",
+        "installed_title": "== Memory Sidecar v{version} 安装完成 ==",
+        "installed_embedding": "  Embedding 模型:  {embedding}",
+        "installed_scripts": "  已部署脚本:      {count} 个",
+        "installed_config": "  已修补配置:      {config_path}",
+        "installed_profile": "  安装档案:        {profile_path}",
+        "next_steps": "下一步：",
+        "next_step_1": "  1. 确保 Hindsight、PostgreSQL 和 gbrain 已运行",
+        "next_step_2": "  2. 部署你选择的 embedding 服务（{embedding}）",
+        "next_step_4": "  4. 用 cron 或 systemd timer 调度维护周期",
+        "architecture_note": "完整架构说明见 ARCHITECTURE.md。",
+        "mode_1_title": "模式 1：仅检测与指引",
+        "mode_2_title": "模式 2：半自动依赖协助",
+        "mode_3_title": "模式 3：自动依赖引导安装",
+        "dependency_missing_title": "缺失的关键依赖：{deps}",
+        "dependency_supported": "当前主机支持依赖引导协助。",
+        "dependency_not_supported": "当前主机不支持自动引导安装，请使用模式 1 或模式 2。",
+        "dependency_mode_1_body": (
+            "模式 1 不会改动系统。请先根据上面的缺失依赖手动安装，\n"
+            "然后重新运行 ./install.sh。\n"
+            "如果需要安装器协助，请切换到 --install-mode 2 或 --install-mode 3。"
+        ),
+        "dependency_mode_2_body": (
+            "模式 2 提供半自动依赖协助，但不会强制执行完整自动安装。\n"
+            "建议先查看下面的命令，再使用 --install-mode 2 继续安装。\n"
+            "如果希望安装器先自动尝试，请使用 --install-mode 3。"
+        ),
+        "dependency_mode_3_body": (
+            "模式 3 会先尝试自动引导安装依赖。如果失败，请切换到 --install-mode 2，\n"
+            "如果模式 2 仍然失败，再切换到 --install-mode 1 手动完成依赖安装。"
+        ),
+        "bootstrap_detected": "依赖引导方案：platform={platform}, package_manager={package_manager}",
+        "bootstrap_commands_title": "建议执行的依赖命令：",
+        "bootstrap_hints_title": "补充说明：",
+        "bootstrap_attempt_title": "== 自动依赖引导安装 ==",
+        "bootstrap_unsupported": "当前平台不支持自动依赖引导安装。",
+        "bootstrap_dry_run": "当前是 dry-run，未真正执行依赖安装命令。",
+        "bootstrap_failed": "自动依赖安装失败",
+        "bootstrap_mode_2_note": "模式 2 不会自动执行命令，请按顺序查看并手动执行。",
+        "fallback_message": (
+            "安装模式 {failed_mode} 失败：{reason}\n"
+            "后续可选路径：\n"
+            "  - 使用 --install-mode 2 进行半自动依赖协助\n"
+            "  - 使用 --install-mode 1 仅获取检测与人工安装指引"
+        ),
+    }
+)
+
 @dataclass(frozen=True)
 class EmbeddingModel:
     key: str
@@ -286,8 +355,8 @@ def _http_probe(url: str, timeout: int = 5) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def translate(lang: str, key: str, **kwargs: object) -> str:
-    template = TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
+def translate(language: str, key: str, **kwargs: object) -> str:
+    template = TRANSLATIONS.get(language, TRANSLATIONS["en"]).get(key, key)
     return template.format(**kwargs)
 
 
