@@ -11,7 +11,7 @@ import sqlite3
 import subprocess
 import sys
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 from datetime import datetime, timezone
 
 
@@ -26,6 +26,16 @@ STATE_DB = Path(os.environ.get("MEMORY_STATE_DB_PATH", str(AGENT_HOME / "state.d
 GOVERNANCE_DB = Path(os.environ.get("MEMORY_GOVERNANCE_DB_PATH", str(AGENT_HOME / "memory_governance.db"))).expanduser()
 HINDSIGHT_BASE_URL = os.environ.get("HINDSIGHT_BASE_URL", "http://127.0.0.1:8890")
 HINDSIGHT_BANK = os.environ.get("HINDSIGHT_BANK", "hermes")
+HINDSIGHT_AUTH_TOKEN = os.environ.get("MEMORY_HINDSIGHT_TOKEN") or os.environ.get("HINDSIGHT_AUTH_TOKEN") or ""
+
+
+def hindsight_headers() -> dict:
+    if not HINDSIGHT_AUTH_TOKEN:
+        return {}
+    return {
+        "Authorization": f"Bearer {HINDSIGHT_AUTH_TOKEN}",
+        "X-Hindsight-Token": HINDSIGHT_AUTH_TOKEN,
+    }
 
 
 def sqlite_table_counts(path: Path, tables: tuple[str, ...]) -> dict:
@@ -51,7 +61,7 @@ def sqlite_table_counts(path: Path, tables: tuple[str, ...]) -> dict:
 def hindsight_stats() -> dict:
     url = f"{HINDSIGHT_BASE_URL}/v1/default/banks/{HINDSIGHT_BANK}/stats"
     try:
-        with urlopen(url, timeout=10) as response:
+        with urlopen(Request(url, headers=hindsight_headers()), timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8"))
         return {
             "ok": True,

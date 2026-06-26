@@ -57,6 +57,7 @@ OUTPUT_RECALL = Path(os.environ.get("MEMORY_OUTPUT_RECALL_PATH", str(AGENT_HOME 
 HINDSIGHT_BASE_URL = os.environ.get("HINDSIGHT_BASE_URL", "http://127.0.0.1:8890")
 HINDSIGHT_BANK = os.environ.get("HINDSIGHT_BANK", "hermes")
 HINDSIGHT_RECALL_URL = f"{HINDSIGHT_BASE_URL}/v1/default/banks/{HINDSIGHT_BANK}/memories/recall"
+HINDSIGHT_AUTH_TOKEN = os.environ.get("MEMORY_HINDSIGHT_TOKEN") or os.environ.get("HINDSIGHT_AUTH_TOKEN") or ""
 HALF_LIFE_DAYS = 30
 TOP_K_L1 = 5
 TOP_K_L2 = 5
@@ -74,6 +75,14 @@ _LAST_RECALL_DEBUG = {
     "cache_misses": 0,
     "weak_fallback_suppressed": 0,
 }
+
+
+def hindsight_headers(content_type: bool = False) -> dict:
+    headers = {"Content-Type": "application/json"} if content_type else {}
+    if HINDSIGHT_AUTH_TOKEN:
+        headers["Authorization"] = f"Bearer {HINDSIGHT_AUTH_TOKEN}"
+        headers["X-Hindsight-Token"] = HINDSIGHT_AUTH_TOKEN
+    return headers
 SYSTEM_MARKERS = (
     "memory",
     "hermes",
@@ -1341,7 +1350,7 @@ def get_l3(query: str, top: int = TOP_K_L3):
                 HINDSIGHT_RECALL_URL,
                 data=hindsight_payload,
                 method="POST",
-                headers={"Content-Type": "application/json"},
+                headers=hindsight_headers(content_type=True),
             )
             with urllib.request.urlopen(request, timeout=20) as response:
                 payload = json.loads(response.read().decode("utf-8"))

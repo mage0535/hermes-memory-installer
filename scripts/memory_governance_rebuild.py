@@ -48,6 +48,7 @@ DEFAULT_MAX_AGE_SECONDS = 900
 HINDSIGHT_BASE_URL = os.environ.get("HINDSIGHT_BASE_URL", "http://127.0.0.1:8890")
 HINDSIGHT_BANK = os.environ.get("HINDSIGHT_BANK", "hermes")
 HINDSIGHT_LIST_URL = f"{HINDSIGHT_BASE_URL}/v1/default/banks/{HINDSIGHT_BANK}/memories/list"
+HINDSIGHT_AUTH_TOKEN = os.environ.get("MEMORY_HINDSIGHT_TOKEN") or os.environ.get("HINDSIGHT_AUTH_TOKEN") or ""
 HINDSIGHT_FETCH_RETRIES = 24
 HINDSIGHT_FETCH_RETRY_SLEEP_SECONDS = 5
 GOVERNANCE_SQLITE_TIMEOUT_SECONDS = 30
@@ -1172,10 +1173,11 @@ def fetch_hindsight_memories(batch_size: int = 200) -> list[dict]:
         last_error = None
         for attempt in range(HINDSIGHT_FETCH_RETRIES):
             try:
-                with urllib.request.urlopen(
+                request = urllib.request.Request(
                     f"{HINDSIGHT_LIST_URL}?limit={batch_size}&offset={offset}",
-                    timeout=20,
-                ) as response:
+                    headers=hindsight_headers(),
+                )
+                with urllib.request.urlopen(request, timeout=20) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                 break
             except urllib.error.URLError as exc:
@@ -3004,3 +3006,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+def hindsight_headers(content_type: bool = False) -> dict:
+    headers = {"Content-Type": "application/json"} if content_type else {}
+    if HINDSIGHT_AUTH_TOKEN:
+        headers["Authorization"] = f"Bearer {HINDSIGHT_AUTH_TOKEN}"
+        headers["X-Hindsight-Token"] = HINDSIGHT_AUTH_TOKEN
+    return headers
