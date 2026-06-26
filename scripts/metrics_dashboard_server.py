@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import metrics_dashboard
+import openmetrics_exporter
 
 
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
@@ -36,7 +37,7 @@ def authorized(headers: Any, query: dict[str, list[str]], token: str) -> bool:
     return query.get("token", [""])[0] == token
 
 
-def make_handler(metrics_dir: Path, token: str) -> type[BaseHTTPRequestHandler]:
+def make_handler(metrics_dir: Path, token: str, metrics_public: bool = False) -> type[BaseHTTPRequestHandler]:
     class DashboardHandler(BaseHTTPRequestHandler):
         server_version = "HermesMetricsDashboard/1.0"
 
@@ -58,11 +59,23 @@ def make_handler(metrics_dir: Path, token: str) -> type[BaseHTTPRequestHandler]:
                 payload = {"ok": bool(token), "auth_required": True}
                 self._send(200 if token else 503, json.dumps(payload).encode("utf-8"), "application/json")
                 return
-            if parsed.path not in {"/", "/dashboard"}:
+            if parsed.path not in {"/", "/dashboard", "/api/status", "/metrics"}:
                 self._send(404, b"not found", "text/plain; charset=utf-8")
+                return
+            if parsed.path == "/metrics" and metrics_public:
+                body = openmetrics_exporter.render_openmetrics(metrics_dir).encode("utf-8")
+                self._send(200, body, "application/openmetrics-text; version=1.0.0; charset=utf-8")
                 return
             if not authorized(self.headers, query, token):
                 self._send(401, b"unauthorized", "text/plain; charset=utf-8")
+                return
+            if parsed.path == "/api/status":
+                body = json.dumps(metrics_dashboard.build_dashboard_payload(metrics_dir), ensure_ascii=False).encode("utf-8")
+                self._send(200, body, "application/json")
+                return
+            if parsed.path == "/metrics":
+                body = openmetrics_exporter.render_openmetrics(metrics_dir).encode("utf-8")
+                self._send(200, body, "application/openmetrics-text; version=1.0.0; charset=utf-8")
                 return
             body = metrics_dashboard.render_dashboard(metrics_dir).encode("utf-8")
             self._send(200, body, "text/html; charset=utf-8")
@@ -77,10 +90,11 @@ def main() -> int:
     parser.add_argument("--metrics-dir", default=str(METRICS_DIR))
     parser.add_argument("--token", default=os.environ.get("MEMORY_DASHBOARD_TOKEN", ""))
     parser.add_argument("--token-file", default=str(DEFAULT_TOKEN_FILE))
+    parser.add_argument("--metrics-public", action="store_true", default=os.environ.get("MEMORY_DASHBOARD_METRICS_PUBLIC", "") == "1")
     args = parser.parse_args()
 
     token = load_token(args.token, Path(args.token_file).expanduser())
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(Path(args.metrics_dir).expanduser(), token))
+    server = ThreadingHTTPServer((args.host, args.port), make_handler(Path(args.metrics_dir).expanduser(), token, args.metrics_public))
     try:
         server.serve_forever()
     except KeyboardInterrupt:

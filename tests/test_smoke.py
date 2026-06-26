@@ -288,6 +288,9 @@ def test_release_check_workflow_and_proxy_docs_exist():
 
     assert "python -m pytest -q" in workflow
     assert "audit-repo" in workflow
+    assert "release_checksums.py" in workflow
+    assert "synthetic_recall_benchmark.py" in workflow
     assert "Profile isolation soak" in workflow
     assert "Authorization: Bearer" in proxy_doc
     assert "profile_isolation_soak.py" in checklist
+    assert "release_checksums.py" in checklist

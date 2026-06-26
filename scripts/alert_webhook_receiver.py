@@ -48,6 +48,25 @@ def rotate_jsonl(path: Path, max_lines: int) -> bool:
     return True
 
 
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rows.append(json.loads(line))
+    return rows
+
+
+def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+
+
 def write_status(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -130,6 +149,51 @@ def forward_payload(
         if attempt < attempts and backoff_s > 0:
             time.sleep(backoff_s * attempt)
     return {"error": "forward_failed", "attempts": attempts, "errors": errors}
+
+
+def replay_dead_letters(
+    dead_letter_path: Path,
+    forward_url: str,
+    timeout: int,
+    forward_kind: str = "",
+    attempts: int = 3,
+    backoff_s: float = 1.0,
+    max_replay: int = 100,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    rows = read_jsonl(dead_letter_path)
+    selected = rows[: max(0, max_replay)]
+    untouched = rows[len(selected) :]
+    replayed = []
+    remaining = []
+    if not forward_url and selected and not dry_run:
+        return {"ok": False, "status": "action-needed", "error": "missing_forward_url", "total": len(rows), "selected": len(selected)}
+
+    for row in selected:
+        payload = row.get("payload", row)
+        if dry_run:
+            result = {"dry_run": True}
+        else:
+            result = forward_payload(forward_url, payload, timeout, forward_kind, attempts, backoff_s)
+        replayed.append({"received_at": row.get("received_at"), "result": result})
+        if not dry_run and "error" in result:
+            row["last_replay"] = {"attempted_at": utc_now(), "result": result}
+            remaining.append(row)
+    if not dry_run:
+        write_jsonl(dead_letter_path, remaining + untouched)
+
+    failed = sum(1 for item in replayed if "error" in item["result"])
+    return {
+        "ok": failed == 0,
+        "status": "healthy" if failed == 0 else "degraded",
+        "total": len(rows),
+        "selected": len(selected),
+        "replayed": len(replayed),
+        "failed": failed,
+        "remaining": len(remaining) + len(untouched) if not dry_run else len(rows),
+        "dry_run": dry_run,
+        "results": replayed,
+    }
 
 
 def make_handler(
@@ -245,10 +309,27 @@ def main() -> int:
     parser.add_argument("--retry-attempts", type=int, default=int(os.environ.get("MEMORY_ALERT_FORWARD_RETRY_ATTEMPTS", "3")))
     parser.add_argument("--retry-backoff-s", type=float, default=float(os.environ.get("MEMORY_ALERT_FORWARD_RETRY_BACKOFF_S", "1.0")))
     parser.add_argument("--max-lines", type=int, default=int(os.environ.get("MEMORY_ALERT_QUEUE_MAX_LINES", "5000")))
+    parser.add_argument("--replay-dead-letter", action="store_true", help="Replay rows from the dead-letter queue and exit")
+    parser.add_argument("--max-replay", type=int, default=100)
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     queue_path = Path(args.queue).expanduser()
     status_path = Path(args.status_output).expanduser()
+    if args.replay_dead_letter:
+        payload = replay_dead_letters(
+            Path(args.dead_letter).expanduser(),
+            args.forward_url,
+            args.forward_timeout,
+            args.forward_kind,
+            args.retry_attempts,
+            args.retry_backoff_s,
+            args.max_replay,
+            args.dry_run,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload["ok"] else 1
+
     handler = make_handler(
         queue_path,
         status_path,

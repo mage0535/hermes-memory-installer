@@ -60,8 +60,10 @@ SUPPORTED_SCRIPT_NAMES = [
     "alert_webhook_receiver.py",
     "metrics_dashboard.py",
     "metrics_dashboard_server.py",
+    "openmetrics_exporter.py",
     "profile_isolation_soak.py",
     "hindsight_security_audit.py",
+    "synthetic_recall_benchmark.py",
 ]
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
