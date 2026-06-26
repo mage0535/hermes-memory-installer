@@ -163,6 +163,7 @@ Entry scripts:
 - `metrics_dashboard.py`
 - `metrics_dashboard_server.py`
 - `openmetrics_exporter.py`
+- `slo_rollup.py`
 - `profile_isolation_soak.py`
 - `synthetic_recall_benchmark.py`
 - `hindsight_security_audit.py`
@@ -246,7 +247,17 @@ Common alternatives:
 
 `alert_queue.py` normalizes health artifacts into a local queue. `alert_webhook_receiver.py` provides a real local webhook target, can forward `action-needed` alerts to generic webhooks, Slack, Feishu/Lark, DingTalk, or Telegram via private environment variables, and can replay dead-letter rows after a downstream outage.
 
-`metrics_dashboard.py` renders a static HTML dashboard. `metrics_dashboard_server.py` can serve HTML, `/api/status` JSON, and `/metrics` OpenMetrics text behind a bearer/query token, and binds to `127.0.0.1` by default. `synthetic_recall_benchmark.py` provides a private-data-free recall regression fixture for CI.
+`metrics_dashboard.py` renders a static HTML dashboard. `metrics_dashboard_server.py` can serve HTML, `/api/status` JSON, and `/metrics` OpenMetrics text behind a bearer/query token, and binds to `127.0.0.1` by default. `slo_rollup.py` summarizes acceptance rate, alert queue growth, dead-letter replay success, and recall latency quantiles into `slo-rollup-latest.json`. `synthetic_recall_benchmark.py` provides a private-data-free recall regression fixture for CI.
+
+For shell and monitoring probes:
+
+```bash
+hermes-memory status
+hermes-memory slo-rollup
+hermes-memory openmetrics
+```
+
+Grafana can import [docs/grafana/hermes-memory-openmetrics-dashboard.json](docs/grafana/hermes-memory-openmetrics-dashboard.json) against a Prometheus datasource scraping `/metrics`.
 
 Reverse proxy templates are available in [docs/dashboard-reverse-proxy.md](docs/dashboard-reverse-proxy.md). Release validation steps are listed in [docs/release-checklist.md](docs/release-checklist.md).
 
@@ -292,7 +303,7 @@ python3 "$AGENT_HOME/scripts/sidecar_acceptance_check.py"
 - added local action-needed webhook receiver with optional external forwarding
 - added Telegram, Slack, Feishu/Lark, and DingTalk webhook payload adapters
 - added inbound webhook queue rotation and token-gated dashboard serving
-- added OpenMetrics export, dashboard JSON API, dead-letter replay, release checksums, and synthetic recall benchmarking
+- added OpenMetrics export, dashboard JSON API, dead-letter replay, SLO rollup, release checksums, a Grafana dashboard template, and synthetic recall benchmarking
 - added dual-profile isolation soak checks for multi-agent deployments
 - unified public version metadata across installer, CLI, docs, and release notes
 - kept embedding model selection: recommended default, common presets, and custom model entry

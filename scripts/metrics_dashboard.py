@@ -357,6 +357,48 @@ def build_dashboard_payload(metrics_dir: Path) -> dict[str, Any]:
     }
 
 
+def dashboard_status_counts(payload: dict[str, Any]) -> dict[str, int]:
+    counts = {"healthy": 0, "degraded": 0, "action-needed": 0, "missing": 0, "unknown": 0, "unreadable": 0}
+    for artifact in payload.get("artifacts", []):
+        summary = artifact.get("summary") if isinstance(artifact, dict) else {}
+        status = str((summary or {}).get("status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def overall_status_from_counts(status_counts: dict[str, int]) -> str:
+    if status_counts.get("action-needed") or status_counts.get("unreadable"):
+        return "action-needed"
+    if status_counts.get("degraded") or status_counts.get("missing") or status_counts.get("unknown"):
+        return "degraded"
+    return "healthy"
+
+
+def human_summary(payload: dict[str, Any], lang: str = "zh") -> str:
+    copy = copy_for(lang)
+    counts = dashboard_status_counts(payload)
+    overall = overall_status_from_counts(counts)
+    artifacts = payload.get("artifacts", []) if isinstance(payload.get("artifacts"), list) else []
+    total = len(artifacts)
+    attention = total - counts.get("healthy", 0)
+    health = next((item.get("raw", {}) for item in artifacts if item.get("name") == "Health Summary"), {})
+    alert_count = health.get("alert_count") if isinstance(health, dict) else None
+    if alert_count is None:
+        alerts = health.get("alerts") if isinstance(health, dict) else []
+        alert_count = len(alerts) if isinstance(alerts, list) else 0
+    if lang == "en":
+        return (
+            f"Overall status: {localize_status(overall, lang)}; "
+            f"components={total}; healthy={counts.get('healthy', 0)}; "
+            f"attention={attention}; alerts={alert_count}"
+        )
+    return (
+        f"{copy['overall_status']}：{localize_status(overall, lang)}；"
+        f"组件总数={total}；正常={counts.get('healthy', 0)}；"
+        f"需关注={attention}；告警={alert_count}"
+    )
+
+
 def issue_sections(payload: dict[str, Any], lang: str) -> list[dict[str, Any]]:
     copy = copy_for(lang)
     sections: list[dict[str, Any]] = []
@@ -482,11 +524,7 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
     alerts = health_raw.get("alerts", []) if isinstance(health_raw.get("alerts"), list) else []
     total_alerts = len(alerts)
 
-    overall_status = "healthy"
-    if status_counts.get("action-needed") or status_counts.get("unreadable"):
-        overall_status = "action-needed"
-    elif status_counts.get("degraded") or status_counts.get("missing") or status_counts.get("unknown"):
-        overall_status = "degraded"
+    overall_status = overall_status_from_counts(status_counts)
 
     attention_html = render_rows(
         [{"code": item["name"], "severity": item["status"], "artifact": item["filename"]} for item in attention_items],

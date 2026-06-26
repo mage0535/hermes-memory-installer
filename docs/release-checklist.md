@@ -12,6 +12,8 @@ python scripts/release_checksums.py --output dist/SHA256SUMS
 python scripts/release_checksums.py --verify dist/SHA256SUMS
 ```
 
+Source-script releases are verified with SHA-256 checksums. Add artifact signing only when publishing compressed archives or standalone binaries.
+
 Acceptance criteria:
 
 - Tests pass.

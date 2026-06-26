@@ -155,6 +155,7 @@ Embedding 用于语义召回：它把文本转换成向量，让“意思相近�
 - `metrics_dashboard.py`
 - `metrics_dashboard_server.py`
 - `openmetrics_exporter.py`
+- `slo_rollup.py`
 - `profile_isolation_soak.py`
 - `synthetic_recall_benchmark.py`
 - `hindsight_security_audit.py`
@@ -192,9 +193,20 @@ MEMORY_ALERT_TELEGRAM_CHAT_ID="..."
 
 - `alert_webhook_receiver.py` 支持 dead-letter 重放，用于外部通知系统短暂故障后的补发。
 - `metrics_dashboard_server.py` 支持 token-gated HTML、`/api/status` JSON 和 `/metrics` OpenMetrics。
+- `slo_rollup.py` 汇总接受率、告警队列增长、dead-letter 重放成功率和召回延迟分位数。
 - `synthetic_recall_benchmark.py` 提供不含私有数据的召回回归基准，可用于 CI。
 
 `metrics_dashboard.py` 会生成静态 HTML 状态页。`metrics_dashboard_server.py` 可以在本机提供 token-gated 访问，默认绑定 `127.0.0.1`，避免把记忆指标暴露到公网。
+
+常用运维命令：
+
+```bash
+hermes-memory status
+hermes-memory slo-rollup
+hermes-memory openmetrics
+```
+
+Grafana 可导入 [docs/grafana/hermes-memory-openmetrics-dashboard.json](docs/grafana/hermes-memory-openmetrics-dashboard.json)，数据源使用抓取 `/metrics` 的 Prometheus。
 
 反向代理模板见 [docs/dashboard-reverse-proxy.md](docs/dashboard-reverse-proxy.md)。发布前检查清单见 [docs/release-checklist.md](docs/release-checklist.md)。
 
