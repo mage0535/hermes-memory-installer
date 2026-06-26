@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a Chinese operator dashboard from local sidecar health artifacts."""
+"""Render a bilingual operator dashboard from local sidecar health artifacts."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
@@ -26,45 +27,176 @@ ARTIFACTS = {
     "Webhook Receiver": "webhook-receiver-latest.json",
 }
 
-ARTIFACT_LABELS = {
-    "Runtime Drift": "运行漂移",
-    "Health Summary": "健康总览",
-    "LangSmith Trend": "LangSmith 趋势",
-    "gbrain Stale": "gbrain 健康",
-    "Hindsight Security": "Hindsight 安全",
-    "Webhook Receiver": "Webhook 转发",
-}
 
-DETAIL_LABELS = {
-    "recent_acceptance_ok_rate": "最近验收通过率",
-    "acceptance_ok_rate": "累计验收通过率",
-    "lag_status": "延迟状态",
-    "health_score": "健康分",
-    "stale_pages": "陈旧页面",
-    "actual_orphans": "实际孤页",
-    "classifications": "分类条目",
-    "alert_count": "告警数量",
-    "external_forward_configured": "已配置外部转发",
-    "last_forward": "最近转发结果",
-    "reason_count": "原因数量",
-    "error": "错误",
-}
-
-STATUS_LABELS = {
-    "healthy": "正常",
-    "degraded": "降级",
-    "action-needed": "需处理",
-    "missing": "缺失",
-    "unknown": "未知",
-    "unreadable": "不可读",
-}
-
-SEVERITY_LABELS = {
-    "info": "信息",
-    "degraded": "需关注",
-    "warning": "警告",
-    "action-needed": "需处理",
-    "critical": "严重",
+TEXT = {
+    "zh": {
+        "lang": "zh-CN",
+        "page_title": "Hermes 记忆体仪表板",
+        "hero_title": "Hermes 记忆体仪表板",
+        "hero_subtitle": "集中查看运行漂移、验收趋势、gbrain 健康、安全审计和告警转发状态。页面支持点击下钻，直接看到异常原因、失败记录和原始告警内容。",
+        "language": "界面语言",
+        "lang_zh": "中文",
+        "lang_en": "English",
+        "generated_at": "生成时间",
+        "metrics_dir": "指标目录",
+        "overall_status": "整体状态",
+        "summary_total": "组件总数",
+        "summary_total_cta": "查看所有组件",
+        "summary_healthy": "正常组件",
+        "summary_healthy_cta": "查看正常项",
+        "summary_attention": "需关注组件",
+        "summary_attention_cta": "查看异常明细",
+        "summary_alerts": "待处理告警",
+        "summary_alerts_cta": "查看告警详情",
+        "attention_title": "异常与关注项",
+        "attention_subtitle": "这里汇总所有非正常组件，点击后可展开到具体异常内容。",
+        "attention_empty": "当前没有需要关注的组件。",
+        "alerts_title": "告警详情",
+        "alerts_subtitle": "待处理告警和信息型告警都在这里，支持继续展开查看具体原因、失败记录和明细字段。",
+        "alerts_empty": "当前没有需要进一步展开的告警。",
+        "components_title": "核心健康卡片",
+        "components_subtitle": "每张卡片都可以点开，看到摘要、异常分组和原始 JSON。",
+        "view_details": "查看详情",
+        "raw_json": "原始 JSON",
+        "no_summary": "无摘要信息",
+        "none": "无",
+        "sections_reasons": "异常原因",
+        "sections_classifications": "分类详情",
+        "sections_findings": "发现项",
+        "sections_recent_failures": "最近失败",
+        "sections_alerts": "告警详情",
+        "sections_lag": "延迟详情",
+        "sections_upstream_gap": "上游缺口",
+        "sections_last_forward": "最近转发原始结果",
+        "detail_fallback": "详情",
+        "artifact_labels": {
+            "Runtime Drift": "运行漂移",
+            "Health Summary": "健康总览",
+            "LangSmith Trend": "LangSmith 趋势",
+            "gbrain Stale": "gbrain 健康",
+            "Hindsight Security": "Hindsight 安全",
+            "Webhook Receiver": "Webhook 转发",
+        },
+        "detail_labels": {
+            "recent_acceptance_ok_rate": "最近验收通过率",
+            "acceptance_ok_rate": "累计验收通过率",
+            "lag_status": "延迟状态",
+            "health_score": "健康分",
+            "stale_pages": "陈旧页面",
+            "actual_orphans": "实际孤页",
+            "classifications": "分类条目",
+            "alert_count": "告警数量",
+            "external_forward_configured": "已配置外部转发",
+            "last_forward": "最近转发结果",
+            "reason_count": "原因数量",
+            "error": "错误",
+            "artifact": "产物文件",
+        },
+        "status_labels": {
+            "healthy": "正常",
+            "degraded": "降级",
+            "action-needed": "需处理",
+            "missing": "缺失",
+            "unknown": "未知",
+            "unreadable": "不可读",
+        },
+        "severity_labels": {
+            "info": "信息",
+            "degraded": "需关注",
+            "warning": "警告",
+            "action-needed": "需处理",
+            "critical": "严重",
+        },
+        "yes": "是",
+        "no": "否",
+        "forward_success": "成功，HTTP {status}，尝试 {attempts} 次",
+        "forward_failure": "失败，已重试 {attempts} 次",
+        "forward_failed": "失败",
+    },
+    "en": {
+        "lang": "en",
+        "page_title": "Hermes Memory Dashboard",
+        "hero_title": "Hermes Memory Dashboard",
+        "hero_subtitle": "Track runtime drift, acceptance trend, gbrain health, security audit, and alert forwarding from one place. Every section supports drilldown into failure reasons, recent failures, and raw alert payloads.",
+        "language": "Language",
+        "lang_zh": "中文",
+        "lang_en": "English",
+        "generated_at": "Generated at",
+        "metrics_dir": "Metrics dir",
+        "overall_status": "Overall status",
+        "summary_total": "Components",
+        "summary_total_cta": "View all components",
+        "summary_healthy": "Healthy",
+        "summary_healthy_cta": "View healthy items",
+        "summary_attention": "Needs attention",
+        "summary_attention_cta": "View abnormal details",
+        "summary_alerts": "Pending alerts",
+        "summary_alerts_cta": "View alert details",
+        "attention_title": "Attention Items",
+        "attention_subtitle": "This section summarizes every non-healthy component and lets operators drill into the concrete issue set.",
+        "attention_empty": "There are no components that require attention right now.",
+        "alerts_title": "Alert Details",
+        "alerts_subtitle": "Both actionable alerts and informational alerts are listed here, with expandable failure reasons and payload details.",
+        "alerts_empty": "There are no alerts that require deeper drilldown right now.",
+        "components_title": "Core Health Cards",
+        "components_subtitle": "Every card can be expanded to show summary fields, grouped issues, and raw JSON.",
+        "view_details": "View details",
+        "raw_json": "Raw JSON",
+        "no_summary": "No summary information",
+        "none": "None",
+        "sections_reasons": "Reasons",
+        "sections_classifications": "Classifications",
+        "sections_findings": "Findings",
+        "sections_recent_failures": "Recent failures",
+        "sections_alerts": "Alerts",
+        "sections_lag": "Lag details",
+        "sections_upstream_gap": "Upstream gap",
+        "sections_last_forward": "Last forward raw result",
+        "detail_fallback": "Details",
+        "artifact_labels": {
+            "Runtime Drift": "Runtime Drift",
+            "Health Summary": "Health Summary",
+            "LangSmith Trend": "LangSmith Trend",
+            "gbrain Stale": "gbrain Health",
+            "Hindsight Security": "Hindsight Security",
+            "Webhook Receiver": "Webhook Forwarding",
+        },
+        "detail_labels": {
+            "recent_acceptance_ok_rate": "Recent acceptance OK rate",
+            "acceptance_ok_rate": "Historical acceptance OK rate",
+            "lag_status": "Lag status",
+            "health_score": "Health score",
+            "stale_pages": "Stale pages",
+            "actual_orphans": "Actual orphans",
+            "classifications": "Classification count",
+            "alert_count": "Alert count",
+            "external_forward_configured": "External forwarding configured",
+            "last_forward": "Last forward result",
+            "reason_count": "Reason count",
+            "error": "Error",
+            "artifact": "Artifact file",
+        },
+        "status_labels": {
+            "healthy": "Healthy",
+            "degraded": "Degraded",
+            "action-needed": "Action needed",
+            "missing": "Missing",
+            "unknown": "Unknown",
+            "unreadable": "Unreadable",
+        },
+        "severity_labels": {
+            "info": "Info",
+            "degraded": "Degraded",
+            "warning": "Warning",
+            "action-needed": "Action needed",
+            "critical": "Critical",
+        },
+        "yes": "Yes",
+        "no": "No",
+        "forward_success": "Success, HTTP {status}, {attempts} attempt(s)",
+        "forward_failure": "Failed after {attempts} attempt(s)",
+        "forward_failed": "Failed",
+    },
 }
 
 
@@ -85,20 +217,24 @@ def slugify(text: str) -> str:
     return "".join(ch.lower() if ch.isalnum() else "-" for ch in text).strip("-")
 
 
-def localize_status(status: str) -> str:
-    return STATUS_LABELS.get(status, status)
+def copy_for(lang: str) -> dict[str, Any]:
+    return TEXT["en"] if lang == "en" else TEXT["zh"]
 
 
-def localize_severity(severity: str) -> str:
-    return SEVERITY_LABELS.get(severity, severity)
+def localize_status(status: str, lang: str) -> str:
+    return copy_for(lang)["status_labels"].get(status, status)
 
 
-def display_artifact_name(name: str) -> str:
-    return ARTIFACT_LABELS.get(name, name)
+def localize_severity(severity: str, lang: str) -> str:
+    return copy_for(lang)["severity_labels"].get(severity, severity)
 
 
-def detail_label(key: str) -> str:
-    return DETAIL_LABELS.get(key, key)
+def artifact_name(name: str, lang: str) -> str:
+    return copy_for(lang)["artifact_labels"].get(name, name)
+
+
+def detail_label(key: str, lang: str) -> str:
+    return copy_for(lang)["detail_labels"].get(key, key)
 
 
 def status_tone(status: str) -> str:
@@ -118,34 +254,38 @@ def percent(value: Any) -> str | None:
         return str(value)
 
 
-def format_forward_result(payload: Any) -> str | None:
+def format_forward_result(payload: Any, lang: str) -> str | None:
     if not payload:
         return None
+    copy = copy_for(lang)
     if not isinstance(payload, dict):
         return str(payload)
     if payload.get("error"):
         attempts = payload.get("attempts")
-        return f"失败，已重试 {attempts} 次" if attempts else "失败"
+        if attempts:
+            return copy["forward_failure"].format(attempts=attempts)
+        return copy["forward_failed"]
     status = payload.get("status")
     attempts = payload.get("attempts")
     if status:
-        return f"成功，HTTP {status}，尝试 {attempts or 1} 次"
-    return "成功"
+        return copy["forward_success"].format(status=status, attempts=attempts or 1)
+    return copy["yes"]
 
 
-def format_detail_value(key: str, value: Any) -> str | None:
+def format_detail_value(key: str, value: Any, lang: str) -> str | None:
+    copy = copy_for(lang)
     if value is None:
         return None
     if key in {"recent_acceptance_ok_rate", "acceptance_ok_rate"}:
         return percent(value)
     if key == "external_forward_configured":
-        return "是" if bool(value) else "否"
+        return copy["yes"] if bool(value) else copy["no"]
     if key == "last_forward":
-        return format_forward_result(value)
+        return format_forward_result(value, lang)
     if isinstance(value, dict):
         return json.dumps(value, ensure_ascii=False)
     if isinstance(value, list):
-        return "、".join(str(item) for item in value)
+        return ", ".join(str(item) for item in value)
     return str(value)
 
 
@@ -207,14 +347,7 @@ def build_dashboard_payload(metrics_dir: Path) -> dict[str, Any]:
     artifacts = []
     for name, filename in ARTIFACTS.items():
         payload = load_json(metrics_dir / filename)
-        artifacts.append(
-            {
-                "name": name,
-                "filename": filename,
-                "summary": summarize(name, payload),
-                "raw": payload,
-            }
-        )
+        artifacts.append({"name": name, "filename": filename, "summary": summarize(name, payload), "raw": payload})
     ok = all(item["summary"].get("ok") for item in artifacts)
     return {
         "captured_at": datetime.now(timezone.utc).isoformat(),
@@ -224,14 +357,15 @@ def build_dashboard_payload(metrics_dir: Path) -> dict[str, Any]:
     }
 
 
-def issue_sections(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def issue_sections(payload: dict[str, Any], lang: str) -> list[dict[str, Any]]:
+    copy = copy_for(lang)
     sections: list[dict[str, Any]] = []
     mappings = [
-        ("reasons", "异常原因"),
-        ("classifications", "分类详情"),
-        ("findings", "发现项"),
-        ("recent_failures", "最近失败"),
-        ("alerts", "告警详情"),
+        ("reasons", copy["sections_reasons"]),
+        ("classifications", copy["sections_classifications"]),
+        ("findings", copy["sections_findings"]),
+        ("recent_failures", copy["sections_recent_failures"]),
+        ("alerts", copy["sections_alerts"]),
     ]
     for key, title in mappings:
         value = payload.get(key)
@@ -241,35 +375,33 @@ def issue_sections(payload: dict[str, Any]) -> list[dict[str, Any]]:
     monitor = payload.get("monitor")
     if isinstance(monitor, dict):
         if isinstance(monitor.get("recent_failures"), list) and monitor["recent_failures"]:
-            sections.append({"title": "最近失败", "rows": monitor["recent_failures"]})
+            sections.append({"title": copy["sections_recent_failures"], "rows": monitor["recent_failures"]})
         lag = monitor.get("lag")
         if isinstance(lag, dict) and lag:
-            sections.append({"title": "延迟详情", "rows": [lag]})
+            sections.append({"title": copy["sections_lag"], "rows": [lag]})
 
     upstream_gap = payload.get("upstream_gap")
     if isinstance(upstream_gap, dict) and upstream_gap:
-        sections.append({"title": "上游缺口", "rows": [upstream_gap]})
+        sections.append({"title": copy["sections_upstream_gap"], "rows": [upstream_gap]})
 
     last_forward = payload.get("last_forward")
     if isinstance(last_forward, dict) and last_forward:
-        sections.append({"title": "最近转发原始结果", "rows": [last_forward]})
+        sections.append({"title": copy["sections_last_forward"], "rows": [last_forward]})
     return sections
 
 
-def render_rows(rows: list[dict[str, Any]]) -> str:
+def render_rows(rows: list[dict[str, Any]], lang: str) -> str:
+    copy = copy_for(lang)
     cards = []
     for row in rows:
-        severity = localize_severity(str(row.get("severity") or row.get("status") or "info"))
-        header = row.get("code") or row.get("run_name") or row.get("reason") or row.get("required_capability") or "详情"
+        severity = localize_severity(str(row.get("severity") or row.get("status") or "info"), lang)
+        header = row.get("code") or row.get("run_name") or row.get("reason") or row.get("required_capability") or copy["detail_fallback"]
         body_lines = []
         for key, value in row.items():
             if key in {"code", "severity"}:
                 continue
-            if isinstance(value, (dict, list)):
-                value_text = json.dumps(value, ensure_ascii=False, indent=2)
-            else:
-                value_text = str(value)
-            body_lines.append(f"<tr><th>{safe(key)}</th><td>{safe(value_text)}</td></tr>")
+            value_text = json.dumps(value, ensure_ascii=False, indent=2) if isinstance(value, (dict, list)) else str(value)
+            body_lines.append(f"<tr><th>{safe(detail_label(str(key), lang))}</th><td>{safe(value_text)}</td></tr>")
         cards.append(
             f"""
             <details class="detail-item">
@@ -277,16 +409,26 @@ def render_rows(rows: list[dict[str, Any]]) -> str:
                 <span>{safe(str(header))}</span>
                 <span class="inline-pill">{safe(severity)}</span>
               </summary>
-              <table>{''.join(body_lines) or '<tr><td>无</td></tr>'}</table>
+              <table>{''.join(body_lines) or f"<tr><td>{safe(copy['none'])}</td></tr>"}</table>
             </details>
             """
         )
     return "".join(cards)
 
 
-def render_dashboard(metrics_dir: Path) -> str:
+def language_href(lang: str, query_params: dict[str, str]) -> str:
+    params = dict(query_params)
+    params["lang"] = lang
+    return "/dashboard?" + urlencode(params)
+
+
+def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str, str] | None = None) -> str:
+    copy = copy_for(lang)
+    query_params = dict(query_params or {})
+    query_params.pop("lang", None)
     captured_at = datetime.now(timezone.utc).isoformat()
     payload = build_dashboard_payload(metrics_dir)
+
     status_counts = {"healthy": 0, "degraded": 0, "action-needed": 0, "missing": 0, "unknown": 0, "unreadable": 0}
     cards = []
     attention_items = []
@@ -298,39 +440,37 @@ def render_dashboard(metrics_dir: Path) -> str:
         summary = artifact["summary"]
         status = summary["status"]
         status_counts[status] = status_counts.get(status, 0) + 1
-
         if status != "healthy":
-            attention_items.append({"name": display_artifact_name(name), "status": localize_status(status), "filename": filename})
+            attention_items.append({"name": artifact_name(name, lang), "status": localize_status(status, lang), "filename": filename})
 
         detail_rows = "".join(
-            f"<tr><th>{safe(detail_label(key))}</th><td>{safe(format_detail_value(key, value))}</td></tr>"
+            f"<tr><th>{safe(detail_label(key, lang))}</th><td>{safe(format_detail_value(key, value, lang))}</td></tr>"
             for key, value in summary.get("details", {}).items()
-            if format_detail_value(key, value) is not None
+            if format_detail_value(key, value, lang) is not None
         )
-        sections = issue_sections(raw)
+        sections = issue_sections(raw, lang)
         section_html = "".join(
-            f"<section class='issue-section'><h3>{safe(section['title'])}</h3>{render_rows(section['rows'])}</section>"
+            f"<section class='issue-section'><h3>{safe(section['title'])}</h3>{render_rows(section['rows'], lang)}</section>"
             for section in sections
         )
-        artifact_id = f"artifact-{slugify(name)}"
         cards.append(
             f"""
-            <details id="{safe(artifact_id)}" class="card" {'open' if status != 'healthy' else ''}>
+            <details id="artifact-{safe(slugify(name))}" class="card" {'open' if status != 'healthy' else ''}>
               <summary class="card-head">
                 <div>
                   <p class="eyebrow">{safe(filename)}</p>
-                  <h2>{safe(display_artifact_name(name))}</h2>
+                  <h2>{safe(artifact_name(name, lang))}</h2>
                 </div>
                 <div class="summary-actions">
-                  <span class="status-pill {status_tone(status)}">{safe(localize_status(status))}</span>
-                  <span class="chevron">查看详情</span>
+                  <span class="status-pill {status_tone(status)}">{safe(localize_status(status, lang))}</span>
+                  <span class="chevron">{safe(copy['view_details'])}</span>
                 </div>
               </summary>
               <div class="card-body">
-                <table>{detail_rows or '<tr><td>无摘要信息</td></tr>'}</table>
+                <table>{detail_rows or f"<tr><td>{safe(copy['no_summary'])}</td></tr>"}</table>
                 {section_html}
                 <section class="issue-section">
-                  <h3>原始 JSON</h3>
+                  <h3>{safe(copy['raw_json'])}</h3>
                   <pre>{safe(json.dumps(raw, ensure_ascii=False, indent=2))}</pre>
                 </section>
               </div>
@@ -349,23 +489,20 @@ def render_dashboard(metrics_dir: Path) -> str:
         overall_status = "degraded"
 
     attention_html = render_rows(
-        [
-            {
-                "code": item["name"],
-                "severity": item["status"],
-                "artifact": item["filename"],
-            }
-            for item in attention_items
-        ]
+        [{"code": item["name"], "severity": item["status"], "artifact": item["filename"]} for item in attention_items],
+        lang,
     )
-    alerts_html = render_rows(alerts) if alerts else "<p class='empty-state'>当前没有需要进一步展开的告警。</p>"
+    alerts_html = render_rows(alerts, lang) if alerts else f"<p class='empty-state'>{safe(copy['alerts_empty'])}</p>"
+
+    zh_href = language_href("zh", query_params)
+    en_href = language_href("en", query_params)
 
     return f"""<!doctype html>
-<html lang="zh-CN">
+<html lang="{safe(copy['lang'])}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hermes 记忆体仪表板</title>
+  <title>{safe(copy['page_title'])}</title>
   <style>
     :root {{
       --bg: #f6f8fe;
@@ -409,6 +546,7 @@ def render_dashboard(metrics_dir: Path) -> str:
       padding: 28px;
       backdrop-filter: blur(20px);
     }}
+    .hero-top {{ display: flex; justify-content: space-between; gap: 14px; align-items: start; flex-wrap: wrap; }}
     .hero h1 {{ margin: 0; font-size: clamp(2rem, 5vw, 3.8rem); line-height: 1.02; letter-spacing: -0.05em; font-weight: 800; }}
     .subtitle {{ margin: 14px 0 0; max-width: 62rem; color: var(--muted); font-size: 1rem; line-height: 1.7; }}
     .hero-meta {{ display: inline-flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }}
@@ -417,6 +555,17 @@ def render_dashboard(metrics_dir: Path) -> str:
     }}
     .chip {{ background: rgba(255,255,255,0.8); border: 1px solid var(--line); color: var(--text); }}
     .inline-pill {{ padding: 6px 10px; font-size: .84rem; background: rgba(11, 87, 208, 0.08); color: var(--primary); }}
+    .lang-switch {{ display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }}
+    .lang-link {{
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.78);
+      color: var(--muted);
+      font-size: .88rem;
+      font-weight: 700;
+    }}
+    .lang-link.active {{ color: var(--primary); background: rgba(11,87,208,0.12); border-color: rgba(11,87,208,0.16); }}
     .tone-positive {{ background: var(--positive-soft); color: var(--positive); }}
     .tone-warn {{ background: var(--warn-soft); color: var(--warn); }}
     .tone-critical {{ background: var(--critical-soft); color: var(--critical); }}
@@ -477,36 +626,45 @@ def render_dashboard(metrics_dir: Path) -> str:
 <body>
   <main>
     <section class="hero" id="section-overview">
-      <h1>Hermes 记忆体仪表板</h1>
-      <p class="subtitle">集中查看运行漂移、验收趋势、gbrain 健康、安全审计和告警转发状态。页面支持点击下钻，直接看到异常原因、失败记录和原始告警内容。</p>
+      <div class="hero-top">
+        <div>
+          <h1>{safe(copy['hero_title'])}</h1>
+          <p class="subtitle">{safe(copy['hero_subtitle'])}</p>
+        </div>
+        <div class="lang-switch">
+          <span class="chip">{safe(copy['language'])}</span>
+          <a class="lang-link {'active' if lang == 'zh' else ''}" href="{safe(zh_href)}">{safe(copy['lang_zh'])}</a>
+          <a class="lang-link {'active' if lang == 'en' else ''}" href="{safe(en_href)}">{safe(copy['lang_en'])}</a>
+        </div>
+      </div>
       <div class="hero-meta">
-        <span class="chip">生成时间：{safe(captured_at)}</span>
-        <span class="chip">指标目录：{safe(metrics_dir)}</span>
-        <span class="status-pill {status_tone(overall_status)}">整体状态：{safe(localize_status(overall_status))}</span>
+        <span class="chip">{safe(copy['generated_at'])}: {safe(captured_at)}</span>
+        <span class="chip">{safe(copy['metrics_dir'])}: {safe(metrics_dir)}</span>
+        <span class="status-pill {status_tone(overall_status)}">{safe(copy['overall_status'])}: {safe(localize_status(overall_status, lang))}</span>
       </div>
       <div class="summary-grid">
-        <a class="summary-link" href="#section-components"><p>组件总数</p><strong>{len(ARTIFACTS)}</strong><span>查看所有组件</span></a>
-        <a class="summary-link" href="#section-components"><p>正常组件</p><strong>{status_counts.get("healthy", 0)}</strong><span>查看正常项</span></a>
-        <a class="summary-link" href="#section-attention"><p>需关注组件</p><strong>{status_counts.get("degraded", 0) + status_counts.get("missing", 0) + status_counts.get("unknown", 0) + status_counts.get("action-needed", 0) + status_counts.get("unreadable", 0)}</strong><span>查看异常明细</span></a>
-        <a class="summary-link" href="#section-alerts"><p>待处理告警</p><strong>{total_alerts}</strong><span>查看告警详情</span></a>
+        <a class="summary-link" href="#section-components"><p>{safe(copy['summary_total'])}</p><strong>{len(ARTIFACTS)}</strong><span>{safe(copy['summary_total_cta'])}</span></a>
+        <a class="summary-link" href="#section-components"><p>{safe(copy['summary_healthy'])}</p><strong>{status_counts.get("healthy", 0)}</strong><span>{safe(copy['summary_healthy_cta'])}</span></a>
+        <a class="summary-link" href="#section-attention"><p>{safe(copy['summary_attention'])}</p><strong>{status_counts.get("degraded", 0) + status_counts.get("missing", 0) + status_counts.get("unknown", 0) + status_counts.get("action-needed", 0) + status_counts.get("unreadable", 0)}</strong><span>{safe(copy['summary_attention_cta'])}</span></a>
+        <a class="summary-link" href="#section-alerts"><p>{safe(copy['summary_alerts'])}</p><strong>{total_alerts}</strong><span>{safe(copy['summary_alerts_cta'])}</span></a>
       </div>
     </section>
 
     <section id="section-attention">
       <div class="section-head">
         <div>
-          <h2>异常与关注项</h2>
-          <p>这里汇总所有非正常组件，点击后可展开到具体异常内容。</p>
+          <h2>{safe(copy['attention_title'])}</h2>
+          <p>{safe(copy['attention_subtitle'])}</p>
         </div>
       </div>
-      {attention_html or "<p class='empty-state'>当前没有需要关注的组件。</p>"}
+      {attention_html or f"<p class='empty-state'>{safe(copy['attention_empty'])}</p>"}
     </section>
 
     <section id="section-alerts">
       <div class="section-head">
         <div>
-          <h2>告警详情</h2>
-          <p>待处理告警和信息型告警都在这里，支持继续展开查看具体原因、失败记录和明细字段。</p>
+          <h2>{safe(copy['alerts_title'])}</h2>
+          <p>{safe(copy['alerts_subtitle'])}</p>
         </div>
       </div>
       {alerts_html}
@@ -515,8 +673,8 @@ def render_dashboard(metrics_dir: Path) -> str:
     <section id="section-components">
       <div class="section-head">
         <div>
-          <h2>核心健康卡片</h2>
-          <p>每张卡片都可以点开，看到摘要、异常分组和原始 JSON。</p>
+          <h2>{safe(copy['components_title'])}</h2>
+          <p>{safe(copy['components_subtitle'])}</p>
         </div>
       </div>
       <div class="grid">{''.join(cards)}</div>
@@ -531,12 +689,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--metrics-dir", default=str(METRICS_DIR))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--lang", choices=["zh", "en"], default="zh")
     args = parser.parse_args()
     metrics_dir = Path(args.metrics_dir).expanduser()
     output = Path(args.output).expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(render_dashboard(metrics_dir), encoding="utf-8")
-    print(json.dumps({"ok": True, "output": str(output)}, ensure_ascii=False))
+    output.write_text(render_dashboard(metrics_dir, lang=args.lang), encoding="utf-8")
+    print(json.dumps({"ok": True, "output": str(output), "lang": args.lang}, ensure_ascii=False))
     return 0
 
 
