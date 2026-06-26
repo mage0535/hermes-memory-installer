@@ -1,0 +1,29 @@
+name: release-check
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest PyYAML
+      - name: Unit tests
+        run: python -m pytest -q
+      - name: Public repository audit
+        run: python bin/hermes-memory audit-repo --format text
+      - name: Installer dry run
+        run: |
+          mkdir -p /tmp/hermes-release-check
+          python installer/install.py --dry-run --skip-checks --noninteractive --agent-home /tmp/hermes-release-check --lang en
+      - name: Profile isolation soak
+        run: python scripts/profile_isolation_soak.py --repo-root . --iterations 2 --interval-s 0

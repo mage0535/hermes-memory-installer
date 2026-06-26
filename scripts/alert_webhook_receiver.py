@@ -9,6 +9,7 @@ import os
 import threading
 import time
 import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,6 +19,7 @@ from typing import Any
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 METRICS_DIR = AGENT_HOME / "metrics"
 DEFAULT_QUEUE = METRICS_DIR / "inbound-alert-webhook.jsonl"
+DEFAULT_DEAD_LETTER = METRICS_DIR / "failed-alert-webhook.jsonl"
 DEFAULT_STATUS = METRICS_DIR / "webhook-receiver-latest.json"
 
 
@@ -97,12 +99,37 @@ def infer_forward_kind(url: str, explicit_kind: str) -> str:
     return "generic"
 
 
-def forward_payload(url: str, payload: dict[str, Any], timeout: int, kind: str = "") -> dict[str, Any]:
+def forward_payload_once(url: str, payload: dict[str, Any], timeout: int, kind: str = "") -> dict[str, Any]:
     body = build_forward_body(infer_forward_kind(url, kind), payload)
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return {"status": response.status, "reason": response.reason}
+
+
+def forward_payload(
+    url: str,
+    payload: dict[str, Any],
+    timeout: int,
+    kind: str = "",
+    attempts: int = 3,
+    backoff_s: float = 1.0,
+) -> dict[str, Any]:
+    attempts = max(1, attempts)
+    errors = []
+    for attempt in range(1, attempts + 1):
+        try:
+            result = forward_payload_once(url, payload, timeout, kind)
+            result["attempts"] = attempt
+            return result
+        except urllib.error.HTTPError as exc:
+            error = {"attempt": attempt, "status": exc.code, "reason": exc.reason}
+        except Exception as exc:
+            error = {"attempt": attempt, "error": str(exc)}
+        errors.append(error)
+        if attempt < attempts and backoff_s > 0:
+            time.sleep(backoff_s * attempt)
+    return {"error": "forward_failed", "attempts": attempts, "errors": errors}
 
 
 def make_handler(
@@ -112,8 +139,12 @@ def make_handler(
     timeout: int,
     forward_kind: str = "",
     max_lines: int = 5000,
+    dead_letter_path: Path | None = None,
+    retry_attempts: int = 3,
+    retry_backoff_s: float = 1.0,
 ) -> type[BaseHTTPRequestHandler]:
     lock = threading.Lock()
+    dead_letter = dead_letter_path or DEFAULT_DEAD_LETTER
 
     class AlertWebhookHandler(BaseHTTPRequestHandler):
         server_version = "HermesAlertWebhook/1.0"
@@ -160,15 +191,24 @@ def make_handler(
             }
             forward_result: dict[str, Any] | None = None
             if forward_url:
-                try:
-                    forward_result = forward_payload(forward_url, payload, timeout, forward_kind)
-                except Exception as exc:
-                    forward_result = {"error": str(exc)}
+                forward_result = forward_payload(
+                    forward_url,
+                    payload,
+                    timeout,
+                    forward_kind,
+                    retry_attempts,
+                    retry_backoff_s,
+                )
             row["forward"] = forward_result
 
             with lock:
                 append_jsonl(queue_path, row)
                 rotated = rotate_jsonl(queue_path, max_lines)
+                dead_letter_written = False
+                if forward_result and "error" in forward_result:
+                    append_jsonl(dead_letter, row)
+                    rotate_jsonl(dead_letter, max_lines)
+                    dead_letter_written = True
                 write_status(
                     status_path,
                     {
@@ -178,8 +218,12 @@ def make_handler(
                         "queue": str(queue_path),
                         "queue_max_lines": max_lines,
                         "queue_rotated": rotated,
+                        "dead_letter": str(dead_letter),
+                        "dead_letter_written": dead_letter_written,
                         "external_forward_configured": bool(forward_url),
                         "external_forward_kind": infer_forward_kind(forward_url, forward_kind) if forward_url else None,
+                        "retry_attempts": retry_attempts,
+                        "retry_backoff_s": retry_backoff_s,
                         "last_forward": forward_result,
                     },
                 )
@@ -193,10 +237,13 @@ def main() -> int:
     parser.add_argument("--host", default=os.environ.get("MEMORY_ALERT_WEBHOOK_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("MEMORY_ALERT_WEBHOOK_PORT", "9499")))
     parser.add_argument("--queue", default=str(DEFAULT_QUEUE))
+    parser.add_argument("--dead-letter", default=str(DEFAULT_DEAD_LETTER))
     parser.add_argument("--status-output", default=str(DEFAULT_STATUS))
     parser.add_argument("--forward-url", default=os.environ.get("MEMORY_ALERT_FORWARD_URL", ""))
     parser.add_argument("--forward-kind", default=os.environ.get("MEMORY_ALERT_FORWARD_KIND", ""))
     parser.add_argument("--forward-timeout", type=int, default=10)
+    parser.add_argument("--retry-attempts", type=int, default=int(os.environ.get("MEMORY_ALERT_FORWARD_RETRY_ATTEMPTS", "3")))
+    parser.add_argument("--retry-backoff-s", type=float, default=float(os.environ.get("MEMORY_ALERT_FORWARD_RETRY_BACKOFF_S", "1.0")))
     parser.add_argument("--max-lines", type=int, default=int(os.environ.get("MEMORY_ALERT_QUEUE_MAX_LINES", "5000")))
     args = parser.parse_args()
 
@@ -209,6 +256,9 @@ def main() -> int:
         args.forward_timeout,
         args.forward_kind,
         args.max_lines,
+        Path(args.dead_letter).expanduser(),
+        args.retry_attempts,
+        args.retry_backoff_s,
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)
     write_status(
@@ -219,9 +269,12 @@ def main() -> int:
             "status": "healthy",
             "bind": f"{args.host}:{args.port}",
             "queue": str(queue_path),
+            "dead_letter": str(Path(args.dead_letter).expanduser()),
             "queue_max_lines": args.max_lines,
             "external_forward_configured": bool(args.forward_url),
             "external_forward_kind": infer_forward_kind(args.forward_url, args.forward_kind) if args.forward_url else None,
+            "retry_attempts": args.retry_attempts,
+            "retry_backoff_s": args.retry_backoff_s,
         },
     )
     try:

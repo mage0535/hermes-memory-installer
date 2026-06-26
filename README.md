@@ -246,6 +246,8 @@ Common alternatives:
 
 `metrics_dashboard.py` renders a static HTML dashboard. `metrics_dashboard_server.py` can serve it behind a bearer/query token and binds to `127.0.0.1` by default.
 
+Reverse proxy templates are available in [docs/dashboard-reverse-proxy.md](docs/dashboard-reverse-proxy.md). Release validation steps are listed in [docs/release-checklist.md](docs/release-checklist.md).
+
 Without embeddings, text retrieval still works through:
 
 - FTS5 session search

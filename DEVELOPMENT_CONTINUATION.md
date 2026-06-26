@@ -1607,3 +1607,42 @@ Next recommended enhancements:
 3. Add optional dashboard reverse-proxy examples for Caddy/Nginx with IP allowlist and HTTPS.
 4. Coordinate with gbrain upstream to expose stale page contributors or correct health score accounting so the panel can reach 10/10 without sidecar-side guesswork.
 5. Add a release checklist workflow that runs audit-repo, tests, dry-run install, profile soak, and doc version checks before tag creation.
+
+## 23. Execution Report - Retry, Dashboard Publication Templates, Release Gate
+
+Date: 2026-06-26
+
+Scope implemented:
+
+- Added webhook external-forward retry/backoff controls: `MEMORY_ALERT_FORWARD_RETRY_ATTEMPTS` and `MEMORY_ALERT_FORWARD_RETRY_BACKOFF_S`.
+- Added failed external-send dead-letter queue at `$AGENT_HOME/metrics/failed-alert-webhook.jsonl`.
+- Kept normal inbound queue rotation and added dead-letter rotation through the same max-line policy.
+- Added `hermes-memory dashboard-info`, which prints dashboard URL and token-file metadata without printing the token value.
+- Added dashboard reverse proxy templates in `docs/dashboard-reverse-proxy.md` for Caddy and Nginx with HTTPS, localhost upstream, bearer-token use, and IP allowlist guidance.
+- Added `docs/release-checklist.md` for manual release gates.
+- Added `.github/workflows/release-check.yml` to run tests, public repo audit, installer dry-run, and profile isolation soak on push/tag/PR.
+- Expanded `docs/gbrain-stale-upstream-request.md` with a proposed JSON shape for stale/health contributors.
+
+Verification performed:
+
+- Local tests: `148 passed, 2 skipped`.
+- Local public repo audit: no private path refs, no secret-like refs, no compile failures.
+- Server compile and public repo audit passed.
+- Dead-letter smoke test: temporary failed forward wrote a dead-letter row, status became `degraded`, retry attempts recorded as `2`.
+- Normal Telegram forward smoke test: local queue advanced, Telegram API returned `200 OK`, retry attempts recorded as `1`.
+- `dashboard-info` smoke test: token configured, token value was not printed.
+- Profile isolation soak from release gate: `ok=true`, failures `0`.
+- Production acceptance checks: fast `ok=true`, full `ok=true`, reason buckets `{}`.
+
+Current status:
+
+- Operational behavior is stable.
+- Repository drift remains expected until this batch is committed; after commit, drift should return to `healthy`.
+
+Next recommended enhancements:
+
+1. Add authenticated read-only API endpoints for dashboard JSON so external monitors can poll machine-readable status without scraping HTML.
+2. Add Prometheus/OpenMetrics export for health status, queue length, last forward status, acceptance latency, and gbrain upstream-gap status.
+3. Add signed release artifacts or checksums for installer files.
+4. Add an optional webhook replay command for dead-letter rows after external service recovery.
+5. Add a gbrain upstream issue/PR once the target repository contribution path is confirmed.

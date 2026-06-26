@@ -279,3 +279,15 @@ def test_release_docs_are_aligned_for_v3_5_1_and_kmm_positioning():
     assert "Knowledge-and-Memory-Management" in readme
     assert "operational hardening release" in release
     assert "--install-mode 3" in release
+
+
+def test_release_check_workflow_and_proxy_docs_exist():
+    workflow = (REPO / ".github" / "workflows" / "release-check.yml").read_text(encoding="utf-8")
+    proxy_doc = (REPO / "docs" / "dashboard-reverse-proxy.md").read_text(encoding="utf-8")
+    checklist = (REPO / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+
+    assert "python -m pytest -q" in workflow
+    assert "audit-repo" in workflow
+    assert "Profile isolation soak" in workflow
+    assert "Authorization: Bearer" in proxy_doc
+    assert "profile_isolation_soak.py" in checklist
