@@ -264,8 +264,9 @@ def extract_session_info(filepath: Path) -> dict:
                 title = data.get("title", "")
             if was_sanitized:
                 filepath.with_suffix(filepath.suffix + ".repaired").write_text(cleaned_content, encoding='utf-8')
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[session_to_gbrain] unable to parse session {filepath.name}: {exc}", file=sys.stderr)
+            return None
         
         # Extract first user message as title hint
         first_user_msg = ""
@@ -507,6 +508,8 @@ def gbrain_page_exists(slug: str) -> bool:
 def create_gbrain_page(info: dict, dry_run=False):
     """通过 MCP 创建 gbrain 页面"""
     slug = f"session-{info['session_id'][:16]}"
+    raw_title = str(info.get("title") or "")[:100]
+    display_title = " ".join(raw_title.split())
     
     # Build page content
     tags = ["session", f"date-{info['created_at'][:10]}"] + info["topics"]
@@ -519,13 +522,13 @@ def create_gbrain_page(info: dict, dry_run=False):
     relations = extract_chinese_relations(session_text)
     
     content = f"""---
-title: "{info['title'][:100]}"
+title: {json.dumps(raw_title, ensure_ascii=False)}
 type: session
 tags: [{tags_str}]
 created: "{info['created_at']}"
 ---
 
-# {info['title'][:100]}
+# {display_title}
 
 **会话ID**: {info['session_id']}
 **日期**: {info['created_at'][:10]}
