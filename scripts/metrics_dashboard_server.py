@@ -55,6 +55,14 @@ def make_handler(metrics_dir: Path, token: str, metrics_public: bool = False) ->
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             query = parse_qs(parsed.query)
+            lang = query.get("lang", ["zh"])[0].lower()
+            if lang not in {"zh", "en"}:
+                lang = "zh"
+            render_query = {}
+            for key, values in query.items():
+                if not values or key == "token":
+                    continue
+                render_query[key] = values[0]
             if parsed.path == "/health":
                 payload = {"ok": bool(token), "auth_required": True}
                 self._send(200 if token else 503, json.dumps(payload).encode("utf-8"), "application/json")
@@ -77,7 +85,7 @@ def make_handler(metrics_dir: Path, token: str, metrics_public: bool = False) ->
                 body = openmetrics_exporter.render_openmetrics(metrics_dir).encode("utf-8")
                 self._send(200, body, "application/openmetrics-text; version=1.0.0; charset=utf-8")
                 return
-            body = metrics_dashboard.render_dashboard(metrics_dir).encode("utf-8")
+            body = metrics_dashboard.render_dashboard(metrics_dir, lang=lang, query_params=render_query).encode("utf-8")
             self._send(200, body, "text/html; charset=utf-8")
 
     return DashboardHandler

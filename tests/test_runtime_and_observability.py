@@ -609,18 +609,20 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
         encoding="utf-8",
     )
 
-    html = metrics_dashboard.render_dashboard(metrics)
+    html = metrics_dashboard.render_dashboard(metrics, lang="zh")
+    html_en = metrics_dashboard.render_dashboard(metrics, lang="en")
 
-    assert "Hermes 记忆体仪表板" in html
-    assert "运行漂移" in html
-    assert "LangSmith 趋势" in html
-    assert "gbrain 健康" in html
-    assert "整体状态：正常" in html
-    assert "告警详情" in html
+    assert 'lang="zh-CN"' in html
+    assert "#section-alerts" in html
+    assert "#section-components" in html
     assert "historical_acceptance_failures" in html
     assert "47" in html
-    assert "成功，HTTP 200，尝试 1 次" in html
+    assert "HTTP 200" in html
     assert "{&#x27;status&#x27;: 200" not in html
+    assert "Hermes Memory Dashboard" in html_en
+    assert "Runtime Drift" in html_en
+    assert "Language" in html_en
+    assert "Success, HTTP 200, 1 attempt(s)" in html_en
     payload = metrics_dashboard.build_dashboard_payload(metrics)
     assert payload["artifacts"][0]["name"] == "Runtime Drift"
 
@@ -640,7 +642,14 @@ def test_metrics_dashboard_server_requires_token(tmp_path: Path):
             raise AssertionError("dashboard should require a token")
         with urllib.request.urlopen(f"{base}/dashboard?token=secret", timeout=5) as response:
             assert response.status == 200
-            assert "Hermes 记忆体仪表板" in response.read().decode("utf-8")
+            body = response.read().decode("utf-8")
+            assert 'lang="zh-CN"' in body
+            assert "#section-alerts" in body
+        with urllib.request.urlopen(f"{base}/dashboard?token=secret&lang=en", timeout=5) as response:
+            assert response.status == 200
+            body = response.read().decode("utf-8")
+            assert "Hermes Memory Dashboard" in body
+            assert "Language" in body
         with urllib.request.urlopen(f"{base}/api/status?token=secret", timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
             assert response.status == 200
