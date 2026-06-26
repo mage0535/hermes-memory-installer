@@ -56,6 +56,8 @@ SUPPORTED_SCRIPT_NAMES = [
     "langsmith_trend_report.py",
     "runtime_drift_check.py",
     "gbrain_stale_maintenance.py",
+    "alert_queue.py",
+    "hindsight_security_audit.py",
 ]
 
 TRANSLATIONS: dict[str, dict[str, str]] = {

@@ -22,6 +22,7 @@ DEFAULT_QUERIES = (
 )
 CHILD_PYTHON = os.environ.get("MONITOR_CHILD_PYTHON", sys.executable)
 INCLUDE_QUERY_TEXT = os.environ.get("LANGSMITH_INCLUDE_QUERY_TEXT", "").lower() in {"1", "true", "yes"}
+MONITOR_ACCEPTANCE_MODE = os.environ.get("MEMORY_MONITOR_ACCEPTANCE_MODE", "fast")
 
 
 def query_identity(query: str) -> dict:
@@ -53,7 +54,10 @@ def run_json_command(command: list[str], timeout: int = 180) -> dict:
 
 
 def collect_snapshot(queries: tuple[str, ...]) -> dict:
-    acceptance = run_json_command([CHILD_PYTHON, str(SCRIPT_DIR / "sidecar_acceptance_check.py")], timeout=300)
+    acceptance = run_json_command(
+        [CHILD_PYTHON, str(SCRIPT_DIR / "sidecar_acceptance_check.py"), "--mode", MONITOR_ACCEPTANCE_MODE],
+        timeout=300,
+    )
     storage_cross_check = None
     cross_check_script = SCRIPT_DIR / "memory_storage_cross_check.py"
     if cross_check_script.exists():
@@ -129,6 +133,7 @@ def sanitize_acceptance(acceptance: dict) -> dict:
                 "live_hindsight_results": row.get("live_hindsight_results"),
                 "knowledge_hit": row.get("knowledge_hit"),
                 "top_source_sets": row.get("top_sources") or [],
+                "timings": row.get("timings") or {},
             }
         )
         sanitized_recalls.append(out)
@@ -138,7 +143,9 @@ def sanitize_acceptance(acceptance: dict) -> dict:
         "stderr_present": bool(acceptance.get("stderr")),
         "command": _safe_command(acceptance.get("command") or []),
         "ok": payload.get("ok"),
+        "mode": payload.get("mode"),
         "error_count": len(errors),
+        "reason_buckets": payload.get("reason_buckets") or {},
         "error_categories": sorted({str(error).split(":", 1)[0] for error in errors})[:10],
         "guardian": payload.get("guardian") or {},
         "recalls": sanitized_recalls,

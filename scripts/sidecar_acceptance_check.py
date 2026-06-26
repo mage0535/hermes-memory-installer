@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from recall_samples import DEFAULT_SAMPLE_CASES, evaluate_recall_samples
@@ -41,17 +42,24 @@ DEFAULT_EXTRA_QUERIES = [
     "deployment script workflow",
     "open source automation tools",
 ]
+FAST_QUERIES = [
+    "模型用量",
+    "recent sessions",
+]
 OPTIONAL_SAMPLE_QUERIES = {
     case.query for case in DEFAULT_SAMPLE_CASES if not case.required_for_acceptance
 }
 
 
-def build_queries() -> list[str]:
+def build_queries(mode: str = "full") -> list[str]:
     configured = [
         part.strip()
         for part in os.environ.get("MEMORY_ACCEPTANCE_EXTRA_QUERIES", "").replace("\n", ",").split(",")
     ]
-    ordered = [case.query for case in DEFAULT_SAMPLE_CASES] + DEFAULT_EXTRA_QUERIES + configured
+    if mode == "fast":
+        ordered = FAST_QUERIES + configured
+    else:
+        ordered = [case.query for case in DEFAULT_SAMPLE_CASES] + DEFAULT_EXTRA_QUERIES + configured
     seen = set()
     queries = []
     for query in ordered:
@@ -62,12 +70,19 @@ def build_queries() -> list[str]:
     return queries
 
 
-def run_recall_checks() -> list[dict]:
+def run_recall_checks(mode: str = "full") -> list[dict]:
     rows = []
-    for query in build_queries():
+    for query in build_queries(mode):
+        started = time.perf_counter()
+        l2_started = time.perf_counter()
         l2 = injector.get_l2(query, top=5)
+        l2_elapsed = round(time.perf_counter() - l2_started, 3)
+        l3_started = time.perf_counter()
         l3, live_used, live_count = injector.get_l3(query, top=5)
+        l3_elapsed = round(time.perf_counter() - l3_started, 3)
+        fusion_started = time.perf_counter()
         fused = injector.rrf_fuse([l2, l3], query)
+        fusion_elapsed = round(time.perf_counter() - fusion_started, 3)
         knowledge_rows = [item for item in fused if "knowledge" in item.get("sources", [])]
         rows.append(
             {
@@ -81,6 +96,12 @@ def run_recall_checks() -> list[dict]:
                 "knowledge_top_title": knowledge_rows[0]["data"].get("title") if knowledge_rows else None,
                 "top_titles": [item["data"].get("title") for item in fused[:3]],
                 "top_sources": [item.get("sources") for item in fused[:3]],
+                "timings": {
+                    "l2_s": l2_elapsed,
+                    "l3_s": l3_elapsed,
+                    "fusion_s": fusion_elapsed,
+                    "total_s": round(time.perf_counter() - started, 3),
+                },
             }
         )
     return rows
@@ -96,7 +117,7 @@ def _flatten_top_sources(row: dict) -> list[str]:
     return flattened
 
 
-def evaluate_payload(payload: dict) -> tuple[bool, list[str]]:
+def evaluate_payload(payload: dict, mode: str = "full") -> tuple[bool, list[str]]:
     errors = []
     guardian_status = payload.get("guardian") or {}
     if guardian_status.get("level") == "critical":
@@ -117,9 +138,10 @@ def evaluate_payload(payload: dict) -> tuple[bool, list[str]]:
         if not row.get("top_titles"):
             errors.append(f"{query}: fused recall returned no top titles")
 
-    sample_ok, sample_errors = evaluate_recall_samples(payload, DEFAULT_SAMPLE_CASES)
-    if not sample_ok:
-        errors.extend(sample_errors)
+    if mode == "full":
+        sample_ok, sample_errors = evaluate_recall_samples(payload, DEFAULT_SAMPLE_CASES)
+        if not sample_ok:
+            errors.extend(sample_errors)
 
     for row in recalls:
         query = row.get("query") or "<unknown>"
@@ -160,7 +182,20 @@ def validate_runtime_config() -> list[str]:
     return []
 
 
-def main() -> int:
+def collect_recall_checks(mode: str) -> list[dict]:
+    try:
+        return run_recall_checks(mode)
+    except TypeError:
+        return run_recall_checks()
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["fast", "full"], default=os.environ.get("MEMORY_ACCEPTANCE_MODE", "full"))
+    args = parser.parse_args([] if argv is None else argv)
+
     config_errors = validate_runtime_config()
     if config_errors:
         print(json.dumps({"ok": False, "errors": config_errors}, ensure_ascii=False, indent=2))
@@ -180,9 +215,10 @@ def main() -> int:
             "usage_pct": guardian_status.get("usage_pct"),
             "level": guardian_status.get("level"),
         },
-        "recalls": run_recall_checks(),
+        "mode": args.mode,
+        "recalls": collect_recall_checks(args.mode),
     }
-    ok, errors = evaluate_payload(payload)
+    ok, errors = evaluate_payload(payload, args.mode)
     payload["ok"] = ok
     payload["errors"] = errors
     payload["reason_buckets"] = bucket_acceptance_errors(errors)
@@ -191,4 +227,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

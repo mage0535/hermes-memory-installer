@@ -64,19 +64,23 @@ def classify_health(health: dict, effects: dict | None = None) -> list[dict]:
     stale = int(health.get("stale_pages") or 0)
     missing = int(health.get("missing_embeddings") or 0)
     orphans = int(health.get("orphan_pages") or 0)
+    actual_orphans = int(health.get("orphan_pages_actual") or 0)
     items = []
     if stale:
         code = "stale_embeddings_or_pages"
+        severity = "degraded"
         recommendation = "gbrain embed --stale"
         if effects and effects.get("embed_stale_found_chunks") == 0:
             code = "stale_health_counter_not_embedding_stale"
+            severity = "info"
             recommendation = "classify stale pages or fix gbrain health accounting"
         if effects and effects.get("reindex_code_failures"):
+            severity = "degraded"
             recommendation = "fix code page metadata, then rerun gbrain reindex-code --yes"
         items.append(
             {
                 "code": code,
-                "severity": "degraded",
+                "severity": severity,
                 "count": stale,
                 "recommended_action": recommendation,
             }
@@ -90,16 +94,31 @@ def classify_health(health: dict, effects: dict | None = None) -> list[dict]:
                 "recommended_action": "gbrain embed --all",
             }
         )
-    if orphans:
+    if actual_orphans > 0:
         items.append(
             {
-                "code": "reported_orphans",
+                "code": "actual_orphans",
                 "severity": "degraded",
+                "count": actual_orphans,
+                "recommended_action": "run gbrain deorphan wrapper",
+            }
+        )
+    elif orphans:
+        items.append(
+            {
+                "code": "reported_orphans_counter_discrepancy",
+                "severity": "info",
                 "count": orphans,
-                "recommended_action": "gbrain orphans --json and deorphan wrapper",
+                "recommended_action": "treat as gbrain health-panel counter discrepancy",
             }
         )
     return items
+
+
+def actual_orphan_count() -> int | None:
+    result = run(["gbrain", "orphans", "--count"], timeout=60)
+    match = re.search(r"(\d+)", (result.get("stdout") or "") + (result.get("stderr") or ""))
+    return int(match.group(1)) if match else None
 
 
 def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> dict:
@@ -117,9 +136,13 @@ def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> d
 
     after_cmd = run(["gbrain", "health"], timeout=60)
     after = parse_health(after_cmd["stdout"] + after_cmd["stderr"])
+    actual_orphans = actual_orphan_count()
+    if actual_orphans is not None:
+        after["orphan_pages_actual"] = actual_orphans
     effects = action_summary(actions, before, after)
     classifications = classify_health(after, effects)
-    status = "healthy" if not classifications else "degraded"
+    actionable = [item for item in classifications if item.get("severity") in {"action-needed", "degraded"}]
+    status = "healthy" if not actionable else "degraded"
     if any(item["severity"] == "action-needed" for item in classifications):
         status = "action-needed"
 
