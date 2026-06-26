@@ -1646,3 +1646,33 @@ Next recommended enhancements:
 3. Add signed release artifacts or checksums for installer files.
 4. Add an optional webhook replay command for dead-letter rows after external service recovery.
 5. Add a gbrain upstream issue/PR once the target repository contribution path is confirmed.
+
+## 24. Execution Report - Release Check CI Stabilization
+
+Date: 2026-06-26
+
+Issue found:
+
+- The new GitHub Actions `release-check` workflow initially failed on Linux even though local Windows tests passed.
+- Root cause: several Linux-sensitive compatibility fixes existed in the working tree/runtime but had not been included in the previous release-check commit.
+
+Fix applied:
+
+- Added the current implementations of `session_to_gbrain.py`, `state_db_schema.py`, `knowledge_notes.py`, and `memory_maintenance_cycle.py` to version control.
+- These include YAML-safe gbrain frontmatter title rendering, stricter unrecoverable JSON handling, content-hash knowledge note signatures, optional-column schema fallbacks, and maintenance helper functions used by tests.
+
+Verification performed:
+
+- Local tests: `148 passed, 2 skipped`.
+- Server compile and public repo audit passed.
+- GitHub Actions `release-check` passed on commit `f51dd9d`.
+- Production drift after commit: `healthy`.
+- Production alert queue after commit: `healthy`.
+- Production fast acceptance: `ok=true`.
+
+Next recommended enhancements:
+
+1. Add a dedicated release status badge to README after observing the workflow for several pushes.
+2. Add an OpenMetrics exporter so dashboard data can be scraped without HTML parsing.
+3. Add dead-letter replay tooling for recovered webhook destinations.
+4. Add a small synthetic recall benchmark dataset to catch cross-platform retrieval regressions earlier.
