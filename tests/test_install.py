@@ -38,16 +38,26 @@ def test_supported_script_set_covers_runtime_and_cli_utilities():
         "tiered_context_injector.py",
         "archive_sessions.py",
         "auto_session_summary.py",
+        "gbrain_deorphan_index.py",
         "memory_observability_report.py",
+        "memory_storage_cross_check.py",
         "state_db_schema.py",
         "knowledge_notes.py",
         "recall_samples.py",
         "langsmith_monitor.py",
         "langsmith_task_wrapper.py",
+        "langsmith_trend_report.py",
     }
     assert expected.issubset(set(install.SUPPORTED_SCRIPT_NAMES))
     assert "memory_watermark.py" not in install.SUPPORTED_SCRIPT_NAMES
     assert "memory_snapshot_backup.py" not in install.SUPPORTED_SCRIPT_NAMES
+
+
+def test_storage_cross_check_defaults_to_hermes_home():
+    content = (REPO / "scripts" / "memory_storage_cross_check.py").read_text(encoding="utf-8")
+
+    assert 'Path.home() / ".hermes"' in content
+    assert "AGENT_HOME/HERMES_HOME not set" in content
 
 
 def test_embedding_catalog_has_recommended_default():

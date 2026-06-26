@@ -6,8 +6,10 @@ Hot Memory 水位探测器 — 读取 MEMORY.md/USER.md
 import os, re, json, math
 from pathlib import Path
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", os.environ.get("AGENT_HOME", str(Path.home() / ".agent"))))
-MEMORY_DIR = HERMES_HOME / "memories"
+AGENT_HOME = Path(
+    os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))
+).expanduser()
+MEMORY_DIR = AGENT_HOME / "memories"
 
 MEMORY_LIMIT = 20000
 USER_LIMIT = 12000

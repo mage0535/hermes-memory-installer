@@ -378,6 +378,22 @@ def test_archive_sessions_does_not_advance_watermark_when_publish_fails(tmp_path
         conn.close()
 
 
+def test_publish_page_with_retry_handles_transient_failure(monkeypatch):
+    attempts = {"count": 0}
+
+    def flaky_publish(page):
+        attempts["count"] += 1
+        return attempts["count"] > 1
+
+    monkeypatch.setattr(archive_sessions, "publish_page", flaky_publish)
+    monkeypatch.setattr(archive_sessions.time, "sleep", lambda _: None)
+
+    ok = archive_sessions.publish_page_with_retry({"slug": "demo"}, retries=1, delay=0)
+
+    assert ok is True
+    assert attempts["count"] == 2
+
+
 def test_archive_cursor_does_not_skip_sessions_with_same_timestamp(tmp_path: Path, monkeypatch):
     db_path = tmp_path / "state.db"
     conn = sqlite3.connect(str(db_path))

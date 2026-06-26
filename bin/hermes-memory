@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import py_compile
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -38,6 +41,32 @@ CORE_DEPLOY_SCRIPTS = [
     "langsmith_task_wrapper.py",
     "langsmith_trend_report.py",
 ]
+REQUIRED_REPO_FILES = [
+    "README.md",
+    "README_CN.md",
+    "ARCHITECTURE.md",
+    "ARCHITECTURE_CN.md",
+    "MANUAL_INSTALL.md",
+    "LICENSE",
+    "install.sh",
+    "install_cli.sh",
+    "installer/install.py",
+    "bin/hermes-memory",
+]
+TEXT_SUFFIXES = {".py", ".md", ".sh", ".yaml", ".yml", ".json", ".j2"}
+TEXT_SCAN_EXCLUDED_PARTS = {".git", ".pytest_cache", "__pycache__", ".benchmarks"}
+SECRET_PATTERNS = {
+    "github_pat": r"github_pat_[A-Za-z0-9_]+",
+    "ghp": r"\bghp_[A-Za-z0-9]+\b",
+    "openai_sk": r"\bsk-[A-Za-z0-9]{20,}\b",
+    "langsmith_key": r"\blsv2_[A-Za-z0-9_]+\b",
+    "env_openai_api_key": r"OPENAI_API_KEY\s*=",
+    "env_langsmith_api_key": r"LANGSMITH_API_KEY\s*=",
+}
+PRIVATE_PATH_PATTERNS = {
+    "root_hermes": r"/root/\." + r"hermes",
+    "root_repo": r"/root/" + r"hermes-memory-installer",
+}
 
 
 def run_script(script_name: str) -> int:
@@ -130,6 +159,71 @@ def run_capture(cmd: list[str], timeout: int = 10) -> tuple[int, str]:
     return result.returncode, (result.stdout + result.stderr).strip()
 
 
+def iter_repo_text_files(repo_root: Path):
+    for path in repo_root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(repo_root)
+        if any(part in TEXT_SCAN_EXCLUDED_PARTS for part in rel.parts):
+            continue
+        if "tests" in rel.parts:
+            continue
+        if path.suffix.lower() not in TEXT_SUFFIXES:
+            continue
+        yield path
+
+
+def pattern_hits(content: str, patterns: dict[str, str]) -> list[str]:
+    hits = []
+    for name, pattern in patterns.items():
+        if re.search(pattern, content):
+            hits.append(name)
+    return hits
+
+
+def build_repo_audit(repo_root: Path) -> dict:
+    missing_required_files = [path for path in REQUIRED_REPO_FILES if not (repo_root / path).exists()]
+    private_path_refs = []
+    secret_like_refs = []
+    scanned_files = 0
+
+    for path in iter_repo_text_files(repo_root):
+        scanned_files += 1
+        rel = str(path.relative_to(repo_root))
+        content = path.read_text(encoding="utf-8", errors="replace")
+        private_hits = pattern_hits(content, PRIVATE_PATH_PATTERNS)
+        if private_hits:
+            private_path_refs.append({"path": rel, "matches": private_hits})
+        secret_hits = pattern_hits(content, SECRET_PATTERNS)
+        if secret_hits:
+            secret_like_refs.append({"path": rel, "matches": secret_hits})
+
+    compile_failures = []
+    compile_targets = [
+        repo_root / "installer" / "install.py",
+        repo_root / "installer" / "check_env.py",
+        repo_root / "installer" / "config_patch.py",
+        repo_root / "bin" / "hermes-memory",
+    ]
+    compile_targets.extend(repo_root / "scripts" / name for name in CORE_DEPLOY_SCRIPTS)
+    for path in compile_targets:
+        try:
+            py_compile.compile(str(path), doraise=True)
+        except Exception as exc:
+            compile_failures.append({"path": str(path.relative_to(repo_root)), "error": str(exc)})
+
+    ok = not (missing_required_files or private_path_refs or secret_like_refs or compile_failures)
+    return {
+        "repo_root": str(repo_root),
+        "scanned_files": scanned_files,
+        "missing_required_files": missing_required_files,
+        "private_path_refs": private_path_refs,
+        "secret_like_refs": secret_like_refs,
+        "compile_failures": compile_failures,
+        "ok": ok,
+    }
+
+
 def build_deploy_audit(repo_root: Path) -> dict:
     repo_scripts_dir = repo_root / "scripts"
     script_rows = []
@@ -182,6 +276,49 @@ def build_deploy_audit(repo_root: Path) -> dict:
     }
 
 
+def detect_wrapper_mode(wrapper_text: str) -> str:
+    if not wrapper_text:
+        return "missing"
+    if "${AGENT_HOME:-" in wrapper_text and '"$@"' in wrapper_text:
+        return "env_default_safe"
+    if "export AGENT_HOME=" in wrapper_text and "${AGENT_HOME:-" not in wrapper_text:
+        return "hardcoded_env"
+    return "custom"
+
+
+def build_manifest(repo_root: Path) -> dict:
+    audit = build_deploy_audit(repo_root)
+    install_profile = None
+    if PROFILE_PATH.exists():
+        try:
+            install_profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            install_profile = {"error": "unreadable_install_profile"}
+
+    wrapper_path = Path("/usr/local/bin/hermes-memory")
+    wrapper_text = ""
+    if wrapper_path.exists():
+        try:
+            wrapper_text = wrapper_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            wrapper_text = ""
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "agent_home": audit["agent_home"],
+        "scripts_dir": audit["scripts_dir"],
+        "repo_root": audit["repo_root"],
+        "wrapper": {
+            "path": str(wrapper_path),
+            "exists": wrapper_path.exists(),
+            "sha256": sha256_file(wrapper_path),
+            "mode": detect_wrapper_mode(wrapper_text),
+        },
+        "install_profile": install_profile,
+        "deploy_audit": audit,
+    }
+
+
 def cmd_audit_deploy(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).expanduser() if args.repo_root else REPO_ROOT
     audit = build_deploy_audit(repo_root)
@@ -200,6 +337,38 @@ def cmd_audit_deploy(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def cmd_audit_repo(args: argparse.Namespace) -> int:
+    repo_root = Path(args.repo_root).expanduser() if args.repo_root else REPO_ROOT
+    audit = build_repo_audit(repo_root)
+    if args.format == "json":
+        print(json.dumps(audit, ensure_ascii=False, indent=2))
+    else:
+        print(f"Repo root: {audit['repo_root']}")
+        print(f"Scanned files: {audit['scanned_files']}")
+        print(f"Missing required files: {len(audit['missing_required_files'])}")
+        print(f"Private path refs: {len(audit['private_path_refs'])}")
+        print(f"Secret-like refs: {len(audit['secret_like_refs'])}")
+        print(f"Compile failures: {len(audit['compile_failures'])}")
+    return 0 if audit["ok"] else 1
+
+
+def cmd_manifest(args: argparse.Namespace) -> int:
+    repo_root = Path(args.repo_root).expanduser() if args.repo_root else REPO_ROOT
+    manifest = build_manifest(repo_root)
+    if args.format == "json":
+        print(json.dumps(manifest, ensure_ascii=False, indent=2))
+    else:
+        deploy = manifest["deploy_audit"]
+        wrapper = manifest["wrapper"]
+        print(f"Agent home: {manifest['agent_home']}")
+        print(f"Scripts dir: {manifest['scripts_dir']}")
+        print(f"Wrapper mode: {wrapper['mode']}")
+        print(f"Missing scripts: {len(deploy['missing_scripts'])}")
+        print(f"Mismatched scripts: {len(deploy['mismatched_scripts'])}")
+        print(f"Cron entries: {len(deploy['relevant_cron'])}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.5")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -215,6 +384,12 @@ def main() -> int:
     audit = sub.add_parser("audit-deploy", help="Audit deployed sidecar scripts, cron, and timers")
     audit.add_argument("--repo-root", help="Repository root to compare deployed scripts against")
     audit.add_argument("--format", choices=["json", "text"], default="json")
+    repo_audit = sub.add_parser("audit-repo", help="Audit repository hygiene for public release safety")
+    repo_audit.add_argument("--repo-root", help="Repository root to scan")
+    repo_audit.add_argument("--format", choices=["json", "text"], default="json")
+    manifest = sub.add_parser("manifest", help="Render a deploy manifest for the current runtime")
+    manifest.add_argument("--repo-root", help="Repository root to compare deployed scripts against")
+    manifest.add_argument("--format", choices=["json", "text"], default="json")
 
     args = parser.parse_args()
     if args.command == "doctor":
@@ -231,6 +406,10 @@ def main() -> int:
         return cmd_report(args)
     if args.command == "audit-deploy":
         return cmd_audit_deploy(args)
+    if args.command == "audit-repo":
+        return cmd_audit_repo(args)
+    if args.command == "manifest":
+        return cmd_manifest(args)
     return 1
 
 

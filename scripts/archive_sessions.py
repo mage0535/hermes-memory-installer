@@ -15,6 +15,7 @@ import json
 import os
 import sqlite3
 import sys
+import time
 
 from session_to_gbrain import ensure_gbrain_page
 from state_db_schema import detect_state_schema, sql_expr
@@ -213,7 +214,24 @@ def publish_page(page):
     )
 
 
-def publish_sessions(conn, sessions, publisher=publish_page):
+def publish_page_with_retry(page, retries=1, delay=2.0):
+    """Retry once on transient gbrain publish failure before declaring failure."""
+    last_exc = None
+    for attempt in range(retries + 1):
+        try:
+            if publish_page(page):
+                return True
+        except Exception as exc:
+            last_exc = exc
+            sys.stderr.write(f"publish_page attempt {attempt + 1} failed: {exc}\n")
+        if attempt < retries:
+            time.sleep(delay)
+    if last_exc is not None:
+        sys.stderr.write(f"publish_page gave up after {retries + 1} attempts: {last_exc}\n")
+    return False
+
+
+def publish_sessions(conn, sessions, publisher=publish_page_with_retry):
     published = []
     max_ts = 0.0
     for session in sessions:

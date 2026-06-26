@@ -32,6 +32,17 @@ def test_expected_project_files_exist():
         assert path.exists(), f"Missing required file: {path}"
 
 
+def test_cli_exposes_deploy_audit_command():
+    content = (REPO / "bin" / "hermes-memory").read_text(encoding="utf-8")
+
+    assert "audit-deploy" in content
+    assert "audit-repo" in content
+    assert "manifest" in content
+    assert "langsmith_uses_gray_path" in content
+    assert "gbrain_deorphan_scheduled" in content
+    assert "memory-guardian.timer" in content
+
+
 def test_supported_scripts_compile():
     for name in install.SUPPORTED_SCRIPT_NAMES:
         with tempfile.NamedTemporaryFile(suffix=".pyc", delete=False) as tmp:
@@ -63,6 +74,46 @@ def test_repository_defaults_do_not_depend_on_root_hermes_path():
         content = path.read_text(encoding="utf-8")
         assert "/root/.hermes" not in content
         assert "/usr/local/bin/gbrain" not in content
+
+
+def test_repo_audit_command_passes_for_current_repository():
+    import json
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, str(REPO / "bin" / "hermes-memory"), "audit-repo", "--format", "json"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    audit = json.loads(result.stdout)
+
+    assert audit["ok"] is True
+    assert audit["missing_required_files"] == []
+    assert audit["private_path_refs"] == []
+    assert audit["secret_like_refs"] == []
+    assert audit["compile_failures"] == []
+
+
+def test_manifest_command_emits_expected_json(tmp_path: Path, monkeypatch):
+    import json
+    import subprocess
+
+    agent_home = tmp_path / "agent-home"
+    monkeypatch.setenv("AGENT_HOME", str(agent_home))
+
+    result = subprocess.run(
+        [sys.executable, str(REPO / "bin" / "hermes-memory"), "manifest", "--format", "json"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert payload["agent_home"] == str(agent_home)
+    assert payload["wrapper"]["mode"] in {"missing", "custom", "hardcoded_env", "env_default_safe"}
+    assert "deploy_audit" in payload
+    assert "generated_at" in payload
 
 
 def test_public_repository_does_not_contain_private_server_paths():
@@ -171,11 +222,16 @@ def test_legacy_runtime_helpers_respect_agent_home_env(tmp_path: Path, monkeypat
     memory_guard = load_module("memory_guard_test", REPO / "scripts" / "memory_guard.py")
     memory_prewrite_guard = load_module("memory_prewrite_guard_test", REPO / "scripts" / "memory_prewrite_guard.py")
     sync_embeddings = load_module("sync_embeddings_test", REPO / "scripts" / "sync_embeddings.py")
+    memory_watermark = load_module("memory_watermark_test", REPO / "scripts" / "memory_watermark.py")
+    memory_lifecycle = load_module("memory_lifecycle_test", REPO / "scripts" / "memory_lifecycle.py")
 
     assert memory_guard.MEMORY_FILE == agent_home / "memory.json"
     assert memory_prewrite_guard.MEMORY_FILE == agent_home / "memory.json"
     assert sync_embeddings.STATE_DB == agent_home / "state.db"
     assert sync_embeddings.SEMANTICS_DB == agent_home / "semantics.db"
+    assert memory_watermark.MEMORY_DIR == agent_home / "memories"
+    assert memory_lifecycle.STATE_DB == agent_home / "state.db"
+    assert memory_lifecycle.GBRAIN_DB == agent_home / "gbrain" / "brain.db"
 
 
 def test_runtime_surfaces_do_not_contain_common_mojibake_markers():
