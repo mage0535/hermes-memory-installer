@@ -23,6 +23,11 @@ from memory_family_registry import active_focus_profiles
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
 HINDSIGHT_BANK = os.environ.get("HINDSIGHT_BANK", "hermes")
 HINDSIGHT_URL = os.environ.get("HINDSIGHT_BASE_URL", "http://127.0.0.1:8890") + f"/v1/default/banks/{HINDSIGHT_BANK}"
+HINDSIGHT_AUTH_TOKEN = (
+    os.environ.get("MEMORY_HINDSIGHT_TOKEN")
+    or os.environ.get("HINDSIGHT_AUTH_TOKEN")
+    or ""
+)
 DEFAULT_MEMORY_LIMIT = 20000  # Default Hindsight node budget for multi-agent installs
 WARN = 0.75       # 75% — 开始分类预备
 ACTION = 0.85     # 85% — 执行转移+压缩
@@ -132,8 +137,12 @@ MEMORY_LIMIT = resolve_memory_limit()
 def hs(method, path, body=None, timeout=10):
     url = f"{HINDSIGHT_URL}{path}"
     data = json.dumps(body).encode() if body else None
+    headers = {'Content-Type': 'application/json'} if data else {}
+    if HINDSIGHT_AUTH_TOKEN:
+        headers["Authorization"] = f"Bearer {HINDSIGHT_AUTH_TOKEN}"
+        headers["X-Hindsight-Token"] = HINDSIGHT_AUTH_TOKEN
     req = Request(url, data=data, method=method,
-                  headers={'Content-Type':'application/json'} if data else {})
+                  headers=headers)
     try:
         with urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode())

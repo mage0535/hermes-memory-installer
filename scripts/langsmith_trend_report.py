@@ -14,6 +14,7 @@ from typing import Any
 
 PROJECT_NAME = os.environ.get("LANGSMITH_PROJECT", "hermes-memory-installer")
 DEFAULT_LAG_THRESHOLD_S = int(os.environ.get("MEMORY_LAG_WARN_THRESHOLD_S", "3600"))
+RECENT_MONITOR_WINDOW = max(1, int(os.environ.get("MEMORY_TREND_RECENT_MONITOR_WINDOW", "5")))
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
 DEFAULT_LOCAL_MONITOR = AGENT_HOME / "metrics" / "langsmith-monitor-latest.json"
 
@@ -186,9 +187,20 @@ def monitor_metrics(runs: list[Any]) -> dict:
                 if isinstance(timings.get(key), (int, float)):
                     recall_stage_timings[key].append(float(timings[key]))
 
+    recent_acceptance = acceptance_ok[:RECENT_MONITOR_WINDOW]
+    weak_recalls = []
+    latest_acceptance = acceptance_payload_from_monitor(output_payload(monitor_runs[0])) if monitor_runs else {}
+    for row in latest_acceptance.get("recalls", []) if isinstance(latest_acceptance.get("recalls"), list) else []:
+        if not isinstance(row, dict):
+            continue
+        if int(row.get("l2_count") or 0) <= 0 and int(row.get("l3_count") or 0) <= 0:
+            weak_recalls.append({"intent": row.get("intent"), "reason": "no_candidates"})
+
     return {
         "count": len(monitor_runs),
         "acceptance_ok_rate": round(sum(acceptance_ok) / len(acceptance_ok), 3) if acceptance_ok else None,
+        "recent_acceptance_ok_rate": round(sum(recent_acceptance) / len(recent_acceptance), 3) if recent_acceptance else None,
+        "recent_window": len(recent_acceptance),
         "acceptance_latency": summarize_values(acceptance_elapsed),
         "recall_latency": summarize_values(recall_elapsed),
         "latest_guardian_level": latest_guardian.get("level"),
@@ -200,6 +212,7 @@ def monitor_metrics(runs: list[Any]) -> dict:
         "latest_gbrain_orphans": latest_gbrain.get("orphan_pages_actual", latest_gbrain.get("orphan_pages")),
         "failure_reasons": dict(sorted(failure_reasons.items())),
         "recent_failures": recent_failures[:5],
+        "latest_weak_recalls": weak_recalls[:10],
         "lag": lag_summary(lag_values_from_monitor_runs(monitor_runs)),
         "acceptance_recall_stage_latency": {
             key: summarize_values(values) for key, values in recall_stage_timings.items()

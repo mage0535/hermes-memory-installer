@@ -1443,3 +1443,76 @@ These are now product/quality enhancements, not blockers for complete operationa
 - Fast acceptance: `ok=true`, recall timings about `1.9s + 0.1s`.
 - Full acceptance: `ok=true`, `reason_buckets={}`.
 - Health summary: `status=healthy`, `ok=true`; only historical acceptance failures remain as `info`.
+
+## 20. Execution Report - Performance And Signal Completion Batch
+
+Completed on 2026-06-26 against the live production runtime.
+
+### 20.1 Implemented scope
+
+1. Fast acceptance performance hardening
+   - Fast mode now skips L3/live fallback and validates lightweight L2 runtime recall only.
+   - Full mode still runs the complete recall regression suite.
+   - Latest fast timings: about `1.246s` and `0.024s` per query.
+
+2. Full acceptance retained
+   - `hermes-memory acceptance --mode full` remains the release confidence gate.
+   - Latest full acceptance: `ok=true`, `reason_buckets={}`.
+
+3. Recent trend window
+   - `langsmith_trend_report.py` now reports both historical `acceptance_ok_rate` and `recent_acceptance_ok_rate`.
+   - Alerting now treats historical failures as `info` when the recent window is clean.
+   - Latest recent acceptance rate: `1.0`.
+
+4. Alert sink enhancement
+   - `alert_queue.py` can optionally POST action-needed summaries to `MEMORY_ALERT_WEBHOOK_URL`.
+   - No webhook is configured by default; local JSONL remains the durable queue.
+
+5. Hindsight client token header support
+   - Sidecar clients now send `Authorization: Bearer <token>` and `X-Hindsight-Token` when `MEMORY_HINDSIGHT_TOKEN` or `HINDSIGHT_AUTH_TOKEN` is set.
+   - Current production remains localhost-only, so token absence is still `info`, not a blocker.
+
+6. Recall quality signal
+   - Trend now exposes latest weak recall families from acceptance payloads.
+   - Current latest monitor has no action-needed weak recall signal.
+
+7. Regression coverage
+   - Added tests for fast-mode L3 skip, recent acceptance trend rate, and alert queue historical-failure behavior.
+
+### 20.2 Verification evidence
+
+Local workstation:
+
+- `python -m pytest -q` -> `136 passed`
+- `python bin/hermes-memory audit-repo --format text` -> clean
+
+Production server:
+
+- `hermes-memory acceptance --mode fast` -> `ok=true`; per-query totals about `1.246s` and `0.024s`
+- `hermes-memory acceptance --mode full` -> `ok=true`, `reason_buckets={}`
+- LangSmith trend after refresh:
+  - `recent_acceptance_ok_rate=1.0`
+  - historical `acceptance_ok_rate=0.882`
+  - acceptance stage total p95 about `1.286s`
+- `health-summary-latest.json` -> `status=healthy`, `ok=true`
+- `audit-repo` -> private path refs `0`, secret-like refs `0`, compile failures `0`
+- `audit-deploy` -> missing scripts `0`, mismatched scripts `0`
+
+### 20.3 Updated complete-system assessment
+
+The system now meets the complete operational target:
+
+- current health is clean
+- fast monitoring is consistently lightweight
+- full release acceptance remains available and passing
+- historical failures no longer pollute current health status
+- Hindsight exposure is audited and token-ready
+- action-needed events can flow to a local queue and optional webhook
+- recall quality degradation has an explicit trend surface
+
+Remaining work is enhancement, not completion-blocking:
+
+1. Configure a real webhook destination if external notification is desired.
+2. Pursue gbrain upstream stale-page listing if a visible 10/10 health score is required.
+3. Add multi-agent profile isolation tests on non-Hermes agent homes.
+4. Build an operator dashboard over the metrics JSON artifacts.

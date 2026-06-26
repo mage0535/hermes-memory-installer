@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import importlib
+import json
 import os
 import sqlite3
 import sys
@@ -17,6 +18,7 @@ import memory_guardian as guardian
 import recall_samples
 import sidecar_acceptance_check as acceptance_check
 import tiered_context_injector as injector
+import alert_queue
 
 
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
@@ -362,6 +364,68 @@ def test_acceptance_error_buckets_group_operator_reasons():
         "knowledge_recall": 1,
         "recall_coverage": 1,
     }
+
+
+def test_fast_acceptance_skips_l3_slow_path(monkeypatch):
+    monkeypatch.setattr(
+        acceptance_check.injector,
+        "get_l2",
+        lambda query, top=5: [{"session_id": "s", "title": "T", "snippet": "S", "layer": "fts5", "score": 1.0}],
+    )
+
+    def fail_l3(*args, **kwargs):
+        raise AssertionError("fast acceptance must not call L3")
+
+    monkeypatch.setattr(acceptance_check.injector, "get_l3", fail_l3)
+    monkeypatch.setattr(
+        acceptance_check.injector,
+        "rrf_fuse",
+        lambda groups, query: [{"sources": ["fts5"], "data": {"title": "T"}}],
+    )
+
+    rows = acceptance_check.run_recall_checks("fast")
+
+    assert rows
+    assert all(row["l3_count"] == 0 for row in rows)
+    assert all(row["timings"]["l3_s"] == 0.0 for row in rows)
+
+
+def test_alert_queue_treats_historical_failures_as_info(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(
+        json.dumps({"status": "healthy", "reasons": []}),
+        encoding="utf-8",
+    )
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps(
+            {
+                "monitor": {
+                    "acceptance_ok_rate": 0.5,
+                    "recent_acceptance_ok_rate": 1.0,
+                    "failure_reasons": {"guardian": 1},
+                    "recent_failures": [],
+                    "lag": {"status": "healthy"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "hindsight-security-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+
+    status, alerts = alert_queue.build_alerts(metrics)
+
+    assert status == "healthy"
+    assert alerts == [
+        {
+            "captured_at": alerts[0]["captured_at"],
+            "source": "langsmith-trend",
+            "code": "historical_acceptance_failures",
+            "severity": "info",
+            "detail": {"acceptance_ok_rate": 0.5, "failure_reasons": {"guardian": 1}, "recent_failures": []},
+        }
+    ]
 
 
 def test_recall_sample_suite_enforces_intent_and_source_thresholds():

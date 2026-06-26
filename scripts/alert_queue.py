@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,20 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
     lag = trend.get("monitor", {}).get("lag", {})
     if lag.get("status") == "action-needed":
         alerts.append(alert("langsmith-trend", "hindsight_lag", "action-needed", lag))
+    recent_rate = trend.get("monitor", {}).get("recent_acceptance_ok_rate")
+    if recent_rate not in (None, 1.0):
+        alerts.append(
+            alert(
+                "langsmith-trend",
+                "recent_acceptance_failures",
+                "action-needed",
+                {
+                    "recent_acceptance_ok_rate": recent_rate,
+                    "recent_window": trend.get("monitor", {}).get("recent_window"),
+                    "recent_failures": trend.get("monitor", {}).get("recent_failures", []),
+                },
+            )
+        )
     if trend.get("monitor", {}).get("acceptance_ok_rate") not in (None, 1.0):
         alerts.append(
             alert(
@@ -93,11 +108,24 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
     return status, alerts
 
 
+def post_webhook(webhook_url: str, payload: dict) -> dict:
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        webhook_url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return {"status": response.status, "reason": response.reason}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--metrics-dir", default=str(METRICS_DIR))
     parser.add_argument("--alerts", default=str(DEFAULT_ALERTS))
     parser.add_argument("--status-output", default=str(DEFAULT_STATUS))
+    parser.add_argument("--webhook-url", default=os.environ.get("MEMORY_ALERT_WEBHOOK_URL", ""))
     args = parser.parse_args()
 
     metrics_dir = Path(args.metrics_dir).expanduser()
@@ -119,6 +147,14 @@ def main() -> int:
         with alerts_path.open("a", encoding="utf-8") as handle:
             for row in alerts:
                 handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    webhook = None
+    if args.webhook_url and any(row["severity"] == "action-needed" for row in alerts):
+        try:
+            webhook = post_webhook(args.webhook_url, payload)
+        except Exception as exc:
+            webhook = {"error": str(exc)}
+    payload["webhook"] = webhook
+    status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if status in {"healthy", "degraded"} else 1
 

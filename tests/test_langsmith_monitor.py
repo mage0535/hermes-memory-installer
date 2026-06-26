@@ -165,6 +165,7 @@ def test_langsmith_trend_report_extracts_structured_metrics_only():
     assert report["error_count"] == 1
     assert report["monitor"]["count"] == 3
     assert report["monitor"]["acceptance_ok_rate"] == 0.667
+    assert report["monitor"]["recent_acceptance_ok_rate"] == 0.667
     assert report["monitor"]["latest_gbrain_health_score"] == 8
     assert report["monitor"]["latest_guardian_usage_pct"] == 63
     assert report["monitor"]["failure_reasons"] == {"recall_coverage": 1}

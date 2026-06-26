@@ -77,9 +77,13 @@ def run_recall_checks(mode: str = "full") -> list[dict]:
         l2_started = time.perf_counter()
         l2 = injector.get_l2(query, top=5)
         l2_elapsed = round(time.perf_counter() - l2_started, 3)
-        l3_started = time.perf_counter()
-        l3, live_used, live_count = injector.get_l3(query, top=5)
-        l3_elapsed = round(time.perf_counter() - l3_started, 3)
+        if mode == "fast":
+            l3, live_used, live_count = [], False, 0
+            l3_elapsed = 0.0
+        else:
+            l3_started = time.perf_counter()
+            l3, live_used, live_count = injector.get_l3(query, top=5)
+            l3_elapsed = round(time.perf_counter() - l3_started, 3)
         fusion_started = time.perf_counter()
         fused = injector.rrf_fuse([l2, l3], query)
         fusion_elapsed = round(time.perf_counter() - fusion_started, 3)
