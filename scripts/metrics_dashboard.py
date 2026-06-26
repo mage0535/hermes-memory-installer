@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a static metrics dashboard from local sidecar health artifacts."""
+"""Render a Chinese operator dashboard from local sidecar health artifacts."""
 
 from __future__ import annotations
 
@@ -59,6 +59,14 @@ STATUS_LABELS = {
     "unreadable": "不可读",
 }
 
+SEVERITY_LABELS = {
+    "info": "信息",
+    "degraded": "需关注",
+    "warning": "警告",
+    "action-needed": "需处理",
+    "critical": "严重",
+}
+
 
 def load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -71,6 +79,34 @@ def load_json(path: Path) -> dict[str, Any]:
 
 def safe(value: Any) -> str:
     return html.escape(str(value), quote=True)
+
+
+def slugify(text: str) -> str:
+    return "".join(ch.lower() if ch.isalnum() else "-" for ch in text).strip("-")
+
+
+def localize_status(status: str) -> str:
+    return STATUS_LABELS.get(status, status)
+
+
+def localize_severity(severity: str) -> str:
+    return SEVERITY_LABELS.get(severity, severity)
+
+
+def display_artifact_name(name: str) -> str:
+    return ARTIFACT_LABELS.get(name, name)
+
+
+def detail_label(key: str) -> str:
+    return DETAIL_LABELS.get(key, key)
+
+
+def status_tone(status: str) -> str:
+    if status == "healthy":
+        return "tone-positive"
+    if status in {"degraded", "missing", "unknown"}:
+        return "tone-warn"
+    return "tone-critical"
 
 
 def percent(value: Any) -> str | None:
@@ -97,18 +133,6 @@ def format_forward_result(payload: Any) -> str | None:
     return "成功"
 
 
-def localize_status(status: str) -> str:
-    return STATUS_LABELS.get(status, status)
-
-
-def display_artifact_name(name: str) -> str:
-    return ARTIFACT_LABELS.get(name, name)
-
-
-def detail_label(key: str) -> str:
-    return DETAIL_LABELS.get(key, key)
-
-
 def format_detail_value(key: str, value: Any) -> str | None:
     if value is None:
         return None
@@ -125,17 +149,30 @@ def format_detail_value(key: str, value: Any) -> str | None:
     return str(value)
 
 
-def status_tone(status: str) -> str:
-    if status == "healthy":
-        return "tone-positive"
-    if status in {"degraded", "missing", "unknown"}:
-        return "tone-warn"
-    return "tone-critical"
+def infer_langsmith_status(payload: dict[str, Any]) -> str:
+    monitor = payload.get("monitor") if isinstance(payload.get("monitor"), dict) else {}
+    if payload.get("status"):
+        return str(payload["status"])
+    if not payload or payload.get("error"):
+        return "unknown"
+    lag_status = str((monitor.get("lag") or {}).get("status") or "").strip()
+    if lag_status in {"healthy", "degraded", "action-needed"}:
+        return lag_status
+    recent_rate = monitor.get("recent_acceptance_ok_rate")
+    if recent_rate in (None, 1.0):
+        return "healthy"
+    return "degraded"
 
 
 def summarize(name: str, payload: dict[str, Any]) -> dict[str, Any]:
-    status = payload.get("status") or ("healthy" if payload.get("ok") else "unknown")
-    summary: dict[str, Any] = {"name": name, "status": status, "ok": payload.get("ok") is True}
+    if name == "LangSmith Trend":
+        status = infer_langsmith_status(payload)
+        ok = status == "healthy"
+    else:
+        status = str(payload.get("status") or ("healthy" if payload.get("ok") else "unknown"))
+        ok = status == "healthy"
+
+    summary: dict[str, Any] = {"name": name, "status": status, "ok": ok}
     if name == "LangSmith Trend":
         monitor = payload.get("monitor", {})
         summary["details"] = {
@@ -187,46 +224,142 @@ def build_dashboard_payload(metrics_dir: Path) -> dict[str, Any]:
     }
 
 
+def issue_sections(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+    mappings = [
+        ("reasons", "异常原因"),
+        ("classifications", "分类详情"),
+        ("findings", "发现项"),
+        ("recent_failures", "最近失败"),
+        ("alerts", "告警详情"),
+    ]
+    for key, title in mappings:
+        value = payload.get(key)
+        if isinstance(value, list) and value:
+            sections.append({"title": title, "rows": value})
+
+    monitor = payload.get("monitor")
+    if isinstance(monitor, dict):
+        if isinstance(monitor.get("recent_failures"), list) and monitor["recent_failures"]:
+            sections.append({"title": "最近失败", "rows": monitor["recent_failures"]})
+        lag = monitor.get("lag")
+        if isinstance(lag, dict) and lag:
+            sections.append({"title": "延迟详情", "rows": [lag]})
+
+    upstream_gap = payload.get("upstream_gap")
+    if isinstance(upstream_gap, dict) and upstream_gap:
+        sections.append({"title": "上游缺口", "rows": [upstream_gap]})
+
+    last_forward = payload.get("last_forward")
+    if isinstance(last_forward, dict) and last_forward:
+        sections.append({"title": "最近转发原始结果", "rows": [last_forward]})
+    return sections
+
+
+def render_rows(rows: list[dict[str, Any]]) -> str:
+    cards = []
+    for row in rows:
+        severity = localize_severity(str(row.get("severity") or row.get("status") or "info"))
+        header = row.get("code") or row.get("run_name") or row.get("reason") or row.get("required_capability") or "详情"
+        body_lines = []
+        for key, value in row.items():
+            if key in {"code", "severity"}:
+                continue
+            if isinstance(value, (dict, list)):
+                value_text = json.dumps(value, ensure_ascii=False, indent=2)
+            else:
+                value_text = str(value)
+            body_lines.append(f"<tr><th>{safe(key)}</th><td>{safe(value_text)}</td></tr>")
+        cards.append(
+            f"""
+            <details class="detail-item">
+              <summary>
+                <span>{safe(str(header))}</span>
+                <span class="inline-pill">{safe(severity)}</span>
+              </summary>
+              <table>{''.join(body_lines) or '<tr><td>无</td></tr>'}</table>
+            </details>
+            """
+        )
+    return "".join(cards)
+
+
 def render_dashboard(metrics_dir: Path) -> str:
     captured_at = datetime.now(timezone.utc).isoformat()
-    cards = []
-    raw_blocks = []
+    payload = build_dashboard_payload(metrics_dir)
     status_counts = {"healthy": 0, "degraded": 0, "action-needed": 0, "missing": 0, "unknown": 0, "unreadable": 0}
-    for name, filename in ARTIFACTS.items():
-        payload = load_json(metrics_dir / filename)
-        summary = summarize(name, payload)
-        status_counts[summary["status"]] = status_counts.get(summary["status"], 0) + 1
+    cards = []
+    attention_items = []
+
+    for artifact in payload["artifacts"]:
+        name = artifact["name"]
+        filename = artifact["filename"]
+        raw = artifact["raw"]
+        summary = artifact["summary"]
+        status = summary["status"]
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+        if status != "healthy":
+            attention_items.append({"name": display_artifact_name(name), "status": localize_status(status), "filename": filename})
+
         detail_rows = "".join(
             f"<tr><th>{safe(detail_label(key))}</th><td>{safe(format_detail_value(key, value))}</td></tr>"
             for key, value in summary.get("details", {}).items()
             if format_detail_value(key, value) is not None
         )
-        state = safe(summary["status"])
-        status_label = safe(localize_status(summary["status"]))
-        artifact_label = safe(display_artifact_name(name))
+        sections = issue_sections(raw)
+        section_html = "".join(
+            f"<section class='issue-section'><h3>{safe(section['title'])}</h3>{render_rows(section['rows'])}</section>"
+            for section in sections
+        )
+        artifact_id = f"artifact-{slugify(name)}"
         cards.append(
             f"""
-            <section class="card status-{state}">
-              <div class="card-head">
+            <details id="{safe(artifact_id)}" class="card" {'open' if status != 'healthy' else ''}>
+              <summary class="card-head">
                 <div>
                   <p class="eyebrow">{safe(filename)}</p>
-                  <h2>{artifact_label}</h2>
+                  <h2>{safe(display_artifact_name(name))}</h2>
                 </div>
-                <span class="status-pill {status_tone(summary['status'])}">{status_label}</span>
+                <div class="summary-actions">
+                  <span class="status-pill {status_tone(status)}">{safe(localize_status(status))}</span>
+                  <span class="chevron">查看详情</span>
+                </div>
+              </summary>
+              <div class="card-body">
+                <table>{detail_rows or '<tr><td>无摘要信息</td></tr>'}</table>
+                {section_html}
+                <section class="issue-section">
+                  <h3>原始 JSON</h3>
+                  <pre>{safe(json.dumps(raw, ensure_ascii=False, indent=2))}</pre>
+                </section>
               </div>
-              <table>{detail_rows or '<tr><td>No details</td></tr>'}</table>
-            </section>
+            </details>
             """
         )
-        raw_blocks.append(
-            f"<details><summary>{artifact_label} · {safe(filename)}</summary><pre>{safe(json.dumps(payload, ensure_ascii=False, indent=2))}</pre></details>"
-        )
-    total_alerts = load_json(metrics_dir / ARTIFACTS["Health Summary"]).get("alert_count") or 0
+
+    health_raw = next((item["raw"] for item in payload["artifacts"] if item["name"] == "Health Summary"), {})
+    alerts = health_raw.get("alerts", []) if isinstance(health_raw.get("alerts"), list) else []
+    total_alerts = len(alerts)
+
     overall_status = "healthy"
     if status_counts.get("action-needed") or status_counts.get("unreadable"):
         overall_status = "action-needed"
     elif status_counts.get("degraded") or status_counts.get("missing") or status_counts.get("unknown"):
         overall_status = "degraded"
+
+    attention_html = render_rows(
+        [
+            {
+                "code": item["name"],
+                "severity": item["status"],
+                "artifact": item["filename"],
+            }
+            for item in attention_items
+        ]
+    )
+    alerts_html = render_rows(alerts) if alerts else "<p class='empty-state'>当前没有需要进一步展开的告警。</p>"
+
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -244,7 +377,6 @@ def render_dashboard(metrics_dir: Path) -> str:
       --text: #1b1f2a;
       --muted: #5d6475;
       --primary: #0b57d0;
-      --primary-soft: #d3e3fd;
       --positive: #137333;
       --positive-soft: #c4eed0;
       --warn: #b06000;
@@ -257,6 +389,7 @@ def render_dashboard(metrics_dir: Path) -> str:
       --radius-md: 18px;
     }}
     * {{ box-sizing: border-box; }}
+    html {{ scroll-behavior: smooth; }}
     body {{
       margin: 0;
       color: var(--text);
@@ -266,6 +399,7 @@ def render_dashboard(metrics_dir: Path) -> str:
         radial-gradient(circle at top right, rgba(66, 133, 244, 0.16), transparent 24rem),
         linear-gradient(180deg, var(--bg-accent), var(--bg));
     }}
+    a {{ color: inherit; text-decoration: none; }}
     main {{ max-width: 1280px; margin: 0 auto; padding: 28px 20px 72px; }}
     .hero {{
       background: linear-gradient(135deg, rgba(255,255,255,0.92), rgba(227, 239, 255, 0.86));
@@ -275,153 +409,61 @@ def render_dashboard(metrics_dir: Path) -> str:
       padding: 28px;
       backdrop-filter: blur(20px);
     }}
-    .hero-top {{
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      align-items: start;
-      flex-wrap: wrap;
+    .hero h1 {{ margin: 0; font-size: clamp(2rem, 5vw, 3.8rem); line-height: 1.02; letter-spacing: -0.05em; font-weight: 800; }}
+    .subtitle {{ margin: 14px 0 0; max-width: 62rem; color: var(--muted); font-size: 1rem; line-height: 1.7; }}
+    .hero-meta {{ display: inline-flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }}
+    .chip, .status-pill, .inline-pill {{
+      display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 8px 14px; font-size: .92rem; font-weight: 700;
     }}
-    .hero h1 {{
-      margin: 0;
-      font-size: clamp(2rem, 5vw, 3.8rem);
-      line-height: 1.02;
-      letter-spacing: -0.05em;
-      font-weight: 800;
-    }}
-    .subtitle {{
-      margin: 14px 0 0;
-      max-width: 62rem;
-      color: var(--muted);
-      font-size: 1rem;
-      line-height: 1.7;
-    }}
-    .hero-meta {{
-      display: inline-flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 18px;
-    }}
-    .chip, .status-pill {{
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      border-radius: 999px;
-      padding: 8px 14px;
-      font-size: .92rem;
-      font-weight: 700;
-      white-space: nowrap;
-    }}
-    .chip {{
-      background: rgba(255,255,255,0.8);
-      border: 1px solid var(--line);
-      color: var(--text);
-    }}
+    .chip {{ background: rgba(255,255,255,0.8); border: 1px solid var(--line); color: var(--text); }}
+    .inline-pill {{ padding: 6px 10px; font-size: .84rem; background: rgba(11, 87, 208, 0.08); color: var(--primary); }}
     .tone-positive {{ background: var(--positive-soft); color: var(--positive); }}
     .tone-warn {{ background: var(--warn-soft); color: var(--warn); }}
     .tone-critical {{ background: var(--critical-soft); color: var(--critical); }}
-    .summary-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
-      margin-top: 24px;
+    .summary-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-top: 24px; }}
+    .summary-link {{
+      background: var(--surface-strong); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px 18px 16px;
+      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06); display: block; transition: transform .2s ease, box-shadow .2s ease;
     }}
-    .summary-card {{
-      background: var(--surface-strong);
-      border: 1px solid var(--line);
-      border-radius: var(--radius-lg);
-      padding: 18px 18px 16px;
-      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
-    }}
-    .summary-card p {{
-      margin: 0 0 10px;
-      color: var(--muted);
-      font-size: .88rem;
-    }}
-    .summary-card strong {{
-      font-size: 2rem;
-      line-height: 1;
-      letter-spacing: -0.04em;
-    }}
-    .section-head {{
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: end;
-      margin: 34px 0 16px;
-      flex-wrap: wrap;
-    }}
-    .section-head h2 {{
-      margin: 0;
-      font-size: 1.25rem;
-      letter-spacing: -0.02em;
-    }}
-    .section-head p {{
-      margin: 0;
-      color: var(--muted);
-      font-size: .94rem;
-    }}
-    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }}
+    .summary-link:hover {{ transform: translateY(-2px); box-shadow: 0 10px 24px rgba(11, 87, 208, 0.1); }}
+    .summary-link p {{ margin: 0 0 10px; color: var(--muted); font-size: .88rem; }}
+    .summary-link strong {{ display: block; font-size: 2rem; line-height: 1; letter-spacing: -0.04em; }}
+    .summary-link span {{ display: block; margin-top: 8px; color: var(--primary); font-size: .9rem; font-weight: 700; }}
+    .section-head {{ display: flex; justify-content: space-between; gap: 12px; align-items: end; margin: 34px 0 16px; flex-wrap: wrap; }}
+    .section-head h2 {{ margin: 0; font-size: 1.25rem; letter-spacing: -0.02em; }}
+    .section-head p {{ margin: 0; color: var(--muted); font-size: .94rem; }}
+    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }}
     .card {{
-      background: var(--surface);
-      border: 1px solid rgba(255,255,255,0.7);
-      border-radius: var(--radius-lg);
-      padding: 20px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(18px);
-      transform: translateY(0);
-      transition: transform .22s ease, box-shadow .22s ease;
+      background: var(--surface); border: 1px solid rgba(255,255,255,0.7); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow); backdrop-filter: blur(18px); overflow: hidden;
     }}
-    .card:hover {{ transform: translateY(-2px); box-shadow: 0 14px 36px rgba(11, 87, 208, 0.16); }}
+    .card[open] {{ background: rgba(255, 255, 255, 0.92); }}
     .card-head {{
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: start;
-      margin-bottom: 16px;
+      list-style: none; display: flex; justify-content: space-between; gap: 12px; align-items: start; padding: 20px; cursor: pointer;
     }}
-    .eyebrow {{
-      margin: 0 0 8px;
-      color: var(--primary);
-      font-size: .78rem;
-      font-weight: 700;
-      letter-spacing: .04em;
-    }}
-    .card h2 {{
-      margin: 0;
-      font-size: 1.18rem;
-      line-height: 1.25;
-    }}
+    .card-head::-webkit-details-marker, .detail-item summary::-webkit-details-marker {{ display: none; }}
+    .summary-actions {{ display: flex; flex-direction: column; align-items: end; gap: 10px; }}
+    .chevron {{ color: var(--primary); font-size: .86rem; font-weight: 700; }}
+    .eyebrow {{ margin: 0 0 8px; color: var(--primary); font-size: .78rem; font-weight: 700; letter-spacing: .04em; }}
+    .card h2 {{ margin: 0; font-size: 1.18rem; line-height: 1.25; }}
+    .card-body {{ padding: 0 20px 20px; }}
     table {{ width: 100%; border-collapse: collapse; font-size: .94rem; }}
     th, td {{ text-align: left; border-top: 1px solid var(--line); padding: 10px 0; vertical-align: top; }}
     th {{ width: 42%; font-weight: 700; color: var(--muted); }}
     td {{ word-break: break-word; }}
-    .raw-blocks {{
-      display: grid;
-      gap: 14px;
-      margin-top: 18px;
+    .issue-section {{ margin-top: 18px; }}
+    .issue-section h3 {{ margin: 0 0 12px; font-size: 1rem; }}
+    .detail-item {{
+      background: rgba(255,255,255,0.68); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px 14px; margin-top: 10px;
     }}
-    details {{
-      background: rgba(255,255,255,0.7);
-      border: 1px solid var(--line);
-      border-radius: var(--radius-md);
-      padding: 14px 16px;
-      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-    }}
-    summary {{
-      cursor: pointer;
-      font-weight: 700;
-      color: var(--text);
+    .detail-item summary {{
+      cursor: pointer; display: flex; justify-content: space-between; gap: 10px; align-items: center; font-weight: 700;
     }}
     pre {{
-      overflow: auto;
-      white-space: pre-wrap;
-      font-size: .82rem;
-      color: #243044;
-      background: var(--surface-soft);
-      border-radius: 16px;
-      padding: 14px;
-      margin: 14px 0 0;
+      overflow: auto; white-space: pre-wrap; font-size: .82rem; color: #243044; background: var(--surface-soft); border-radius: 16px; padding: 14px; margin: 14px 0 0;
+    }}
+    .empty-state {{
+      margin: 0; padding: 18px; background: rgba(255,255,255,0.7); border-radius: var(--radius-md); border: 1px solid var(--line); color: var(--muted);
     }}
     @media (max-width: 720px) {{
       main {{ padding: 16px 14px 52px; }}
@@ -434,52 +476,50 @@ def render_dashboard(metrics_dir: Path) -> str:
 </head>
 <body>
   <main>
-    <section class="hero">
-      <div class="hero-top">
-        <div>
-          <h1>Hermes 记忆体仪表板</h1>
-          <p class="subtitle">集中查看运行漂移、验收趋势、gbrain 健康、安全审计和告警转发状态。这个页面只负责展示本地健康产物，不直接执行修复动作。</p>
-          <div class="hero-meta">
-            <span class="chip">生成时间：{safe(captured_at)}</span>
-            <span class="chip">指标目录：{safe(metrics_dir)}</span>
-            <span class="status-pill {status_tone(overall_status)}">整体状态：{safe(localize_status(overall_status))}</span>
-          </div>
-        </div>
+    <section class="hero" id="section-overview">
+      <h1>Hermes 记忆体仪表板</h1>
+      <p class="subtitle">集中查看运行漂移、验收趋势、gbrain 健康、安全审计和告警转发状态。页面支持点击下钻，直接看到异常原因、失败记录和原始告警内容。</p>
+      <div class="hero-meta">
+        <span class="chip">生成时间：{safe(captured_at)}</span>
+        <span class="chip">指标目录：{safe(metrics_dir)}</span>
+        <span class="status-pill {status_tone(overall_status)}">整体状态：{safe(localize_status(overall_status))}</span>
       </div>
       <div class="summary-grid">
-        <section class="summary-card">
-          <p>组件总数</p>
-          <strong>{len(ARTIFACTS)}</strong>
-        </section>
-        <section class="summary-card">
-          <p>正常组件</p>
-          <strong>{status_counts.get("healthy", 0)}</strong>
-        </section>
-        <section class="summary-card">
-          <p>需关注组件</p>
-          <strong>{status_counts.get("degraded", 0) + status_counts.get("missing", 0) + status_counts.get("unknown", 0)}</strong>
-        </section>
-        <section class="summary-card">
-          <p>待处理告警</p>
-          <strong>{total_alerts}</strong>
-        </section>
+        <a class="summary-link" href="#section-components"><p>组件总数</p><strong>{len(ARTIFACTS)}</strong><span>查看所有组件</span></a>
+        <a class="summary-link" href="#section-components"><p>正常组件</p><strong>{status_counts.get("healthy", 0)}</strong><span>查看正常项</span></a>
+        <a class="summary-link" href="#section-attention"><p>需关注组件</p><strong>{status_counts.get("degraded", 0) + status_counts.get("missing", 0) + status_counts.get("unknown", 0) + status_counts.get("action-needed", 0) + status_counts.get("unreadable", 0)}</strong><span>查看异常明细</span></a>
+        <a class="summary-link" href="#section-alerts"><p>待处理告警</p><strong>{total_alerts}</strong><span>查看告警详情</span></a>
       </div>
     </section>
-    <div class="section-head">
-      <div>
-        <h2>核心健康卡片</h2>
-        <p>适合人工巡检。每张卡片都来自一个本地健康产物。</p>
-      </div>
-    </div>
-    <div class="grid">{''.join(cards)}</div>
-    <section>
+
+    <section id="section-attention">
       <div class="section-head">
         <div>
-          <h2>原始健康产物</h2>
-          <p>保留 JSON 原文，便于排查字段和值的来源。</p>
+          <h2>异常与关注项</h2>
+          <p>这里汇总所有非正常组件，点击后可展开到具体异常内容。</p>
         </div>
       </div>
-      <div class="raw-blocks">{''.join(raw_blocks)}</div>
+      {attention_html or "<p class='empty-state'>当前没有需要关注的组件。</p>"}
+    </section>
+
+    <section id="section-alerts">
+      <div class="section-head">
+        <div>
+          <h2>告警详情</h2>
+          <p>待处理告警和信息型告警都在这里，支持继续展开查看具体原因、失败记录和明细字段。</p>
+        </div>
+      </div>
+      {alerts_html}
+    </section>
+
+    <section id="section-components">
+      <div class="section-head">
+        <div>
+          <h2>核心健康卡片</h2>
+          <p>每张卡片都可以点开，看到摘要、异常分组和原始 JSON。</p>
+        </div>
+      </div>
+      <div class="grid">{''.join(cards)}</div>
     </section>
   </main>
 </body>

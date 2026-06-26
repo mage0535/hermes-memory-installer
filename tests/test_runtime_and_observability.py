@@ -571,8 +571,37 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
     metrics = tmp_path / "metrics"
     metrics.mkdir()
     (metrics / "runtime-drift-latest.json").write_text(json.dumps({"status": "healthy", "ok": True}), encoding="utf-8")
+    (metrics / "health-summary-latest.json").write_text(
+        json.dumps(
+            {
+                "status": "healthy",
+                "ok": True,
+                "alert_count": 1,
+                "alerts": [{"code": "historical_acceptance_failures", "severity": "info", "detail": {"recent_failures": [{"run_name": "memory-sidecar-monitor"}]}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps(
+            {
+                "run_count": 5,
+                "monitor": {
+                    "recent_acceptance_ok_rate": 1.0,
+                    "acceptance_ok_rate": 0.9,
+                    "lag": {"status": "healthy"},
+                    "recent_failures": [{"run_name": "memory-sidecar-monitor", "reasons": ["guardian"]}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     (metrics / "gbrain-stale-latest.json").write_text(
         json.dumps({"status": "healthy", "ok": True, "after": {"health_score": 9, "stale_pages": 47}}),
+        encoding="utf-8",
+    )
+    (metrics / "hindsight-security-latest.json").write_text(
+        json.dumps({"status": "healthy", "ok": True}),
         encoding="utf-8",
     )
     (metrics / "webhook-receiver-latest.json").write_text(
@@ -584,7 +613,11 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
 
     assert "Hermes 记忆体仪表板" in html
     assert "运行漂移" in html
+    assert "LangSmith 趋势" in html
     assert "gbrain 健康" in html
+    assert "整体状态：正常" in html
+    assert "告警详情" in html
+    assert "historical_acceptance_failures" in html
     assert "47" in html
     assert "成功，HTTP 200，尝试 1 次" in html
     assert "{&#x27;status&#x27;: 200" not in html
@@ -620,6 +653,23 @@ def test_metrics_dashboard_server_requires_token(tmp_path: Path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_metrics_dashboard_infers_langsmith_healthy_without_top_level_status():
+    summary = metrics_dashboard.summarize(
+        "LangSmith Trend",
+        {
+            "run_count": 3,
+            "monitor": {
+                "recent_acceptance_ok_rate": 1.0,
+                "acceptance_ok_rate": 0.9,
+                "lag": {"status": "healthy"},
+            },
+        },
+    )
+
+    assert summary["status"] == "healthy"
+    assert summary["ok"] is True
 
 
 def test_openmetrics_exporter_counts_alert_queues(tmp_path: Path):
