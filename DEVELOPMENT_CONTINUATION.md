@@ -1347,3 +1347,11 @@ Secondary optimization targets:
 - reduce recall p95 below `10s` by profiling the slowest query family
 - make `archive_sessions` nonzero returncode history explainable in trend output even when LangSmith marks the wrapper run successful
 - add an optional notification sink for `drift-check` and trend `action-needed` states
+
+### 18.5 Final commit and post-commit verification
+
+- Git commit pushed: `be83e5c feat: add operational drift and health trend controls`.
+- Post-commit `drift-check` status: `healthy`, reasons `0`, repository dirty `false`.
+- Post-commit manifest: missing scripts `0`, mismatched scripts `0`, relevant cron entries `7`.
+- Latest production acceptance: `ok=true`, `reason_buckets={}`.
+- Server pytest is not available in either system Python or the LangSmith venv; server verification used py_compile plus live runtime checks. Local workstation pytest remained `134 passed` before deployment.
