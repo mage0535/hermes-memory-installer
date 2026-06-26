@@ -1,10 +1,10 @@
-# Hermes Memory Installer v3.5 Manual Installation
+# Hermes Memory Installer v3.5.1 Manual Installation
 
 This guide is for operators who want the generic public sidecar installed manually instead of using `./install.sh`.
 
 ## Scope
 
-The manual path installs the public `v3.5` sidecar runtime:
+The manual path installs the public `v3.5.1` sidecar runtime:
 
 - session archive to gbrain
 - governance rebuild
@@ -118,7 +118,7 @@ skills:
   - memory-proactive
 
 memory_sidecar:
-  version: "3.5"
+  version: "3.5.1"
   profile: hybrid
   scripts_dir: /path/to/agent-home/scripts
 ```
@@ -133,7 +133,7 @@ Record the selected embedding model so the deployment is reproducible:
 mkdir -p "$AGENT_HOME/memory-sidecar"
 cat > "$AGENT_HOME/memory-sidecar/install-profile.json" <<'EOF'
 {
-  "version": "3.5",
+  "version": "3.5.1",
   "profile": "hybrid",
   "embedding_model": {
     "model_id": "intfloat/multilingual-e5-small"

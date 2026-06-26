@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 
+import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
@@ -17,8 +18,8 @@ sys.path.insert(0, str(REPO))
 from installer import install
 
 
-def test_version_is_3_5():
-    assert install.VERSION == "3.5"
+def test_version_is_3_5_1():
+    assert install.VERSION == "3.5.1"
 
 
 def test_supported_script_set_matches_repo():
@@ -47,6 +48,12 @@ def test_supported_script_set_covers_runtime_and_cli_utilities():
         "langsmith_monitor.py",
         "langsmith_task_wrapper.py",
         "langsmith_trend_report.py",
+        "runtime_drift_check.py",
+        "alert_webhook_receiver.py",
+        "metrics_dashboard.py",
+        "metrics_dashboard_server.py",
+        "profile_isolation_soak.py",
+        "hindsight_security_audit.py",
     }
     assert expected.issubset(set(install.SUPPORTED_SCRIPT_NAMES))
     assert "memory_watermark.py" not in install.SUPPORTED_SCRIPT_NAMES
@@ -80,6 +87,16 @@ def test_parse_args_accepts_install_mode_and_lang():
 
     assert args.install_mode == "2"
     assert args.lang == "zh"
+
+
+def test_dry_run_lang_line_does_not_conflict_with_translate_argument(tmp_path: Path, capsys):
+    agent_home = tmp_path / ".agent"
+    agent_home.mkdir()
+
+    rc = install.main(["--dry-run", "--skip-checks", "--noninteractive", "--agent-home", str(agent_home), "--lang", "en"])
+
+    assert rc == 0
+    assert "Language: en" in capsys.readouterr().out
 
 
 def test_resolve_language_prefers_explicit_option(monkeypatch):
@@ -123,6 +140,7 @@ def test_mode_3_failure_message_includes_downgrade_paths():
     assert "bootstrap failed" in message
 
 
+@pytest.mark.skip(reason="legacy mojibake assertion; replaced by readable Chinese coverage")
 def test_mode_3_failure_message_supports_chinese():
     message = install.render_mode_fallback_message(
         lang="zh",
@@ -135,6 +153,7 @@ def test_mode_3_failure_message_supports_chinese():
     assert "依赖安装失败" in message
 
 
+@pytest.mark.skip(reason="legacy mojibake assertion; replaced by readable Chinese coverage")
 def test_chinese_installer_messages_are_readable():
     message = install.render_dependency_guidance(
         lang="zh",
@@ -149,6 +168,26 @@ def test_chinese_installer_messages_are_readable():
     assert "锛" not in message
 
 
+def test_chinese_installer_messages_are_readable_current():
+    fallback = install.render_mode_fallback_message(
+        lang="zh",
+        failed_mode="3",
+        reason="依赖安装失败",
+    )
+    guidance = install.render_dependency_guidance(
+        lang="zh",
+        install_mode="3",
+        failed_dependencies=["postgres", "hindsight", "gbrain"],
+        bootstrap_supported=True,
+    )
+
+    assert "依赖安装失败" in fallback
+    assert "模式 3" in guidance
+    assert "缺失的关键依赖" in guidance
+    assert "�" not in fallback + guidance
+    assert "閿" not in fallback + guidance
+
+
 def test_patch_agent_config_adds_sidecar_settings(tmp_path: Path):
     agent_home = tmp_path / ".agent"
     agent_home.mkdir()
@@ -161,7 +200,7 @@ def test_patch_agent_config_adds_sidecar_settings(tmp_path: Path):
     payload = yaml.safe_load(updated_path.read_text(encoding="utf-8"))
     assert payload["memory"]["provider"] == "hindsight"
     assert "existing-skill" in payload["skills"]
-    assert payload["memory_sidecar"]["version"] == "3.5"
+    assert payload["memory_sidecar"]["version"] == "3.5.1"
     assert payload["memory_sidecar"]["scripts_dir"] == str(agent_home / "scripts")
 
 
@@ -378,7 +417,7 @@ def test_write_install_profile_records_embedding_metadata(tmp_path: Path):
     )
     payload = json.loads(profile_path.read_text(encoding="utf-8"))
 
-    assert payload["version"] == "3.5"
+    assert payload["version"] == "3.5.1"
     assert payload["embedding_model"]["model_id"] == model.model_id
     assert payload["installed_scripts"] == ["memory_guardian.py", "tiered_context_injector.py"]
 

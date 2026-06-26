@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import urllib.request
+import urllib.error
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
@@ -25,7 +26,9 @@ import tiered_context_injector as injector
 import alert_queue
 import alert_webhook_receiver
 import metrics_dashboard
+import metrics_dashboard_server
 import gbrain_stale_maintenance
+import profile_isolation_soak
 
 
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
@@ -462,6 +465,30 @@ def test_alert_webhook_receiver_queues_payload(tmp_path: Path):
     assert json.loads(status.read_text(encoding="utf-8"))["status"] == "healthy"
 
 
+def test_alert_webhook_receiver_rotates_queue(tmp_path: Path):
+    queue = tmp_path / "inbound.jsonl"
+    for index in range(5):
+        alert_webhook_receiver.append_jsonl(queue, {"index": index})
+
+    rotated = alert_webhook_receiver.rotate_jsonl(queue, 2)
+
+    assert rotated is True
+    assert [json.loads(line)["index"] for line in queue.read_text(encoding="utf-8").splitlines()] == [3, 4]
+    assert [json.loads(line)["index"] for line in (tmp_path / "inbound.jsonl.1").read_text(encoding="utf-8").splitlines()] == [0, 1, 2]
+
+
+def test_alert_webhook_receiver_formats_telegram_payload(monkeypatch):
+    monkeypatch.setenv("MEMORY_ALERT_TELEGRAM_CHAT_ID", "12345")
+
+    body = alert_webhook_receiver.build_forward_body(
+        "telegram",
+        {"status": "action-needed", "alert_count": 1, "alerts": [{"severity": "action-needed", "source": "runtime", "code": "x"}]},
+    )
+
+    assert body["chat_id"] == "12345"
+    assert "Hermes Memory alert" in body["text"]
+
+
 def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
     metrics = tmp_path / "metrics"
     metrics.mkdir()
@@ -477,6 +504,28 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
     assert "Runtime Drift" in html
     assert "gbrain Stale" in html
     assert "47" in html
+
+
+def test_metrics_dashboard_server_requires_token(tmp_path: Path):
+    handler = metrics_dashboard_server.make_handler(tmp_path, "secret")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        try:
+            urllib.request.urlopen(f"{base}/dashboard", timeout=5)
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 401
+        else:
+            raise AssertionError("dashboard should require a token")
+        with urllib.request.urlopen(f"{base}/dashboard?token=secret", timeout=5) as response:
+            assert response.status == 200
+            assert b"Hermes Memory Metrics" in response.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_gbrain_stale_upstream_gap_is_explicit_for_panel_only_debt():
@@ -522,6 +571,13 @@ def test_manifest_respects_agent_home_per_profile(tmp_path: Path):
     assert outputs[0]["agent_home"] == str(homes[0])
     assert outputs[1]["agent_home"] == str(homes[1])
     assert outputs[0]["scripts_dir"] != outputs[1]["scripts_dir"]
+
+
+def test_profile_isolation_soak_uses_separate_agent_homes():
+    report = profile_isolation_soak.soak(REPO, iterations=1, interval_s=0, timeout=20)
+
+    assert report["ok"] is True
+    assert len({row["profile"] for row in report["runs"]}) == 2
 
 
 def test_recall_sample_suite_enforces_intent_and_source_thresholds():

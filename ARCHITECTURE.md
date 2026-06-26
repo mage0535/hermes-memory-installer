@@ -1,12 +1,12 @@
-# Memory Sidecar Architecture v3.5
+# Memory Sidecar Architecture v3.5.1
 
-Memory Sidecar v3.5 is the public, agent-agnostic release of the project. It is designed to sit beside an agent, read its durable data directory, and improve recall without patching the agent itself.
+Memory Sidecar v3.5.1 is the public, agent-agnostic release of the project. It is designed to sit beside an agent, read its durable data directory, and improve recall without patching the agent itself.
 
-Release page: https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5
+Release page: https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5.1
 
 ## Architecture Goals
 
-The v3.5 architecture is built around four constraints:
+The v3.5.1 architecture is built around four constraints:
 
 1. Preserve original session data. The sidecar indexes and archives, but does not delete source data.
 2. Retrieve from multiple layers. Recall should blend session history, Hindsight facts, gbrain pages, and curated knowledge notes.

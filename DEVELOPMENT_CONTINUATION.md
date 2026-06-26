@@ -1385,7 +1385,7 @@ Completed on 2026-06-26 against the live production runtime.
    - Added `hindsight_security_audit.py`.
    - Confirms Hindsight is locally reachable, not publicly reachable, and bound to localhost.
    - Token absence is recorded as `info`, not an outage, because the service is currently localhost-only.
-   - Added cron: `40 */6 * * * AGENT_HOME=$AGENT_HOME $AGENT_HOME/scripts/hindsight_security_audit.py --public-host 207.57.129.132 >> /var/log/hindsight-security-audit.log 2>&1 # hindsight-security-audit`.
+   - Added cron: `40 */6 * * * AGENT_HOME=$AGENT_HOME $AGENT_HOME/scripts/hindsight_security_audit.py --public-host <public-host> >> /var/log/hindsight-security-audit.log 2>&1 # hindsight-security-audit`.
 
 6. gbrain stale closure policy
    - `gbrain_stale_maintenance.py` now checks actual orphan count and distinguishes panel counter noise from actionable orphan/stale problems.
@@ -1556,3 +1556,54 @@ Recommended next enhancements:
 3. If gbrain is maintained separately, submit or implement the stale contributor JSON API described in `docs/gbrain-stale-upstream-request.md`.
 4. Add retention rotation for webhook inbound queue and historical dashboard artifacts if the queue grows beyond operational audit needs.
 5. Extend profile isolation tests into a live two-profile smoke run only if multiple production agents will share the same host.
+
+## 22. Execution Report - v3.5.1 Release, Cleanup, External Notification, Product Hardening
+
+Date: 2026-06-26
+
+Scope implemented:
+
+- Promoted public package version to `3.5.1` across installer, CLI, manual docs, architecture docs, README files, and release notes.
+- Preserved installer embedding selection: recommended default, common built-in models, and custom model entry.
+- Fixed installer dry-run bug where `translate(lang, ..., lang=lang)` caused an argument collision.
+- Rewrote `README_CN.md` as readable Chinese documentation and expanded English/Chinese docs with development reason, design goals, install method, embedding guidance, KMM positioning, changelog, and acknowledgements.
+- Added `docs/release-v3.5.1.md` for GitHub release content.
+- Added webhook forwarding adapters for generic webhooks, Slack, Feishu/Lark, DingTalk, and Telegram.
+- Configured production private `MEMORY_ALERT_FORWARD_URL` for Telegram using private runtime credentials; no third-party token or URL was written to the public repository.
+- Added webhook inbound queue rotation via `MEMORY_ALERT_QUEUE_MAX_LINES`.
+- Added `metrics_dashboard_server.py` and enabled `hermes-metrics-dashboard.service`, bound to `127.0.0.1:9500` with token-gated access.
+- Added `profile_isolation_soak.py` and ran a real two-profile soak test against the server repo.
+- Migrated LangSmith wrapper execution away from gray paths by copying the LangSmith venv to the main runtime path and updating wrappers to use the main repo scripts.
+- Deleted obsolete gray/runtime archives: `$AGENT_HOME/gray` and `$REPO_ROOT-gray` after confirming no process or cron dependency remained.
+
+Verification performed:
+
+- Local tests: `144 passed, 2 skipped`.
+- Local public repo audit: no private path refs, no secret-like refs, no compile failures.
+- Server public repo audit: no private path refs, no secret-like refs, no compile failures.
+- Installer dry-run on server: `v3.5.1`, install mode `3`, embedding selection preserved, language output works.
+- Telegram forwarding smoke test: local receiver accepted action-needed payload, queue advanced, Telegram API returned `200 OK`.
+- Dashboard auth smoke test: unauthenticated request returned `401`; authenticated bearer request returned `200` and dashboard HTML.
+- Profile isolation soak: 3 iterations, 2 profiles, 0 failures.
+- LangSmith wrapper smoke test: venv import succeeded and trend wrapper exited `0`.
+- Acceptance checks after changes: fast `ok=true`; full `ok=true`, reason buckets `{}`.
+- gbrain stale maintenance remains healthy operationally; panel score still shows 8/10 because gbrain reports 47 non-actionable stale counters and 1 orphan counter discrepancy while actual orphan count is 0.
+
+Cleanup decision:
+
+- Removed the actual gray runtime and gray repo archive because production no longer referenced them.
+- Kept unrelated non-project backup/checkpoint folders because they are not clearly the memory-sidecar gray/old project and deleting them would exceed the current task scope.
+
+Current status:
+
+- Production memory sidecar is online and stable.
+- Public repo is clean for external release.
+- `v3.5.1` is ready for commit, tag, and GitHub Release publication.
+
+Next recommended enhancements:
+
+1. Add webhook retry/backoff with dead-letter queue for failed external sends.
+2. Add a small local CLI command to print dashboard URL and token-file location without exposing the token.
+3. Add optional dashboard reverse-proxy examples for Caddy/Nginx with IP allowlist and HTTPS.
+4. Coordinate with gbrain upstream to expose stale page contributors or correct health score accounting so the panel can reach 10/10 without sidecar-side guesswork.
+5. Add a release checklist workflow that runs audit-repo, tests, dry-run install, profile soak, and doc version checks before tag creation.

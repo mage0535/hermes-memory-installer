@@ -1,12 +1,12 @@
-# Memory Sidecar 架构说明 v3.5
+# Memory Sidecar 架构说明 v3.5.1
 
-Memory Sidecar v3.5 是项目的公开可发布版。它部署在智能体旁边，读取智能体的数据目录，在不修改智能体核心代码的前提下增强记忆和召回能力。
+Memory Sidecar v3.5.1 是项目的公开可发布版。它部署在智能体旁边，读取智能体的数据目录，在不修改智能体核心代码的前提下增强记忆和召回能力。
 
-发布页： https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5
+发布页： https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5.1
 
 ## 架构目标
 
-v3.5 的架构目标很明确：
+v3.5.1 的架构目标很明确：
 
 1. 保留原始会话数据。sidecar 只做索引和归档，不删除源数据。
 2. 多层召回。召回结果要融合会话历史、Hindsight 事实、gbrain 页面和整理后的知识笔记。

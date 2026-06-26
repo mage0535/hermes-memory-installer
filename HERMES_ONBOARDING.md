@@ -17,7 +17,7 @@ hermes model        # 选择模型/提供商
 hermes gateway start  # 启动网关（如需消息平台）
 ```
 
-### 安装记忆体（Memory Sidecar v3.5）
+### 安装记忆体（Memory Sidecar v3.5.1）
 
 ```bash
 # 方式一：一键安装（推荐）

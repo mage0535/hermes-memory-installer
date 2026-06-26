@@ -261,14 +261,14 @@ def test_runtime_surfaces_do_not_contain_common_mojibake_markers():
             assert token not in content, f"{path} contains suspicious mojibake token: {token}"
 
 
-def test_release_docs_are_aligned_for_v3_5_and_kmm_positioning():
+def test_release_docs_are_aligned_for_v3_5_1_and_kmm_positioning():
     readme = (REPO / "README.md").read_text(encoding="utf-8")
     readme_cn = (REPO / "README_CN.md").read_text(encoding="utf-8")
     manual = (REPO / "MANUAL_INSTALL.md").read_text(encoding="utf-8")
-    release = (REPO / "docs" / "release-v3.5.md").read_text(encoding="utf-8")
+    release = (REPO / "docs" / "release-v3.5.1.md").read_text(encoding="utf-8")
 
     for content in (readme, readme_cn, manual):
-        assert "3.5" in content
+        assert "3.5.1" in content
         assert "Knowledge-and-Memory-Management" in content
 
     assert "not installed by default" in readme
@@ -277,5 +277,5 @@ def test_release_docs_are_aligned_for_v3_5_and_kmm_positioning():
     assert "Repository Structure" in readme
     assert "Embedding Model Selection" in readme
     assert "Knowledge-and-Memory-Management" in readme
-    assert "public beta" in release
+    assert "operational hardening release" in release
     assert "--install-mode 3" in release
