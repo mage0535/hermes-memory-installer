@@ -14,8 +14,6 @@ SESSION_TO_GBRAIN = SCRIPT_DIR / "session_to_gbrain.py"
 GOVERNANCE_REBUILD = SCRIPT_DIR / "memory_governance_rebuild.py"
 TIERED_CONTEXT = SCRIPT_DIR / "tiered_context_injector.py"
 MEMORY_GUARDIAN = SCRIPT_DIR / "memory_guardian.py"
-SNAPSHOT_STAMP_FILE = AGENT_HOME / ".memory_snapshot_last_date"
-FORCE_GOVERNANCE_REBUILD = os.environ.get("MEMORY_MAINTENANCE_FORCE_REBUILD", "").lower() in {"1", "true", "yes"}
 METRICS_DIR = AGENT_HOME / "metrics"
 GUARDIAN_HISTORY = METRICS_DIR / "guardian_status_history.jsonl"
 GUARDIAN_HISTORY_LIMIT = 500
@@ -123,38 +121,11 @@ def append_guardian_history(payload: dict, steps: list[dict]) -> None:
         print(f"[maintenance_cycle] failed to write guardian history: {exc}", file=sys.stderr)
 
 
-def should_run_daily_snapshot(now: datetime, stamp_file: Path = SNAPSHOT_STAMP_FILE) -> bool:
-    if now.hour < 3:
-        return False
-    today = now.date().isoformat()
-    try:
-        last_run = stamp_file.read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        return True
-    except Exception as exc:
-        print(f"[maintenance_cycle] failed to read snapshot stamp, running backup: {exc}", file=sys.stderr)
-        return True
-    return last_run != today
-
-
-def mark_daily_snapshot_ran(now: datetime, stamp_file: Path = SNAPSHOT_STAMP_FILE) -> None:
-    stamp_file.parent.mkdir(parents=True, exist_ok=True)
-    stamp_file.write_text(now.date().isoformat(), encoding="utf-8")
-
-
-def governance_rebuild_command() -> list[str]:
-    cmd = [PYTHON, str(GOVERNANCE_REBUILD), "--quiet"]
-    if FORCE_GOVERNANCE_REBUILD:
-        cmd.append("--force")
-    return cmd
-
-
 def main() -> int:
     steps: list[dict] = []
     now = datetime.now()
     batch_size = session_to_gbrain_batch_size()
-    if should_run_daily_snapshot(now):
-        before_count = len(steps)
+    if now.hour == 3 and now.minute < 10:
         maybe_add_step(
             steps,
             MEMORY_SNAPSHOT,
@@ -162,8 +133,6 @@ def main() -> int:
             [PYTHON, str(MEMORY_SNAPSHOT)],
             timeout=600,
         )
-        if len(steps) > before_count and steps[-1].get("ok"):
-            mark_daily_snapshot_ran(now)
     maybe_add_step(
         steps,
         SESSION_TO_GBRAIN,
@@ -175,16 +144,15 @@ def main() -> int:
         steps,
         GOVERNANCE_REBUILD,
         "memory_governance_rebuild",
-        governance_rebuild_command(),
+        [PYTHON, str(GOVERNANCE_REBUILD), "--force", "--quiet"],
         timeout=300,
     )
     maybe_add_step(
         steps,
         MEMORY_GUARDIAN,
         "memory_guardian_drain_consolidation",
-        [
-            PYTHON,
-            str(MEMORY_GUARDIAN),
+        [PYTHON,
+         str(MEMORY_GUARDIAN),
             "--drain-consolidation",
             f"--min-pending={CONSOLIDATION_DRAIN_MIN_PENDING}",
             f"--min-age-seconds={CONSOLIDATION_DRAIN_MIN_AGE_SECONDS}",

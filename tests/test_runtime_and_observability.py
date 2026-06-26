@@ -350,6 +350,20 @@ def test_acceptance_check_passes_when_required_queries_meet_thresholds():
     assert errors == []
 
 
+def test_acceptance_error_buckets_group_operator_reasons():
+    errors = [
+        "guardian level is critical",
+        "recent sessions: fused recall returned no top titles",
+        "agent memory architecture: expected top sources to contain knowledge",
+    ]
+
+    assert acceptance_check.bucket_acceptance_errors(errors) == {
+        "guardian": 1,
+        "knowledge_recall": 1,
+        "recall_coverage": 1,
+    }
+
+
 def test_recall_sample_suite_enforces_intent_and_source_thresholds():
     payload = {
         "guardian": {"level": "ok"},
@@ -885,6 +899,44 @@ def test_memory_guardian_uses_multi_agent_friendly_default_node_limit(monkeypatc
     assert cap["node_limit"] == 20000
     assert cap["usage_pct"] == 55.4
     assert cap["level"] == "ok"
+
+
+def test_memory_guardian_clears_sticky_history_when_current_backlog_is_empty(monkeypatch):
+    monkeypatch.setattr(
+        guardian,
+        "hs",
+        lambda method, path, body=None, timeout=10: {
+            "/stats": {
+                "total_documents": 515,
+                "total_nodes": 11084,
+                "total_observations": 4368,
+                "pending_consolidation": 0,
+                "failed_consolidation": 0,
+                "pending_operations": 0,
+                "failed_operations": 0,
+                "last_consolidated_at": "2026-06-19T03:39:57.216430+00:00",
+            },
+            "/entities": {"items": []},
+        }[path],
+    )
+    monkeypatch.setattr(guardian, "read_governance_meta", lambda: {})
+    monkeypatch.setattr(
+        guardian,
+        "summarize_guardian_history",
+        lambda window=12: {
+            "pending_consolidation_sticky": True,
+            "pending_consolidation_nonzero_run": 10,
+            "pending_consolidation_trend": "flat",
+            "pending_consolidation_recent_max": 41,
+            "pending_consolidation_recent_min": 13,
+        },
+    )
+
+    _, cap = guardian.monitor(verbose=False)
+
+    assert cap["pending_consolidation_sticky"] is False
+    assert cap["pending_consolidation_nonzero_run"] == 0
+    assert cap["pending_consolidation_trend"] == "clear"
 
 
 def test_memory_guardian_node_limit_can_be_overridden_by_env(monkeypatch):

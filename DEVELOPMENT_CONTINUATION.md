@@ -1118,14 +1118,14 @@ Verified locally before server sync:
 Verified on the running server:
 
 - `/usr/local/bin/hermes-memory manifest --format text`
-  - `Agent home: /root/.hermes`
+  - `Agent home: <agent-home>`
   - `Wrapper mode: env_default_safe`
   - `Missing scripts: 0`
   - `Mismatched scripts: 0`
   - `Cron entries: 6`
 
 - `/usr/local/bin/hermes-memory manifest --format json`
-  - `agent_home = /root/.hermes`
+  - `agent_home = <agent-home>`
   - `wrapper_mode = env_default_safe`
   - `missing_scripts = 0`
   - `mismatched_scripts = 0`
@@ -1134,14 +1134,14 @@ Important usage note:
 
 - use the production wrapper entrypoint (`/usr/local/bin/hermes-memory`) for
   server verification
-- direct invocation of `/root/.hermes/scripts/hermes-memory` without env may
+- direct invocation of `<agent-home>/scripts/hermes-memory` without env may
   fall back to `~/.agent`, which is expected behavior for the bare script
 
 ### 16.4 Server test environment note
 
 Attempted:
 
-- `cd /root/hermes-memory-installer && python3 -m pytest -q`
+- `cd <deployment-repo> && python3 -m pytest -q`
 
 Result:
 
@@ -1164,3 +1164,186 @@ Reason:
 
 - it builds directly on the new manifest/audit data
 - it addresses the exact drift pattern already seen multiple times
+
+## 17. Execution Report — Server Repo Synced And Next Step Confirmed
+
+This section captures the final server-side reconciliation and verification
+after the manifest rollout.
+
+### 17.1 Server repo synchronization result
+
+Committed and pushed from the server repository:
+
+- commit: `406aa0c`
+- message: `feat: reconcile runtime fixes and add manifest command`
+
+This commit includes:
+
+- `bin/hermes-memory`
+- `scripts/archive_sessions.py`
+- `scripts/memory_watermark.py`
+- `scripts/memory_storage_cross_check.py`
+- regression tests for the reconciliation batch and manifest
+- the updated continuation document
+
+### 17.2 Server verification after push
+
+Verified on the running server:
+
+- `/usr/local/bin/hermes-memory manifest --format text`
+  - `Agent home: <agent-home>`
+  - `Wrapper mode: env_default_safe`
+  - `Missing scripts: 0`
+  - `Mismatched scripts: 0`
+  - `Cron entries: 6`
+
+- `/usr/local/bin/hermes-memory manifest --format json`
+  - `agent_home = <agent-home>`
+  - `wrapper_mode = env_default_safe`
+  - `missing_scripts = 0`
+  - `mismatched_scripts = 0`
+
+- `/usr/local/bin/hermes-memory acceptance`
+  - current run is healthy and returns payload without acceptance errors
+
+- `memory_storage_cross_check.py`
+  - now emits the expected fallback warning on stderr when env is unset
+  - still reports `ok = true`
+
+### 17.3 Test environment note
+
+Server-side Python test execution was attempted with:
+
+- `python3 -m pytest -q`
+
+Result:
+
+- not runnable on the server because `pytest` is not installed there
+
+Therefore the effective verification split is now:
+
+- local machine: automated regression gate
+- server: runtime verification gate
+
+### 17.4 Recommended next implementation step
+
+The next implementation step is now cleanly unblocked:
+
+1. runtime-to-repo drift alerting
+
+Why this is the best next step:
+
+- `manifest` now exists and is verified
+- the project has repeatedly shown repo/runtime drift
+- drift alerting is the highest-leverage use of the new manifest surface
+
+### 17.5 Suggested handoff framing for the next teammate
+
+If another teammate continues from here, they should start with:
+
+1. reading this document from §15 onward
+2. using commit `406aa0c` as the baseline
+3. implementing drift alerting as the next expansion item
+
+## 18. Execution Report - Operational Hardening Batch Completed
+
+Completed on 2026-06-26 against the live production runtime.
+
+### 18.1 Implemented scope
+
+1. Runtime-to-repo drift alerting
+   - Added `hermes-memory drift-check`.
+   - Writes `<agent-home>/metrics/runtime-drift-latest.json` by default.
+   - Added cron: `35 */6 * * * /usr/local/bin/hermes-memory drift-check --repo-root <deployment-repo> --format json >> /var/log/runtime-drift-check.log 2>&1 # runtime-drift-check`.
+   - `manifest` now counts this cron entry; current relevant cron count is `7`.
+
+2. Acceptance failure summarization
+   - `sidecar_acceptance_check.py` now emits `reason_buckets`.
+   - `langsmith_trend_report.py` now aggregates historical monitor failures into reason buckets.
+   - Current trend failure reasons are historical: `acceptance_error=2`, `guardian=2`.
+
+3. gbrain stale maintenance/classification
+   - Added `gbrain_stale_maintenance.py`.
+   - Ran `gbrain embed --stale`; it completed with `Embedded 0 chunks (0 stale found)`.
+   - Current classification is `stale_health_counter_not_embedding_stale`, count `47`.
+   - `gbrain orphans --json` reports actual orphan count `0`; `gbrain health` still prints `Orphan pages: 1`, so that is a health-panel counter discrepancy.
+
+4. Hindsight lag trend thresholding
+   - `langsmith_trend_report.py` now reports lag summary with threshold `3600s`.
+   - It also merges the local latest monitor artifact so trend status is not delayed by LangSmith publish/list latency.
+   - Latest trend after refresh: `latest_hindsight_lag_s=50`, `consecutive_over_threshold=0`, `lag.status=healthy`.
+
+5. Pipeline performance summary
+   - `langsmith_trend_report.py` now emits `performance` with acceptance latency, recall latency, and slowest task by p95.
+   - Latest performance snapshot: acceptance p95 `71.524s`, recall p95 `17.435s`, slowest task `archive_sessions` p95 `22.168s`.
+
+6. Documentation and release-surface alignment
+   - README installed script count updated to include the new operations scripts and LangSmith support scripts.
+   - Installer supported script list now includes `runtime_drift_check.py` and `gbrain_stale_maintenance.py`.
+   - Server repository documentation is sanitized for public paths; this operational document keeps the real production paths for continuity.
+
+### 18.2 Verification evidence
+
+Local workstation:
+
+- `python -m pytest -q` -> `134 passed`
+- `python bin/hermes-memory audit-repo --format text` -> clean before deployment
+
+Production server:
+
+- `/usr/local/bin/hermes-memory manifest --format text --repo-root <deployment-repo>`
+  - `Wrapper mode: env_default_safe`
+  - `Missing scripts: 0`
+  - `Mismatched scripts: 0`
+  - `Cron entries: 7`
+- `/usr/local/bin/hermes-memory audit-deploy --format text --repo-root <deployment-repo>`
+  - `Missing scripts: 0`
+  - `Mismatched scripts: 0`
+  - `LangSmith gray cron reference: False`
+  - `gbrain deorphan scheduled: True`
+  - `memory-guardian.timer: active=active enabled=enabled`
+- `/usr/local/bin/hermes-memory acceptance` -> `ok: true`, `reason_buckets: {}`
+- `memory_storage_cross_check.py` -> `ok: true`, warnings `[]`
+- `langsmith-trend-latest.json`
+  - `success_rate=1.0`
+  - `acceptance_ok_rate=0.875`
+  - `latest_hindsight_lag_s=50`
+  - `lag.status=healthy`
+  - `latest_gbrain_health_score=8`
+  - `latest_gbrain_orphans=0`
+- `gbrain-stale-latest.json`
+  - `status=degraded`
+  - `stale_pages=47`
+  - `embed_stale_found_chunks=0`
+  - `recommended_action=classify stale pages or fix gbrain health accounting`
+
+### 18.3 Current system assessment
+
+The memory sidecar now satisfies the operational target for stable online use:
+
+- core session -> summary -> gbrain pipeline is running
+- acceptance passes in the latest live run
+- storage cross-check passes
+- runtime/repo drift is automatically checked
+- historical acceptance failures are classified instead of opaque
+- lag is trend-thresholded and currently healthy
+- performance bottlenecks are visible in trend output
+
+The only remaining degraded item is gbrain health score `8/10`, caused by stale-page health accounting that does not respond to `gbrain embed --stale`. This is no longer a blind failure; it is classified and recorded.
+
+### 18.4 Recommended next expansion target
+
+Next target should be `gbrain stale root-cause closure`:
+
+1. identify the exact 47 pages counted as stale by gbrain internals
+2. fix the single code page metadata issue (`missing frontmatter.file`) only if it is safe to preserve content semantics
+3. if gbrain does not expose stale page listing, add an external classifier from exported/indexed gbrain metadata
+4. update `gbrain_stale_maintenance.py` to distinguish `stale-but-actionable`, `stale-but-benign`, and `upstream-health-counter-noise`
+5. only after that, tighten gbrain health SLO from `8 acceptable with classification` to `10 required`
+
+Secondary optimization targets:
+
+- reduce acceptance p95 below `60s` by separating fast acceptance from full recall acceptance
+- reduce recall p95 below `10s` by profiling the slowest query family
+- make `archive_sessions` nonzero returncode history explainable in trend output even when LangSmith marks the wrapper run successful
+- add an optional notification sink for `drift-check` and trend `action-needed` states

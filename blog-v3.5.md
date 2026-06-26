@@ -43,7 +43,7 @@ def parse_knowledge_note(path, root_dir):
 
 ### 另一个隐性改进：所有路径不再硬编码
 
-v3.5 翻了个更大的旧账——7 个核心脚本之前全都硬编码 `~/.hermes` 路径或 `/root/.hermes` 魔数。这意味着侧车只能跟 Hermes Agent 配合使用，换 Claude Code 或 Cursor 就得手动改源码。
+v3.5 翻了个更大的旧账——7 个核心脚本之前全都硬编码 `~/.hermes` 路径或 `<agent-home>` 魔数。这意味着侧车只能跟 Hermes Agent 配合使用，换 Claude Code 或 Cursor 就得手动改源码。
 
 现在所有路径通过环境变量暴露：`MEMORY_STATE_DB_PATH`、`MEMORY_GOVERNANCE_DB_PATH`、`MEMORY_OUTPUT_CONTEXT_PATH`、`MEMORY_OBSERVABILITY_DB_PATH`。侧车的最终目标是跟任何写 SQLite 会话文件的智能体配合，不绑定到具体品牌。
 

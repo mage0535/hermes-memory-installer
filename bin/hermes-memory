@@ -23,6 +23,7 @@ LEGACY_KMM_NOTES_REL = Path("knowledge/wiki/wiki")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPO_SCRIPTS_DIR = REPO_ROOT / "scripts"
 CORE_DEPLOY_SCRIPTS = [
+    "memory_family_registry.py",
     "session_to_gbrain.py",
     "memory_governance_rebuild.py",
     "memory_guardian.py",
@@ -40,6 +41,8 @@ CORE_DEPLOY_SCRIPTS = [
     "langsmith_monitor.py",
     "langsmith_task_wrapper.py",
     "langsmith_trend_report.py",
+    "runtime_drift_check.py",
+    "gbrain_stale_maintenance.py",
 ]
 REQUIRED_REPO_FILES = [
     "README.md",
@@ -252,7 +255,17 @@ def build_deploy_audit(repo_root: Path) -> dict:
     cron_lines = cron_text.splitlines() if cron_available else []
     relevant_cron = [
         line for line in cron_lines
-        if any(token in line for token in ("langsmith", "gbrain-bulk-deorphan", "memory_guardian", "session_to_gbrain", "archive_sessions"))
+        if any(
+            token in line
+            for token in (
+                "langsmith",
+                "runtime-drift-check",
+                "gbrain-bulk-deorphan",
+                "memory_guardian",
+                "session_to_gbrain",
+                "archive_sessions",
+            )
+        )
     ]
 
     timer_active_code, timer_active = run_capture(["systemctl", "is-active", "memory-guardian.timer"], timeout=10)
@@ -319,6 +332,66 @@ def build_manifest(repo_root: Path) -> dict:
     }
 
 
+def git_status(repo_root: Path) -> dict:
+    code, text = run_capture(["git", "-C", str(repo_root), "status", "--short"], timeout=10)
+    return {
+        "available": code == 0,
+        "dirty": bool(text.strip()) if code == 0 else None,
+        "lines": text.splitlines() if code == 0 and text else [],
+    }
+
+
+def build_runtime_drift_report(repo_root: Path) -> dict:
+    manifest = build_manifest(repo_root)
+    deploy = manifest["deploy_audit"]
+    wrapper = manifest["wrapper"]
+    timer = deploy["memory_guardian_timer"]
+    repo = git_status(repo_root)
+    reasons = []
+
+    if deploy["missing_scripts"]:
+        reasons.append({"code": "missing_scripts", "severity": "action-needed", "count": len(deploy["missing_scripts"])})
+    if deploy["mismatched_scripts"]:
+        reasons.append({"code": "mismatched_scripts", "severity": "action-needed", "count": len(deploy["mismatched_scripts"])})
+    if wrapper["mode"] != "env_default_safe":
+        reasons.append({"code": "wrapper_mode", "severity": "action-needed", "value": wrapper["mode"]})
+    if deploy["langsmith_uses_gray_path"]:
+        reasons.append({"code": "langsmith_gray_cron", "severity": "action-needed"})
+    if not deploy["gbrain_deorphan_scheduled"]:
+        reasons.append({"code": "gbrain_deorphan_unscheduled", "severity": "degraded"})
+    if timer.get("active") != "active" or timer.get("enabled") != "enabled":
+        reasons.append({"code": "memory_guardian_timer", "severity": "degraded", "value": timer})
+    if repo["dirty"]:
+        reasons.append({"code": "repo_dirty", "severity": "degraded", "count": len(repo["lines"])})
+
+    status = "healthy"
+    if any(item["severity"] == "action-needed" for item in reasons):
+        status = "action-needed"
+    elif reasons:
+        status = "degraded"
+
+    return {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "status": status,
+        "ok": status == "healthy",
+        "reasons": reasons,
+        "repo_status": repo,
+        "manifest": manifest,
+    }
+
+
+def default_metrics_path(filename: str) -> Path:
+    return AGENT_HOME / "metrics" / filename
+
+
+def write_json_if_requested(path_value: str | None, payload: dict) -> None:
+    if not path_value:
+        return
+    path = Path(path_value).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def cmd_audit_deploy(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root).expanduser() if args.repo_root else REPO_ROOT
     audit = build_deploy_audit(repo_root)
@@ -369,6 +442,23 @@ def cmd_manifest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_drift_check(args: argparse.Namespace) -> int:
+    repo_root = Path(args.repo_root).expanduser() if args.repo_root else REPO_ROOT
+    output = args.output or str(default_metrics_path("runtime-drift-latest.json"))
+    report = build_runtime_drift_report(repo_root)
+    write_json_if_requested(output, report)
+    if args.format == "json":
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(f"Status: {report['status']}")
+        print(f"Reasons: {len(report['reasons'])}")
+        for reason in report["reasons"]:
+            detail = reason.get("count", reason.get("value", ""))
+            print(f"- {reason['severity']} {reason['code']} {detail}".rstrip())
+        print(f"Output: {output}")
+    return 1 if args.strict and report["status"] == "action-needed" else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.5")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -390,6 +480,11 @@ def main() -> int:
     manifest = sub.add_parser("manifest", help="Render a deploy manifest for the current runtime")
     manifest.add_argument("--repo-root", help="Repository root to compare deployed scripts against")
     manifest.add_argument("--format", choices=["json", "text"], default="json")
+    drift = sub.add_parser("drift-check", help="Check runtime-to-repository drift and write an operator status artifact")
+    drift.add_argument("--repo-root", help="Repository root to compare deployed scripts against")
+    drift.add_argument("--output", help="Output JSON path (defaults to AGENT_HOME metrics)")
+    drift.add_argument("--format", choices=["json", "text"], default="json")
+    drift.add_argument("--strict", action="store_true", help="Return non-zero when action-needed drift is found")
 
     args = parser.parse_args()
     if args.command == "doctor":
@@ -410,6 +505,8 @@ def main() -> int:
         return cmd_audit_repo(args)
     if args.command == "manifest":
         return cmd_manifest(args)
+    if args.command == "drift-check":
+        return cmd_drift_check(args)
     return 1
 
 

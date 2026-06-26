@@ -38,6 +38,7 @@ def test_cli_exposes_deploy_audit_command():
     assert "audit-deploy" in content
     assert "audit-repo" in content
     assert "manifest" in content
+    assert "drift-check" in content
     assert "langsmith_uses_gray_path" in content
     assert "gbrain_deorphan_scheduled" in content
     assert "memory-guardian.timer" in content
