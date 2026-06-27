@@ -72,17 +72,28 @@ def write_status(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+severity_labels = {
+    "action-needed": "⚠️ 需处理",
+    "degraded": "⚠ 性能下降",
+    "info": "ℹ️ 信息",
+    "healthy": "✅ 正常",
+}
+
 def format_alert_text(payload: dict[str, Any]) -> str:
     alerts = payload.get("alerts") or []
+    status = payload.get("status", "unknown")
+    label = severity_labels.get(status, status)
     lines = [
-        f"Hermes Memory alert: {payload.get('status', 'unknown')}",
-        f"captured_at: {payload.get('captured_at', utc_now())}",
-        f"alert_count: {payload.get('alert_count', len(alerts))}",
+        f"Hermes 记忆系统告警: {label}",
+        f"捕获时间: {payload.get('captured_at', utc_now())}",
+        f"告警数: {payload.get('alert_count', len(alerts))}",
     ]
     for item in alerts[:8]:
-        lines.append(f"- {item.get('severity', 'unknown')} {item.get('source', 'unknown')}:{item.get('code', 'unknown')}")
+        sev = item.get("severity", "unknown")
+        label = severity_labels.get(sev, sev)
+        lines.append(f"- {label} {item.get('source', 'unknown')}:{item.get('code', 'unknown')}")
     if len(alerts) > 8:
-        lines.append(f"- ... {len(alerts) - 8} more")
+        lines.append(f"- ... 还有 {len(alerts) - 8} 条")
     return "\n".join(lines)
 
 

@@ -489,7 +489,7 @@ def test_alert_webhook_receiver_formats_telegram_payload(monkeypatch):
     )
 
     assert body["chat_id"] == "12345"
-    assert "Hermes Memory alert" in body["text"]
+    assert "Hermes 记忆系统告警" in body["text"]
 
 
 def test_alert_webhook_receiver_retries_forward(monkeypatch):
@@ -609,9 +609,13 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
         json.dumps({"status": "healthy", "ok": True, "last_forward": {"status": 200, "reason": "OK", "attempts": 1}}),
         encoding="utf-8",
     )
+    (metrics / "slo-rollup-latest.json").write_text(
+        json.dumps({"status": "healthy", "acceptance_ok_rate": 1.0, "alert_queue_growth": 0, "recall_latency": {"p95_s": 0.42}}),
+        encoding="utf-8",
+    )
 
-    html = metrics_dashboard.render_dashboard(metrics, lang="zh")
-    html_en = metrics_dashboard.render_dashboard(metrics, lang="en")
+    html = metrics_dashboard.render_dashboard(metrics, lang="zh", query_params={"view": "alerts"})
+    html_en = metrics_dashboard.render_dashboard(metrics, lang="en", query_params={"view": "components"})
 
     assert 'lang="zh-CN"' in html
     assert "#section-alerts" in html
@@ -619,13 +623,18 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
     assert "historical_acceptance_failures" in html
     assert "47" in html
     assert "HTTP 200" in html
-    assert "{&#x27;status&#x27;: 200" not in html
+    assert "Hermes 记忆体仪表板" in html
+    assert "Prometheus / Grafana" in html
+    assert "view=alerts" in html
     assert "Hermes Memory Dashboard" in html_en
     assert "Runtime Drift" in html_en
     assert "Language" in html_en
     assert "Success, HTTP 200, 1 attempt(s)" in html_en
+    assert "view=components" in html_en
     payload = metrics_dashboard.build_dashboard_payload(metrics)
     assert payload["artifacts"][0]["name"] == "Runtime Drift"
+    assert payload["overall_status"] == "healthy"
+    assert payload["status_counts"]["healthy"] >= 1
 
 
 def test_metrics_dashboard_server_requires_token(tmp_path: Path):
@@ -651,11 +660,13 @@ def test_metrics_dashboard_server_requires_token(tmp_path: Path):
             body = response.read().decode("utf-8")
             assert "Hermes Memory Dashboard" in body
             assert "Language" in body
+            assert "Prometheus / Grafana" in body
         with urllib.request.urlopen(f"{base}/api/status?token=secret", timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
             assert response.status == 200
             assert "artifacts" in payload
             assert "summary_text" not in payload
+            assert payload["overall_status"] in {"healthy", "degraded", "action-needed"}
         with urllib.request.urlopen(f"{base}/api/status?token=secret&lang=en", timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
             assert response.status == 200
@@ -782,6 +793,19 @@ def test_grafana_dashboard_template_consumes_openmetrics():
     assert "hermes_memory_component_status" in serialized
     assert "hermes_memory_slo_acceptance_ok_rate" in serialized
     assert "hermes_memory_slo_recall_latency_seconds" in serialized
+
+
+def test_prometheus_and_grafana_provisioning_templates_exist():
+    prometheus = (REPO / "deploy" / "observability" / "prometheus.yml").read_text(encoding="utf-8")
+    compose = (REPO / "deploy" / "observability" / "docker-compose.yml").read_text(encoding="utf-8")
+    datasource = (REPO / "deploy" / "observability" / "grafana" / "provisioning" / "datasources" / "prometheus.yml").read_text(encoding="utf-8")
+    dashboards = (REPO / "deploy" / "observability" / "grafana" / "provisioning" / "dashboards" / "dashboards.yml").read_text(encoding="utf-8")
+
+    assert "127.0.0.1:9500/metrics" in prometheus
+    assert "grafana/grafana" in compose
+    assert "prom/prometheus" in compose
+    assert "type: prometheus" in datasource
+    assert "hermes-memory-openmetrics-dashboard.json" in dashboards
 
 
 def test_status_command_prints_one_line_summary(tmp_path: Path):

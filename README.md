@@ -259,6 +259,8 @@ hermes-memory openmetrics
 
 Grafana can import [docs/grafana/hermes-memory-openmetrics-dashboard.json](docs/grafana/hermes-memory-openmetrics-dashboard.json) against a Prometheus datasource scraping `/metrics`.
 
+A ready-to-run Prometheus/Grafana stack template is included in [deploy/observability/README.md](deploy/observability/README.md).
+
 Reverse proxy templates are available in [docs/dashboard-reverse-proxy.md](docs/dashboard-reverse-proxy.md). Release validation steps are listed in [docs/release-checklist.md](docs/release-checklist.md).
 
 Without embeddings, text retrieval still works through:
