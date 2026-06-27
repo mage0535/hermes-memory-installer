@@ -206,9 +206,17 @@ hermes-memory slo-rollup
 hermes-memory openmetrics
 ```
 
-Grafana 可导入 [docs/grafana/hermes-memory-openmetrics-dashboard.json](docs/grafana/hermes-memory-openmetrics-dashboard.json)，数据源使用抓取 `/metrics` 的 Prometheus。
+仓库内置的 Grafana 面板：
+
+- [docs/grafana/hermes-memory-home.json](docs/grafana/hermes-memory-home.json)：运维首页
+- [docs/grafana/hermes-memory-openmetrics-dashboard.json](docs/grafana/hermes-memory-openmetrics-dashboard.json)：OpenMetrics 详细指标面板
 
 可直接落地的 Prometheus / Grafana 部署模板位于 [deploy/observability/README.md](deploy/observability/README.md)。
+
+这套部署模板还包含：
+
+- `prometheus-rules.yml`：默认告警规则
+- `provision_dashboards.py`：通过 Grafana API 导入面板，并把首页设置为默认主页
 
 反向代理模板见 [docs/dashboard-reverse-proxy.md](docs/dashboard-reverse-proxy.md)。发布前检查清单见 [docs/release-checklist.md](docs/release-checklist.md)。
 
