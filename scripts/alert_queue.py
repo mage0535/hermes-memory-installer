@@ -37,6 +37,16 @@ def alert(source: str, code: str, severity: str, detail: dict | None = None) -> 
     }
 
 
+def resolve_lang() -> str:
+    for key in ("MEMORY_ALERT_LANG", "MEMORY_UI_LANG", "LANGUAGE", "LC_ALL", "LANG"):
+        value = str(os.environ.get(key, "")).strip().lower()
+        if value.startswith("zh"):
+            return "zh"
+        if value.startswith("en"):
+            return "en"
+    return "zh"
+
+
 def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
     alerts: list[dict] = []
     drift = load_json(metrics_dir / "runtime-drift-latest.json")
@@ -132,6 +142,7 @@ def main() -> int:
     status, alerts = build_alerts(metrics_dir)
     payload = {
         "captured_at": datetime.now(timezone.utc).isoformat(),
+        "lang": resolve_lang(),
         "status": status,
         "ok": status == "healthy",
         "alert_count": len(alerts),

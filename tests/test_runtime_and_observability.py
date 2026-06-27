@@ -440,6 +440,10 @@ def test_alert_queue_treats_historical_failures_as_info(tmp_path: Path):
         }
     ]
 
+def test_alert_queue_resolves_language_from_locale(monkeypatch):
+    monkeypatch.setenv("LANG", "en_US.UTF-8")
+
+    assert alert_queue.resolve_lang() == "en"
 
 def test_alert_webhook_receiver_queues_payload(tmp_path: Path):
     queue = tmp_path / "inbound.jsonl"
@@ -491,6 +495,21 @@ def test_alert_webhook_receiver_formats_telegram_payload(monkeypatch):
     assert body["chat_id"] == "12345"
     assert "Hermes 记忆系统告警" in body["text"]
 
+def test_alert_webhook_receiver_payload_language_overrides_locale(monkeypatch):
+    monkeypatch.setenv("MEMORY_ALERT_TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setenv("LANG", "zh_CN.UTF-8")
+
+    body = alert_webhook_receiver.build_forward_body(
+        "telegram",
+        {
+            "lang": "en",
+            "status": "action-needed",
+            "alert_count": 1,
+            "alerts": [{"severity": "action-needed", "source": "runtime", "code": "x"}],
+        },
+    )
+
+    assert "Hermes Memory alert" in body["text"]
 
 def test_alert_webhook_receiver_retries_forward(monkeypatch):
     calls = {"count": 0}

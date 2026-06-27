@@ -247,6 +247,12 @@ Common alternatives:
 
 `alert_queue.py` normalizes health artifacts into a local queue. `alert_webhook_receiver.py` provides a real local webhook target, can forward `action-needed` alerts to generic webhooks, Slack, Feishu/Lark, DingTalk, or Telegram via private environment variables, and can replay dead-letter rows after a downstream outage.
 
+Alert text is language-adaptive:
+
+- `payload.lang` / `payload.preferred_lang` / `payload.user_lang` takes priority
+- otherwise `MEMORY_ALERT_LANG`, `MEMORY_UI_LANG`, or system locale is used
+- current defaults support `zh` and `en`
+
 `metrics_dashboard.py` renders a static HTML dashboard. `metrics_dashboard_server.py` can serve HTML, `/api/status` JSON, and `/metrics` OpenMetrics text behind a bearer/query token, and binds to `127.0.0.1` by default. `slo_rollup.py` summarizes acceptance rate, alert queue growth, dead-letter replay success, and recall latency quantiles into `slo-rollup-latest.json`. `synthetic_recall_benchmark.py` provides a private-data-free recall regression fixture for CI.
 
 For shell and monitoring probes:

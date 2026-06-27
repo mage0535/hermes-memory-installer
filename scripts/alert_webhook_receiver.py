@@ -8,8 +8,8 @@ import json
 import os
 import threading
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,6 +21,39 @@ METRICS_DIR = AGENT_HOME / "metrics"
 DEFAULT_QUEUE = METRICS_DIR / "inbound-alert-webhook.jsonl"
 DEFAULT_DEAD_LETTER = METRICS_DIR / "failed-alert-webhook.jsonl"
 DEFAULT_STATUS = METRICS_DIR / "webhook-receiver-latest.json"
+
+
+SEVERITY_LABELS = {
+    "zh": {
+        "action-needed": "⚠️ 需处理",
+        "degraded": "⚡ 性能下降",
+        "info": "ℹ️ 信息",
+        "healthy": "✅ 正常",
+        "unknown": "未知",
+    },
+    "en": {
+        "action-needed": "⚠️ Action needed",
+        "degraded": "⚡ Degraded",
+        "info": "ℹ️ Info",
+        "healthy": "✅ Healthy",
+        "unknown": "Unknown",
+    },
+}
+
+TEXT = {
+    "zh": {
+        "title": "Hermes 记忆系统告警",
+        "captured_at": "捕获时间",
+        "alert_count": "告警数",
+        "more": "- 还有 {count} 条",
+    },
+    "en": {
+        "title": "Hermes Memory alert",
+        "captured_at": "Captured at",
+        "alert_count": "Alert count",
+        "more": "- {count} more",
+    },
+}
 
 
 def utc_now() -> str:
@@ -72,28 +105,52 @@ def write_status(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-severity_labels = {
-    "action-needed": "⚠️ 需处理",
-    "degraded": "⚠ 性能下降",
-    "info": "ℹ️ 信息",
-    "healthy": "✅ 正常",
-}
+def normalize_lang(value: str | None) -> str:
+    lowered = str(value or "").strip().lower()
+    if lowered.startswith("zh"):
+        return "zh"
+    if lowered.startswith("en"):
+        return "en"
+    return ""
 
-def format_alert_text(payload: dict[str, Any]) -> str:
+
+def default_lang() -> str:
+    for key in ("MEMORY_ALERT_LANG", "MEMORY_UI_LANG", "LANGUAGE", "LC_ALL", "LANG"):
+        resolved = normalize_lang(os.environ.get(key, ""))
+        if resolved:
+            return resolved
+    return "zh"
+
+
+def payload_lang(payload: dict[str, Any]) -> str:
+    for key in ("lang", "preferred_lang", "user_lang"):
+        resolved = normalize_lang(payload.get(key))
+        if resolved:
+            return resolved
+    return default_lang()
+
+
+def severity_label(severity: str, lang: str) -> str:
+    return SEVERITY_LABELS[lang].get(severity, severity or SEVERITY_LABELS[lang]["unknown"])
+
+
+def format_alert_text(payload: dict[str, Any], lang: str | None = None) -> str:
+    resolved_lang = normalize_lang(lang) or payload_lang(payload)
+    copy = TEXT[resolved_lang]
     alerts = payload.get("alerts") or []
-    status = payload.get("status", "unknown")
-    label = severity_labels.get(status, status)
+    status = str(payload.get("status", "unknown"))
+    label = severity_label(status, resolved_lang)
     lines = [
-        f"Hermes 记忆系统告警: {label}",
-        f"捕获时间: {payload.get('captured_at', utc_now())}",
-        f"告警数: {payload.get('alert_count', len(alerts))}",
+        f"{copy['title']}: {label}",
+        f"{copy['captured_at']}: {payload.get('captured_at', utc_now())}",
+        f"{copy['alert_count']}: {payload.get('alert_count', len(alerts))}",
     ]
     for item in alerts[:8]:
-        sev = item.get("severity", "unknown")
-        label = severity_labels.get(sev, sev)
+        sev = str(item.get("severity", "unknown"))
+        label = severity_label(sev, resolved_lang)
         lines.append(f"- {label} {item.get('source', 'unknown')}:{item.get('code', 'unknown')}")
     if len(alerts) > 8:
-        lines.append(f"- ... 还有 {len(alerts) - 8} 条")
+        lines.append(copy["more"].format(count=len(alerts) - 8))
     return "\n".join(lines)
 
 
