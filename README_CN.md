@@ -173,6 +173,12 @@ Embedding 用于语义召回：它把文本转换成向量，让“意思相近�
 
 `alert_queue.py` 会把健康检查结果标准化为本地告警队列。`alert_webhook_receiver.py` 提供真实 webhook 入口，并支持通过私有环境变量转发到外部系统。
 
+告警文本支持语言自适应：
+
+- 优先读取 `payload.lang` / `payload.preferred_lang` / `payload.user_lang`
+- 如果 payload 没指定，则回退到 `MEMORY_ALERT_LANG`、`MEMORY_UI_LANG` 或系统 locale
+- 当前默认支持 `zh` 和 `en`
+
 公开仓库不会硬编码任何第三方 webhook 地址或 token。生产环境可在私有文件中配置：
 
 ```bash
