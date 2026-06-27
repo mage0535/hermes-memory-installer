@@ -257,9 +257,17 @@ hermes-memory slo-rollup
 hermes-memory openmetrics
 ```
 
-Grafana can import [docs/grafana/hermes-memory-openmetrics-dashboard.json](docs/grafana/hermes-memory-openmetrics-dashboard.json) against a Prometheus datasource scraping `/metrics`.
+Grafana dashboards included in the repository:
+
+- [docs/grafana/hermes-memory-home.json](docs/grafana/hermes-memory-home.json): operator home page
+- [docs/grafana/hermes-memory-openmetrics-dashboard.json](docs/grafana/hermes-memory-openmetrics-dashboard.json): detailed OpenMetrics dashboard
 
 A ready-to-run Prometheus/Grafana stack template is included in [deploy/observability/README.md](deploy/observability/README.md).
+
+That stack now also includes:
+
+- `prometheus-rules.yml` for default alert rules
+- `provision_dashboards.py` to import the dashboards through the Grafana API and set the default Grafana home dashboard
 
 Reverse proxy templates are available in [docs/dashboard-reverse-proxy.md](docs/dashboard-reverse-proxy.md). Release validation steps are listed in [docs/release-checklist.md](docs/release-checklist.md).
 
