@@ -788,22 +788,43 @@ def test_openmetrics_exporter_includes_slo_rollup(tmp_path: Path):
 def test_grafana_dashboard_template_consumes_openmetrics():
     dashboard = json.loads((REPO / "docs" / "grafana" / "hermes-memory-openmetrics-dashboard.json").read_text(encoding="utf-8"))
     serialized = json.dumps(dashboard)
+    panel_titles = {panel["title"] for panel in dashboard["panels"]}
 
-    assert dashboard["title"] == "Hermes Memory OpenMetrics"
+    assert dashboard["title"] == "Hermes Memory OpenMetrics / Hermes 记忆体指标看板"
     assert "hermes_memory_component_status" in serialized
     assert "hermes_memory_slo_acceptance_ok_rate" in serialized
     assert "hermes_memory_slo_recall_latency_seconds" in serialized
+    assert "Overall Component Status / 整体组件状态" in panel_titles
+
+
+def test_grafana_home_dashboard_exists():
+    dashboard = json.loads((REPO / "docs" / "grafana" / "hermes-memory-home.json").read_text(encoding="utf-8"))
+    serialized = json.dumps(dashboard)
+
+    assert dashboard["uid"] == "hermes-memory-home"
+    assert "Hermes Memory Home" in dashboard["title"]
+    assert "hermes-memory-openmetrics" in serialized
+    assert "Operator Notes" in serialized
 
 
 def test_prometheus_and_grafana_provisioning_templates_exist():
     prometheus = (REPO / "deploy" / "observability" / "prometheus.yml").read_text(encoding="utf-8")
+    rules = (REPO / "deploy" / "observability" / "prometheus-rules.yml").read_text(encoding="utf-8")
     compose = (REPO / "deploy" / "observability" / "docker-compose.yml").read_text(encoding="utf-8")
+    provision = (REPO / "deploy" / "observability" / "provision_dashboards.py").read_text(encoding="utf-8")
     datasource = (REPO / "deploy" / "observability" / "grafana" / "provisioning" / "datasources" / "prometheus.yml").read_text(encoding="utf-8")
     dashboards = (REPO / "deploy" / "observability" / "grafana" / "provisioning" / "dashboards" / "dashboards.yml").read_text(encoding="utf-8")
 
     assert "127.0.0.1:9500/metrics" in prometheus
+    assert "prometheus-rules.yml" in prometheus
+    assert "HermesMemoryAcceptanceRateLow" in rules
+    assert "HermesMemoryRecallLatencyHigh" in rules
     assert "grafana/grafana" in compose
     assert "prom/prometheus" in compose
+    assert "GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH" in compose
+    assert "prometheus-rules.yml" in compose
+    assert "/api/dashboards/db" in provision
+    assert "homeDashboardUID" in provision
     assert "type: prometheus" in datasource
     assert "hermes-memory-openmetrics-dashboard.json" in dashboards
 

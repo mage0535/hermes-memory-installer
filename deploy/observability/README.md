@@ -5,6 +5,7 @@ This directory provides a minimal Prometheus + Grafana stack for Hermes Memory.
 ## What it includes
 
 - `prometheus.yml`: scrapes the dashboard server OpenMetrics endpoint.
+- `prometheus-rules.yml`: ships default alert rules for acceptance rate, recall latency, queue growth, and component failure.
 - `docker-compose.yml`: starts Prometheus and Grafana with host networking.
 - `grafana/provisioning/datasources/prometheus.yml`: preconfigures Prometheus as the default datasource.
 - `grafana/provisioning/dashboards/dashboards.yml`: auto-loads dashboard JSON files from `docs/grafana/`.
@@ -21,6 +22,9 @@ This directory provides a minimal Prometheus + Grafana stack for Hermes Memory.
 ```bash
 cd deploy/observability
 docker compose up -d
+python3 provision_dashboards.py \
+  --password-file "$AGENT_HOME/private/grafana-admin-password" \
+  --dashboards-dir ../../docs/grafana
 ```
 
 ## Default endpoints
@@ -41,5 +45,8 @@ http://127.0.0.1:9500/metrics?token=<dashboard-token>
 Grafana auto-loads:
 
 - `docs/grafana/hermes-memory-openmetrics-dashboard.json`
+- `docs/grafana/hermes-memory-home.json`
 
 The web dashboard at `/dashboard` remains the bilingual operator UI with drilldown and status summaries. Grafana is the long-range trend and alerting layer.
+
+`provision_dashboards.py` imports the dashboards through the Grafana API and sets `hermes-memory-home` as the default Grafana home dashboard.

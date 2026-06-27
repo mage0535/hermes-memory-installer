@@ -1,0 +1,42 @@
+groups:
+  - name: hermes-memory
+    rules:
+      - alert: HermesMemoryAcceptanceRateLow
+        expr: hermes_memory_slo_acceptance_ok_rate < 0.95
+        for: 15m
+        labels:
+          severity: warning
+          service: hermes-memory
+        annotations:
+          summary: "Hermes acceptance rate is below target"
+          description: "Acceptance success rate stayed below 95% for 15 minutes."
+
+      - alert: HermesMemoryRecallLatencyHigh
+        expr: hermes_memory_slo_recall_latency_seconds{quantile="0.95"} > 20
+        for: 15m
+        labels:
+          severity: warning
+          service: hermes-memory
+        annotations:
+          summary: "Hermes recall latency p95 is high"
+          description: "Recall latency p95 stayed above 20 seconds for 15 minutes."
+
+      - alert: HermesMemoryAlertQueueGrowing
+        expr: hermes_memory_slo_alert_queue_growth > 0
+        for: 30m
+        labels:
+          severity: warning
+          service: hermes-memory
+        annotations:
+          summary: "Hermes alert queue is growing"
+          description: "Alert queue growth remained positive for 30 minutes."
+
+      - alert: HermesMemoryComponentActionNeeded
+        expr: max(hermes_memory_component_status) >= 2
+        for: 10m
+        labels:
+          severity: critical
+          service: hermes-memory
+        annotations:
+          summary: "Hermes component requires action"
+          description: "At least one Hermes component has been in action-needed state for 10 minutes."

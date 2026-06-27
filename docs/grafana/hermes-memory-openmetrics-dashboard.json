@@ -88,7 +88,7 @@
           "refId": "A"
         }
       ],
-      "title": "Overall Component Status",
+      "title": "Overall Component Status / 整体组件状态",
       "type": "stat"
     },
     {
@@ -131,7 +131,7 @@
           "refId": "A"
         }
       ],
-      "title": "gbrain Health Score",
+      "title": "gbrain Health Score / gbrain 健康分",
       "type": "stat"
     },
     {
@@ -174,7 +174,7 @@
           "refId": "A"
         }
       ],
-      "title": "Last Forward Attempts",
+      "title": "Last Forward Attempts / 最近转发尝试次数",
       "type": "stat"
     },
     {
@@ -218,7 +218,7 @@
           "refId": "B"
         }
       ],
-      "title": "SLO Success Rates",
+      "title": "SLO Success Rates / SLO 成功率",
       "type": "timeseries"
     },
     {
@@ -262,7 +262,7 @@
           "refId": "B"
         }
       ],
-      "title": "Alert Queue",
+      "title": "Alert Queue / 告警队列",
       "type": "timeseries"
     },
     {
@@ -301,7 +301,7 @@
           "refId": "A"
         }
       ],
-      "title": "Recall Latency",
+      "title": "Recall Latency / 召回延迟",
       "type": "timeseries"
     },
     {
@@ -334,7 +334,7 @@
           "refId": "A"
         }
       ],
-      "title": "Component Detail",
+      "title": "Component Detail / 组件明细",
       "type": "table"
     }
   ],
@@ -352,7 +352,7 @@
     "to": "now"
   },
   "timezone": "browser",
-  "title": "Hermes Memory OpenMetrics",
+  "title": "Hermes Memory OpenMetrics / Hermes 记忆体指标看板",
   "uid": "hermes-memory-openmetrics",
   "version": 2,
   "weekStart": ""
