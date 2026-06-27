@@ -1,0 +1,14 @@
+apiVersion: 1
+
+providers:
+  - name: Hermes Memory Dashboards
+    orgId: 1
+    folder: Hermes Memory
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
+      # Files include hermes-memory-openmetrics-dashboard.json

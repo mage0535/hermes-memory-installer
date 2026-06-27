@@ -208,6 +208,8 @@ hermes-memory openmetrics
 
 Grafana 可导入 [docs/grafana/hermes-memory-openmetrics-dashboard.json](docs/grafana/hermes-memory-openmetrics-dashboard.json)，数据源使用抓取 `/metrics` 的 Prometheus。
 
+可直接落地的 Prometheus / Grafana 部署模板位于 [deploy/observability/README.md](deploy/observability/README.md)。
+
 反向代理模板见 [docs/dashboard-reverse-proxy.md](docs/dashboard-reverse-proxy.md)。发布前检查清单见 [docs/release-checklist.md](docs/release-checklist.md)。
 
 ## Knowledge-and-Memory-Management
