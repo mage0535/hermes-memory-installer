@@ -25,7 +25,7 @@ STALE_PATTERNS = [
 
 # 强制保留的关键词
 PROTECTED = [
-    '关系', '雷区', '不要', '禁止', '严禁',
+    'Kiki', '王钰淇', '关系', '雷区', '不要', '禁止', '严禁',
     'API Key', 'API_KEY', 'secret', '密码', 'token', 'Gmail',
     'prefer', '偏好', '哲学', 'humanizer',
 ]

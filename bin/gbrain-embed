@@ -1,0 +1,5 @@
+#!/bin/bash
+# Wrapper to ensure gbrain CLI has embedding config
+export OPENAI_BASE_URL="http://127.0.0.1:8766/v1"
+export OPENAI_API_KEY="sk-local-embedding-server"
+exec /usr/local/bin/gbrain "$@"
