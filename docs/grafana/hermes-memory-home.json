@@ -185,7 +185,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "## Hermes Memory Observability / Hermes 记忆体观测\\n\\n- OpenMetrics dashboard: `Hermes Memory OpenMetrics / Hermes 记忆体指标看板`\\n- Web dashboard: `http://127.0.0.1:9500/dashboard` with dashboard token\\n- Prometheus target: `127.0.0.1:9500/metrics`\\n- This Grafana home is meant to be the operator entry page.",
+        "content": "## Hermes Memory Observability / Hermes 记忆体观测\n\n- OpenMetrics dashboard: `Hermes Memory OpenMetrics / Hermes 记忆体指标看板`\n- Web dashboard: `http://127.0.0.1:9500/dashboard` with dashboard token\n- Prometheus target: `127.0.0.1:9500/metrics`\n- This Grafana home is the operator entry page.",
         "mode": "markdown"
       },
       "pluginVersion": "11.0.0",

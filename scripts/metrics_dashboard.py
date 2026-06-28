@@ -17,7 +17,6 @@ AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", 
 METRICS_DIR = AGENT_HOME / "metrics"
 DEFAULT_OUTPUT = METRICS_DIR / "dashboard.html"
 
-
 ARTIFACTS = {
     "Runtime Drift": "runtime-drift-latest.json",
     "Health Summary": "health-summary-latest.json",
@@ -29,13 +28,12 @@ ARTIFACTS = {
     "Prometheus Alert Bridge": "prometheus-alert-bridge-latest.json",
 }
 
-
 TEXT = {
     "zh": {
         "lang": "zh-CN",
         "page_title": "Hermes 记忆体监控中心",
         "hero_title": "Hermes 记忆体监控中心",
-        "hero_subtitle": "统一查看 LangSmith、Web 面板、Prometheus、Grafana 与本地告警链路。支持多语言切换、异常解释、建议动作和逐层下钻。",
+        "hero_subtitle": "统一查看 LangSmith、Web 面板、Prometheus、Grafana 与本地告警链路，支持多语言、异常解释、建议动作和逐层下钻。",
         "language": "界面语言",
         "lang_zh": "中文",
         "lang_en": "English",
@@ -57,9 +55,9 @@ TEXT = {
         "summary_recall": "召回 P95",
         "summary_recall_cta": "查看性能趋势",
         "explanations_title": "原因解读",
-        "explanations_subtitle": "将当前异常转成可读结论，帮助快速理解发生了什么。",
+        "explanations_subtitle": "把原始系统状态翻译成可读的运维结论，帮助快速理解发生了什么。",
         "actions_title": "建议动作",
-        "actions_subtitle": "按影响优先级给出可执行动作，避免只看到红灯却不知道下一步。",
+        "actions_subtitle": "按影响优先级给出下一步动作，避免只看到红灯却不知道该怎么处理。",
         "attention_title": "异常与关注项",
         "attention_subtitle": "汇总非正常组件，适合先筛选风险，再下钻到具体卡片。",
         "attention_empty": "当前没有需要额外关注的组件。",
@@ -108,9 +106,9 @@ TEXT = {
             "acceptance_ok_rate_slo": "SLO 接受率",
             "alert_queue_growth": "告警队列增长",
             "dead_letter_replay_success_rate": "死信重放成功率",
-            "recall_latency_p95_s": "召回 P95 (秒)",
-            "recall_latency_p50_s": "召回 P50 (秒)",
-            "recall_latency_max_s": "召回最大延迟 (秒)",
+            "recall_latency_p95_s": "召回 P95（秒）",
+            "recall_latency_p50_s": "召回 P50（秒）",
+            "recall_latency_max_s": "召回最大延迟（秒）",
             "bridge_alert_count": "桥接告警数",
         },
         "sections_reasons": "异常原因",
@@ -375,7 +373,6 @@ def summarize(name: str, payload: dict[str, Any]) -> dict[str, Any]:
     else:
         status = str(payload.get("status") or ("healthy" if payload.get("ok") else "unknown"))
         ok = status == "healthy"
-
     summary: dict[str, Any] = {"name": name, "status": status, "ok": ok}
     if name == "LangSmith Trend":
         monitor = payload.get("monitor") if isinstance(payload.get("monitor"), dict) else {}
@@ -415,18 +412,14 @@ def summarize(name: str, payload: dict[str, Any]) -> dict[str, Any]:
             "last_forward": payload.get("forwarded"),
         }
     else:
-        summary["details"] = {
-            "reason_count": len(payload.get("reasons", [])),
-            "error": payload.get("error"),
-        }
+        summary["details"] = {"reason_count": len(payload.get("reasons", [])), "error": payload.get("error")}
     return summary
 
 
 def dashboard_status_counts(payload: dict[str, Any]) -> dict[str, int]:
     counts = {"healthy": 0, "degraded": 0, "action-needed": 0, "missing": 0, "unknown": 0, "unreadable": 0}
     for artifact in payload.get("artifacts", []):
-        summary = artifact.get("summary") if isinstance(artifact, dict) else {}
-        status = str((summary or {}).get("status") or "unknown")
+        status = str((artifact.get("summary") or {}).get("status") or "unknown")
         counts[status] = counts.get(status, 0) + 1
     return counts
 
@@ -498,8 +491,8 @@ def build_actions(payload: dict[str, Any], lang: str = "zh") -> list[dict[str, s
     if bridge.get("alert_count"):
         actions.append(
             {
-                "title": "核对 Prometheus 规则是否重复告警" if lang == "zh" else "Check whether Prometheus rules are duplicating alerts",
-                "body": "确认桥接出来的告警和本地 health summary 告警语义一致，避免噪声放大。" if lang == "zh" else "Verify that bridged alerts align with local health-summary alerts to avoid amplified noise.",
+                "title": "核对 Prometheus 告警桥接结果" if lang == "zh" else "Verify the Prometheus alert bridge output",
+                "body": "确认桥接告警与本地 health summary 告警语义一致，避免重复通知或噪声放大。" if lang == "zh" else "Verify that bridged alerts align with local health-summary alerts to avoid duplicate notifications and amplified noise.",
             }
         )
     if not actions:
@@ -512,7 +505,7 @@ def build_actions(payload: dict[str, Any], lang: str = "zh") -> list[dict[str, s
     return actions
 
 
-def build_dashboard_payload(metrics_dir: Path) -> dict[str, Any]:
+def build_dashboard_payload(metrics_dir: Path) -> dict:
     artifacts = []
     for name, filename in ARTIFACTS.items():
         payload = load_json(metrics_dir / filename)
@@ -608,10 +601,7 @@ def render_rows(rows: list[dict[str, Any]], lang: str) -> str:
 
 
 def render_story_cards(rows: list[dict[str, str]]) -> str:
-    return "".join(
-        f"<article class='story-card'><h3>{safe(row['title'])}</h3><p>{safe(row['body'])}</p></article>"
-        for row in rows
-    )
+    return "".join(f"<article class='story-card'><h3>{safe(row['title'])}</h3><p>{safe(row['body'])}</p></article>" for row in rows)
 
 
 def language_href(lang: str, query_params: dict[str, str]) -> str:
@@ -627,9 +617,7 @@ def view_href(view: str, query_params: dict[str, str]) -> str:
 
 
 def section_class(active_view: str, section_view: str) -> str:
-    if active_view in {"overview", section_view}:
-        return ""
-    return " hidden"
+    return "" if active_view in {"overview", section_view} else " hidden"
 
 
 def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str, str] | None = None) -> str:
@@ -639,7 +627,6 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
     active_view = str(query_params.get("view") or "overview")
     if active_view not in {"overview", "components", "alerts", "observability"}:
         active_view = "overview"
-        query_params["view"] = active_view
     payload = build_dashboard_payload(metrics_dir)
     payload["explanations"] = build_explanations(payload, lang)
     payload["actions"] = build_actions(payload, lang)
@@ -660,10 +647,7 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
             if format_detail_value(key, value, lang) is not None
         )
         sections = issue_sections(raw, lang)
-        section_html = "".join(
-            f"<section class='issue-section'><h3>{safe(section['title'])}</h3>{render_rows(section['rows'], lang)}</section>"
-            for section in sections
-        )
+        section_html = "".join(f"<section class='issue-section'><h3>{safe(section['title'])}</h3>{render_rows(section['rows'], lang)}</section>" for section in sections)
         cards.append(
             f"""
             <details id="artifact-{safe(slugify(name))}" class="card" {'open' if status != 'healthy' else ''}>
@@ -690,12 +674,10 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
         )
 
     alerts = payload["alerts"]
-    attention_rows = [
-        {"code": artifact_name(item["name"], lang), "severity": localize_status(item["status"], lang), "artifact": item["filename"]}
-        for item in payload["attention_items"]
-    ]
+    attention_rows = [{"code": artifact_name(item["name"], lang), "severity": localize_status(item["status"], lang), "artifact": item["filename"]} for item in payload["attention_items"]]
     attention_html = render_rows(attention_rows, lang) if attention_rows else f"<p class='empty-state'>{safe(copy['attention_empty'])}</p>"
     alerts_html = render_rows(alerts, lang) if alerts else f"<p class='empty-state'>{safe(copy['alerts_empty'])}</p>"
+
     recall_p95 = copy["none"]
     for artifact in payload["artifacts"]:
         if artifact["name"] == "SLO Rollup":
@@ -718,102 +700,56 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
   <title>{safe(copy['page_title'])}</title>
   <style>
     :root {{
-      --bg: #eef4fb;
-      --bg-strong: #dde9f9;
-      --surface: rgba(255, 255, 255, 0.88);
-      --surface-strong: #ffffff;
-      --surface-soft: #f5f8fe;
-      --line: rgba(89, 102, 126, 0.18);
-      --text: #17202f;
-      --muted: #5f6b7c;
-      --primary: #0b57d0;
-      --primary-soft: rgba(11, 87, 208, 0.1);
-      --positive: #137333;
-      --positive-soft: #d7f3df;
-      --warn: #b06000;
-      --warn-soft: #fde6c6;
-      --critical: #c5221f;
-      --critical-soft: #f9dedc;
-      --shadow: 0 18px 48px rgba(11, 87, 208, 0.11);
-      --radius-xl: 28px;
-      --radius-lg: 20px;
-      --radius-md: 14px;
+      --bg: #eef4fb; --bg-strong: #dde9f9; --surface: rgba(255,255,255,.88); --surface-strong: #fff; --surface-soft: #f5f8fe;
+      --line: rgba(89,102,126,.18); --text: #17202f; --muted: #5f6b7c; --primary: #0b57d0; --primary-soft: rgba(11,87,208,.1);
+      --positive: #137333; --positive-soft: #d7f3df; --warn: #b06000; --warn-soft: #fde6c6; --critical: #c5221f; --critical-soft: #f9dedc;
+      --shadow: 0 18px 48px rgba(11,87,208,.11); --radius-xl: 28px; --radius-lg: 20px; --radius-md: 14px;
     }}
     * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      color: var(--text);
-      font-family: "Google Sans", "Noto Sans SC", "Segoe UI Variable", sans-serif;
-      background:
-        linear-gradient(180deg, rgba(11, 87, 208, 0.12), transparent 18rem),
-        radial-gradient(circle at top left, rgba(66, 133, 244, 0.18), transparent 26rem),
-        linear-gradient(180deg, var(--bg-strong), var(--bg));
-    }}
+    body {{ margin: 0; color: var(--text); font-family: "Google Sans","Noto Sans SC","Segoe UI Variable",sans-serif; background:
+      linear-gradient(180deg, rgba(11,87,208,.12), transparent 18rem),
+      radial-gradient(circle at top left, rgba(66,133,244,.18), transparent 26rem),
+      linear-gradient(180deg, var(--bg-strong), var(--bg)); }}
     a {{ color: inherit; text-decoration: none; }}
     main {{ max-width: 1320px; margin: 0 auto; padding: 24px 20px 72px; }}
-    .hero, .section {{
-      background: var(--surface);
-      border: 1px solid rgba(255,255,255,0.75);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(16px);
-    }}
-    .hero {{ padding: 28px; }}
-    .section {{ margin-top: 28px; padding: 22px 20px; }}
-    .hero-top, .section-head, .hero-meta, .toolbar, .lang-switch {{
-      display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
-    }}
+    .hero,.section {{ background: var(--surface); border: 1px solid rgba(255,255,255,.75); border-radius: var(--radius-lg); box-shadow: var(--shadow); backdrop-filter: blur(16px); }}
+    .hero {{ padding: 28px; }} .section {{ margin-top: 28px; padding: 22px 20px; }}
+    .hero-top,.section-head,.hero-meta,.toolbar,.lang-switch {{ display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }}
     .hero-top {{ justify-content: space-between; align-items: start; }}
     .hero h1 {{ margin: 0; font-size: clamp(2.1rem, 4.8vw, 3.7rem); line-height: 1.04; font-weight: 800; }}
-    .subtitle, .section-head p {{ color: var(--muted); line-height: 1.65; }}
-    .subtitle {{ margin: 14px 0 0; max-width: 60rem; }}
-    .chip, .status-pill, .inline-pill, .toolbar-link, .lang-link {{
-      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-      min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line);
-      background: rgba(255,255,255,0.82); font-weight: 700;
-    }}
-    .inline-pill {{ min-height: 30px; padding: 0 10px; font-size: 0.84rem; color: var(--primary); background: var(--primary-soft); border-color: transparent; }}
-    .toolbar-link.active, .lang-link.active {{ color: var(--primary); background: var(--primary-soft); border-color: rgba(11,87,208,0.22); }}
+    .subtitle,.section-head p {{ color: var(--muted); line-height: 1.65; }} .subtitle {{ margin: 14px 0 0; max-width: 60rem; }}
+    .chip,.status-pill,.inline-pill,.toolbar-link,.lang-link {{ display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255,255,255,.82); font-weight: 700; }}
+    .inline-pill {{ min-height: 30px; padding: 0 10px; font-size: .84rem; color: var(--primary); background: var(--primary-soft); border-color: transparent; }}
+    .toolbar-link.active,.lang-link.active {{ color: var(--primary); background: var(--primary-soft); border-color: rgba(11,87,208,.22); }}
     .tone-positive {{ background: var(--positive-soft); color: var(--positive); border-color: transparent; }}
     .tone-warn {{ background: var(--warn-soft); color: var(--warn); border-color: transparent; }}
     .tone-critical {{ background: var(--critical-soft); color: var(--critical); border-color: transparent; }}
-    .summary-grid, .story-grid, .observability-grid, .grid {{ display: grid; gap: 16px; }}
-    .summary-grid {{ grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 22px; }}
-    .story-grid {{ grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }}
-    .observability-grid {{ grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }}
-    .grid {{ grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }}
-    .summary-link, .story-card, .observability-card, .card {{
-      background: var(--surface-strong); border: 1px solid var(--line); border-radius: 8px;
-    }}
-    .summary-link {{ padding: 18px; display: block; }}
-    .summary-link p, .story-card p, .observability-card p {{ margin: 0; color: var(--muted); }}
-    .summary-link strong {{ display: block; margin-top: 8px; font-size: 2rem; }}
-    .summary-link span {{ display: block; margin-top: 8px; color: var(--primary); font-size: .9rem; }}
-    .story-card, .observability-card {{ padding: 18px; }}
-    .story-card h3, .observability-card h3 {{ margin: 0 0 10px; }}
+    .summary-grid,.story-grid,.observability-grid,.grid {{ display: grid; gap: 16px; }}
+    .summary-grid {{ grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); margin-top: 22px; }}
+    .story-grid {{ grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); }}
+    .observability-grid {{ grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); }}
+    .grid {{ grid-template-columns: repeat(auto-fit, minmax(320px,1fr)); }}
+    .summary-link,.story-card,.observability-card,.card {{ background: var(--surface-strong); border: 1px solid var(--line); border-radius: 8px; }}
+    .summary-link {{ padding: 18px; display: block; }} .story-card,.observability-card {{ padding: 18px; }}
+    .summary-link p,.story-card p,.observability-card p {{ margin: 0; color: var(--muted); }}
+    .summary-link strong {{ display: block; margin-top: 8px; font-size: 2rem; }} .summary-link span {{ display: block; margin-top: 8px; color: var(--primary); font-size: .9rem; }}
+    .story-card h3,.observability-card h3 {{ margin: 0 0 10px; }}
     .hidden {{ display: none; }}
     .card-head {{ list-style: none; display: flex; justify-content: space-between; gap: 12px; align-items: start; padding: 18px; cursor: pointer; }}
-    .card-body {{ padding: 0 18px 18px; }}
-    .eyebrow {{ margin: 0 0 8px; color: var(--primary); font-size: .78rem; font-weight: 700; }}
+    .card-body {{ padding: 0 18px 18px; }} .eyebrow {{ margin: 0 0 8px; color: var(--primary); font-size: .78rem; font-weight: 700; }}
     .summary-actions {{ display: flex; flex-direction: column; align-items: end; gap: 8px; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: .94rem; }}
-    th, td {{ text-align: left; border-top: 1px solid var(--line); padding: 10px 0; vertical-align: top; }}
-    th {{ width: 42%; color: var(--muted); font-weight: 700; }}
-    .detail-item {{ background: rgba(255,255,255,0.72); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px 14px; margin-top: 10px; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: .94rem; }} th,td {{ text-align: left; border-top: 1px solid var(--line); padding: 10px 0; vertical-align: top; }} th {{ width: 42%; color: var(--muted); font-weight: 700; }}
+    .detail-item {{ background: rgba(255,255,255,.72); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px 14px; margin-top: 10px; }}
     .detail-item summary {{ cursor: pointer; display: flex; justify-content: space-between; gap: 10px; align-items: center; font-weight: 700; }}
-    .empty-state {{ margin: 0; padding: 18px; background: rgba(255,255,255,0.72); border-radius: var(--radius-md); border: 1px solid var(--line); color: var(--muted); }}
+    .empty-state {{ margin: 0; padding: 18px; background: rgba(255,255,255,.72); border-radius: var(--radius-md); border: 1px solid var(--line); color: var(--muted); }}
     pre {{ overflow: auto; white-space: pre-wrap; font-size: .82rem; color: #243044; background: var(--surface-soft); border-radius: 12px; padding: 14px; margin: 14px 0 0; }}
-    @media (max-width: 760px) {{ main {{ padding: 16px 14px 54px; }} .summary-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .grid {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
 <body>
   <main>
     <section class="hero" id="section-overview">
       <div class="hero-top">
-        <div>
-          <h1>{safe(copy['hero_title'])}</h1>
-          <p class="subtitle">{safe(copy['hero_subtitle'])}</p>
-        </div>
+        <div><h1>{safe(copy['hero_title'])}</h1><p class="subtitle">{safe(copy['hero_subtitle'])}</p></div>
         <div class="lang-switch">
           <span class="chip">{safe(copy['language'])}</span>
           <a class="lang-link {'active' if lang == 'zh' else ''}" href="{safe(zh_href)}">{safe(copy['lang_zh'])}</a>
@@ -840,40 +776,12 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
       </div>
     </section>
 
-    <section class="section{section_class(active_view, 'overview')}">
-      <div class="section-head"><div><h2>{safe(copy['explanations_title'])}</h2><p>{safe(copy['explanations_subtitle'])}</p></div></div>
-      <div class="story-grid">{render_story_cards(payload['explanations'])}</div>
-    </section>
-
-    <section class="section{section_class(active_view, 'overview')}">
-      <div class="section-head"><div><h2>{safe(copy['actions_title'])}</h2><p>{safe(copy['actions_subtitle'])}</p></div></div>
-      <div class="story-grid">{render_story_cards(payload['actions'])}</div>
-    </section>
-
-    <section id="section-attention" class="section{section_class(active_view, 'overview')}">
-      <div class="section-head"><div><h2>{safe(copy['attention_title'])}</h2><p>{safe(copy['attention_subtitle'])}</p></div></div>
-      {attention_html}
-    </section>
-
-    <section id="section-alerts" class="section{section_class(active_view, 'alerts')}">
-      <div class="section-head"><div><h2>{safe(copy['alerts_title'])}</h2><p>{safe(copy['alerts_subtitle'])}</p></div></div>
-      {alerts_html}
-    </section>
-
-    <section id="section-components" class="section{section_class(active_view, 'components')}">
-      <div class="section-head"><div><h2>{safe(copy['components_title'])}</h2><p>{safe(copy['components_subtitle'])}</p></div></div>
-      <div class="grid">{''.join(cards)}</div>
-    </section>
-
-    <section id="section-observability" class="section{section_class(active_view, 'observability')}">
-      <div class="section-head"><div><h2>{safe(copy['observability_title'])}</h2><p>{safe(copy['observability_subtitle'])}</p></div></div>
-      <div class="observability-grid">
-        <article class="observability-card"><h3>{safe(copy['observability_metrics'])}</h3><p><code>/metrics</code></p></article>
-        <article class="observability-card"><h3>{safe(copy['observability_api'])}</h3><p><code>/api/status?lang=zh|en</code></p></article>
-        <article class="observability-card"><h3>{safe(copy['observability_export'])}</h3><p>{safe(copy['observability_export_value'])}</p></article>
-        <article class="observability-card"><h3>{safe(copy['observability_stack'])}</h3><p><code>deploy/observability/</code></p></article>
-      </div>
-    </section>
+    <section class="section{section_class(active_view, 'overview')}"><div class="section-head"><div><h2>{safe(copy['explanations_title'])}</h2><p>{safe(copy['explanations_subtitle'])}</p></div></div><div class="story-grid">{render_story_cards(payload['explanations'])}</div></section>
+    <section class="section{section_class(active_view, 'overview')}"><div class="section-head"><div><h2>{safe(copy['actions_title'])}</h2><p>{safe(copy['actions_subtitle'])}</p></div></div><div class="story-grid">{render_story_cards(payload['actions'])}</div></section>
+    <section id="section-attention" class="section{section_class(active_view, 'overview')}"><div class="section-head"><div><h2>{safe(copy['attention_title'])}</h2><p>{safe(copy['attention_subtitle'])}</p></div></div>{attention_html}</section>
+    <section id="section-alerts" class="section{section_class(active_view, 'alerts')}"><div class="section-head"><div><h2>{safe(copy['alerts_title'])}</h2><p>{safe(copy['alerts_subtitle'])}</p></div></div>{alerts_html}</section>
+    <section id="section-components" class="section{section_class(active_view, 'components')}"><div class="section-head"><div><h2>{safe(copy['components_title'])}</h2><p>{safe(copy['components_subtitle'])}</p></div></div><div class="grid">{''.join(cards)}</div></section>
+    <section id="section-observability" class="section{section_class(active_view, 'observability')}"><div class="section-head"><div><h2>{safe(copy['observability_title'])}</h2><p>{safe(copy['observability_subtitle'])}</p></div></div><div class="observability-grid"><article class="observability-card"><h3>{safe(copy['observability_metrics'])}</h3><p><code>/metrics</code></p></article><article class="observability-card"><h3>{safe(copy['observability_api'])}</h3><p><code>/api/status?lang=zh|en</code></p></article><article class="observability-card"><h3>{safe(copy['observability_export'])}</h3><p>{safe(copy['observability_export_value'])}</p></article><article class="observability-card"><h3>{safe(copy['observability_stack'])}</h3><p><code>deploy/observability/</code></p></article></div></section>
   </main>
 </body>
 </html>
