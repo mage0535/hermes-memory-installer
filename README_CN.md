@@ -176,8 +176,14 @@ Embedding 用于语义召回：它把文本转换成向量，让“意思相近�
 告警文本支持语言自适应：
 
 - 优先读取 `payload.lang` / `payload.preferred_lang` / `payload.user_lang`
+- Telegram 场景下，bot 已学习到的 `chat_id -> lang` 会优先于默认语言
 - 如果 payload 没指定，则回退到 `MEMORY_ALERT_LANG`、`MEMORY_UI_LANG` 或系统 locale
 - 当前默认支持 `zh` 和 `en`
+
+Telegram 说明：
+
+- 只有在用户至少给 bot 发过一条消息后，Telegram 才会在更新里提供该用户的 `language_code`
+- `telegram_language_sync.py` 会读取这些更新，缓存 `chat_id -> lang`，之后告警推送会自动复用这个语言
 
 公开仓库不会硬编码任何第三方 webhook 地址或 token。生产环境可在私有文件中配置：
 

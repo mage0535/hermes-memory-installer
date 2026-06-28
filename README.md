@@ -250,8 +250,14 @@ Common alternatives:
 Alert text is language-adaptive:
 
 - `payload.lang` / `payload.preferred_lang` / `payload.user_lang` takes priority
+- for Telegram, a cached per-chat language learned from bot updates takes priority over defaults
 - otherwise `MEMORY_ALERT_LANG`, `MEMORY_UI_LANG`, or system locale is used
 - current defaults support `zh` and `en`
+
+Telegram note:
+
+- Telegram client language is only learnable after the user has sent at least one message to the bot.
+- `telegram_language_sync.py` reads bot updates, stores `chat_id -> lang`, and later outbound alerts reuse that language automatically.
 
 `metrics_dashboard.py` renders a static HTML dashboard. `metrics_dashboard_server.py` can serve HTML, `/api/status` JSON, and `/metrics` OpenMetrics text behind a bearer/query token, and binds to `127.0.0.1` by default. `slo_rollup.py` summarizes acceptance rate, alert queue growth, dead-letter replay success, and recall latency quantiles into `slo-rollup-latest.json`. `synthetic_recall_benchmark.py` provides a private-data-free recall regression fixture for CI.
 
