@@ -26,63 +26,61 @@ ARTIFACTS = {
     "Hindsight Security": "hindsight-security-latest.json",
     "Webhook Receiver": "webhook-receiver-latest.json",
     "SLO Rollup": "slo-rollup-latest.json",
+    "Prometheus Alert Bridge": "prometheus-alert-bridge-latest.json",
 }
 
 
 TEXT = {
     "zh": {
         "lang": "zh-CN",
-        "page_title": "Hermes 记忆体仪表板",
-        "hero_title": "Hermes 记忆体仪表板",
-        "hero_subtitle": "集中查看运行漂移、接受率、召回时延、gbrain 健康、安全审计与 webhook 转发状态，并支持逐级展开定位异常。",
+        "page_title": "Hermes 记忆体监控中心",
+        "hero_title": "Hermes 记忆体监控中心",
+        "hero_subtitle": "统一查看 LangSmith、Web 面板、Prometheus、Grafana 与本地告警链路。支持多语言切换、异常解释、建议动作和逐层下钻。",
         "language": "界面语言",
         "lang_zh": "中文",
         "lang_en": "English",
         "generated_at": "生成时间",
         "metrics_dir": "指标目录",
         "overall_status": "整体状态",
-        "observability_title": "Prometheus / Grafana",
-        "observability_subtitle": "OpenMetrics 已就绪，可直接用于持续采集、趋势看板和告警。",
-        "observability_metrics": "指标入口",
-        "observability_api": "状态接口",
-        "observability_export": "导出能力",
-        "observability_stack": "部署模板",
-        "observability_export_value": "OpenMetrics、Prometheus 抓取、Grafana 仪表板模板",
+        "view_overview": "总览",
+        "view_components": "组件",
+        "view_alerts": "告警",
+        "view_observability": "观测",
         "summary_total": "组件总数",
         "summary_total_cta": "查看全部组件",
         "summary_healthy": "正常组件",
         "summary_healthy_cta": "查看正常项",
         "summary_attention": "需关注组件",
-        "summary_attention_cta": "查看异常详情",
+        "summary_attention_cta": "查看异常项",
         "summary_alerts": "待处理告警",
         "summary_alerts_cta": "查看告警详情",
         "summary_recall": "召回 P95",
-        "summary_recall_cta": "查看 SLO 明细",
-        "view_overview": "总览",
-        "view_components": "组件",
-        "view_alerts": "告警",
-        "view_observability": "观测",
+        "summary_recall_cta": "查看性能趋势",
+        "explanations_title": "原因解读",
+        "explanations_subtitle": "将当前异常转成可读结论，帮助快速理解发生了什么。",
+        "actions_title": "建议动作",
+        "actions_subtitle": "按影响优先级给出可执行动作，避免只看到红灯却不知道下一步。",
         "attention_title": "异常与关注项",
-        "attention_subtitle": "这里汇总非正常组件，适合先筛出风险，再下钻到具体卡片。",
+        "attention_subtitle": "汇总非正常组件，适合先筛选风险，再下钻到具体卡片。",
         "attention_empty": "当前没有需要额外关注的组件。",
         "alerts_title": "告警详情",
-        "alerts_subtitle": "支持逐条展开查看来源、原因、上下文字段和原始 payload。",
+        "alerts_subtitle": "支持逐条展开查看来源、原因、上下文和原始 payload。",
         "alerts_empty": "当前没有待进一步处理的告警。",
         "components_title": "核心健康卡片",
         "components_subtitle": "每张卡片都支持展开查看摘要、异常分组和原始 JSON。",
+        "observability_title": "Prometheus / Grafana / LangSmith",
+        "observability_subtitle": "观测层已经统一：当前状态、长期趋势和链路诊断共用同一个入口。",
+        "observability_metrics": "指标入口",
+        "observability_api": "状态接口",
+        "observability_stack": "部署路径",
+        "observability_export": "观测覆盖",
+        "observability_export_value": "Web 面板、LangSmith 趋势、OpenMetrics、Grafana 看板、Prometheus 规则",
         "view_details": "展开详情",
         "raw_json": "原始 JSON",
         "no_summary": "暂无摘要信息",
         "none": "无",
-        "sections_reasons": "异常原因",
-        "sections_classifications": "分类详情",
-        "sections_findings": "发现项",
-        "sections_recent_failures": "最近失败",
-        "sections_alerts": "告警详情",
-        "sections_lag": "延迟详情",
-        "sections_upstream_gap": "上游缺口",
-        "sections_last_forward": "最近转发原始结果",
-        "detail_fallback": "详情",
+        "yes": "是",
+        "no": "否",
         "artifact_labels": {
             "Runtime Drift": "运行漂移",
             "Health Summary": "健康总览",
@@ -91,6 +89,7 @@ TEXT = {
             "Hindsight Security": "Hindsight 安全",
             "Webhook Receiver": "Webhook 转发",
             "SLO Rollup": "SLO 汇总",
+            "Prometheus Alert Bridge": "Prometheus 告警桥接",
         },
         "detail_labels": {
             "recent_acceptance_ok_rate": "最近接受率",
@@ -112,7 +111,16 @@ TEXT = {
             "recall_latency_p95_s": "召回 P95 (秒)",
             "recall_latency_p50_s": "召回 P50 (秒)",
             "recall_latency_max_s": "召回最大延迟 (秒)",
+            "bridge_alert_count": "桥接告警数",
         },
+        "sections_reasons": "异常原因",
+        "sections_classifications": "分类详情",
+        "sections_findings": "发现项",
+        "sections_recent_failures": "最近失败",
+        "sections_alerts": "告警详情",
+        "sections_lag": "延迟详情",
+        "sections_upstream_gap": "上游缺口",
+        "sections_last_forward": "最近转发原始结果",
         "status_labels": {
             "healthy": "正常",
             "degraded": "降级",
@@ -128,44 +136,39 @@ TEXT = {
             "action-needed": "需处理",
             "critical": "严重",
         },
-        "yes": "是",
-        "no": "否",
         "forward_success": "成功，HTTP {status}，尝试 {attempts} 次",
         "forward_failure": "失败，已重试 {attempts} 次",
         "forward_failed": "失败",
     },
     "en": {
         "lang": "en",
-        "page_title": "Hermes Memory Dashboard",
-        "hero_title": "Hermes Memory Dashboard",
-        "hero_subtitle": "Track runtime drift, acceptance health, recall latency, gbrain state, security audit, and webhook delivery in one place with layered drilldown.",
+        "page_title": "Hermes Memory Control Center",
+        "hero_title": "Hermes Memory Control Center",
+        "hero_subtitle": "Unified visibility across LangSmith, the web dashboard, Prometheus, Grafana, and the local alerting chain with drilldown, explanations, and suggested actions.",
         "language": "Language",
         "lang_zh": "中文",
         "lang_en": "English",
         "generated_at": "Generated at",
         "metrics_dir": "Metrics dir",
         "overall_status": "Overall status",
-        "observability_title": "Prometheus / Grafana",
-        "observability_subtitle": "OpenMetrics is ready for continuous scrape, trend dashboards, and alerting.",
-        "observability_metrics": "Metrics endpoint",
-        "observability_api": "Status API",
-        "observability_export": "Export scope",
-        "observability_stack": "Deployment templates",
-        "observability_export_value": "OpenMetrics, Prometheus scrape, Grafana dashboard templates",
+        "view_overview": "Overview",
+        "view_components": "Components",
+        "view_alerts": "Alerts",
+        "view_observability": "Observability",
         "summary_total": "Components",
         "summary_total_cta": "View all components",
         "summary_healthy": "Healthy",
         "summary_healthy_cta": "View healthy items",
         "summary_attention": "Needs attention",
-        "summary_attention_cta": "View abnormal details",
+        "summary_attention_cta": "View risky items",
         "summary_alerts": "Pending alerts",
         "summary_alerts_cta": "View alert details",
         "summary_recall": "Recall P95",
-        "summary_recall_cta": "View SLO details",
-        "view_overview": "Overview",
-        "view_components": "Components",
-        "view_alerts": "Alerts",
-        "view_observability": "Observability",
+        "summary_recall_cta": "View performance trends",
+        "explanations_title": "Explanations",
+        "explanations_subtitle": "Turn raw system states into short operational conclusions.",
+        "actions_title": "Suggested Actions",
+        "actions_subtitle": "Actionable next steps ordered by impact so operators know what to do next.",
         "attention_title": "Attention Items",
         "attention_subtitle": "Use this list to isolate risky components first, then drill into the exact card.",
         "attention_empty": "There are no components that require extra attention right now.",
@@ -174,19 +177,19 @@ TEXT = {
         "alerts_empty": "There are no alerts that require deeper drilldown right now.",
         "components_title": "Core Health Cards",
         "components_subtitle": "Every card can be expanded to show summary fields, grouped issues, and raw JSON.",
+        "observability_title": "Prometheus / Grafana / LangSmith",
+        "observability_subtitle": "The observability layer is unified: current state, long-range trends, and trace diagnostics share the same entry point.",
+        "observability_metrics": "Metrics endpoint",
+        "observability_api": "Status API",
+        "observability_stack": "Deployment path",
+        "observability_export": "Coverage",
+        "observability_export_value": "Web dashboard, LangSmith trend, OpenMetrics, Grafana dashboards, Prometheus rules",
         "view_details": "Expand details",
         "raw_json": "Raw JSON",
         "no_summary": "No summary information",
         "none": "None",
-        "sections_reasons": "Reasons",
-        "sections_classifications": "Classifications",
-        "sections_findings": "Findings",
-        "sections_recent_failures": "Recent failures",
-        "sections_alerts": "Alerts",
-        "sections_lag": "Lag details",
-        "sections_upstream_gap": "Upstream gap",
-        "sections_last_forward": "Last forward raw result",
-        "detail_fallback": "Details",
+        "yes": "Yes",
+        "no": "No",
         "artifact_labels": {
             "Runtime Drift": "Runtime Drift",
             "Health Summary": "Health Summary",
@@ -195,6 +198,7 @@ TEXT = {
             "Hindsight Security": "Hindsight Security",
             "Webhook Receiver": "Webhook Forwarding",
             "SLO Rollup": "SLO Rollup",
+            "Prometheus Alert Bridge": "Prometheus Alert Bridge",
         },
         "detail_labels": {
             "recent_acceptance_ok_rate": "Recent acceptance OK rate",
@@ -216,7 +220,16 @@ TEXT = {
             "recall_latency_p95_s": "Recall P95 (s)",
             "recall_latency_p50_s": "Recall P50 (s)",
             "recall_latency_max_s": "Recall max latency (s)",
+            "bridge_alert_count": "Bridge alert count",
         },
+        "sections_reasons": "Reasons",
+        "sections_classifications": "Classifications",
+        "sections_findings": "Findings",
+        "sections_recent_failures": "Recent failures",
+        "sections_alerts": "Alerts",
+        "sections_lag": "Lag details",
+        "sections_upstream_gap": "Upstream gap",
+        "sections_last_forward": "Last forward raw result",
         "status_labels": {
             "healthy": "Healthy",
             "degraded": "Degraded",
@@ -232,8 +245,6 @@ TEXT = {
             "action-needed": "Action needed",
             "critical": "Critical",
         },
-        "yes": "Yes",
-        "no": "No",
         "forward_success": "Success, HTTP {status}, {attempts} attempt(s)",
         "forward_failure": "Failed after {attempts} attempt(s)",
         "forward_failed": "Failed",
@@ -398,6 +409,11 @@ def summarize(name: str, payload: dict[str, Any]) -> dict[str, Any]:
             "recall_latency_p50_s": recall_latency.get("p50_s"),
             "recall_latency_max_s": recall_latency.get("max_s"),
         }
+    elif name == "Prometheus Alert Bridge":
+        summary["details"] = {
+            "bridge_alert_count": payload.get("alert_count"),
+            "last_forward": payload.get("forwarded"),
+        }
     else:
         summary["details"] = {
             "reason_count": len(payload.get("reasons", [])),
@@ -423,6 +439,79 @@ def overall_status_from_counts(status_counts: dict[str, int]) -> str:
     return "healthy"
 
 
+def build_explanations(payload: dict[str, Any], lang: str = "zh") -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    overall = payload["overall_status"]
+    if overall == "action-needed":
+        out.append(
+            {
+                "title": "系统存在需要立刻处理的异常" if lang == "zh" else "The system has issues that need action now",
+                "body": "至少一个关键组件处于需处理状态，当前监控与告警链路已经检测到真实风险。" if lang == "zh" else "At least one critical component is in action-needed state and the monitoring chain detected a real operational risk.",
+            }
+        )
+    trend = next((item["raw"] for item in payload["artifacts"] if item["name"] == "LangSmith Trend"), {})
+    monitor = trend.get("monitor") if isinstance(trend.get("monitor"), dict) else {}
+    if (monitor.get("lag") or {}).get("status") == "action-needed":
+        out.append(
+            {
+                "title": "Hindsight 同步延迟偏高" if lang == "zh" else "Hindsight sync lag is high",
+                "body": "这通常意味着实时记忆写入或汇总链路落后，召回结果可能变旧。" if lang == "zh" else "This usually means the real-time memory write or summarization pipeline is behind and recall results may become stale.",
+            }
+        )
+    drift = next((item["raw"] for item in payload["artifacts"] if item["name"] == "Runtime Drift"), {})
+    if drift.get("status") == "action-needed":
+        out.append(
+            {
+                "title": "运行目录和仓库版本不一致" if lang == "zh" else "Runtime and repository are out of sync",
+                "body": "生产脚本与仓库内容不一致时，排障和发布验证会失真。" if lang == "zh" else "When production scripts drift away from the repository, troubleshooting and release validation become unreliable.",
+            }
+        )
+    if not out:
+        out.append(
+            {
+                "title": "当前整体健康" if lang == "zh" else "The system is currently healthy",
+                "body": "没有检测到需要立刻处理的核心异常，建议继续观察趋势和近期告警。" if lang == "zh" else "No core issue currently requires immediate action; continue to watch trends and recent alerts.",
+            }
+        )
+    return out
+
+
+def build_actions(payload: dict[str, Any], lang: str = "zh") -> list[dict[str, str]]:
+    actions: list[dict[str, str]] = []
+    drift = next((item["raw"] for item in payload["artifacts"] if item["name"] == "Runtime Drift"), {})
+    if drift.get("status") == "action-needed":
+        actions.append(
+            {
+                "title": "先处理脚本漂移" if lang == "zh" else "Fix runtime drift first",
+                "body": "重新同步生产脚本与仓库，再重新跑 `audit-deploy` 和接受率检查。" if lang == "zh" else "Resync production scripts with the repository, then rerun deploy audit and acceptance checks.",
+            }
+        )
+    trend = next((item["raw"] for item in payload["artifacts"] if item["name"] == "LangSmith Trend"), {})
+    if (trend.get("monitor") or {}).get("lag", {}).get("status") == "action-needed":
+        actions.append(
+            {
+                "title": "检查 Hindsight 积压和同步链路" if lang == "zh" else "Inspect Hindsight backlog and sync chain",
+                "body": "优先查看 guardian、archive、summary 和 LangSmith 最近失败记录。" if lang == "zh" else "Inspect guardian, archive, summary, and recent LangSmith failures first.",
+            }
+        )
+    bridge = next((item["raw"] for item in payload["artifacts"] if item["name"] == "Prometheus Alert Bridge"), {})
+    if bridge.get("alert_count"):
+        actions.append(
+            {
+                "title": "核对 Prometheus 规则是否重复告警" if lang == "zh" else "Check whether Prometheus rules are duplicating alerts",
+                "body": "确认桥接出来的告警和本地 health summary 告警语义一致，避免噪声放大。" if lang == "zh" else "Verify that bridged alerts align with local health-summary alerts to avoid amplified noise.",
+            }
+        )
+    if not actions:
+        actions.append(
+            {
+                "title": "继续观察趋势" if lang == "zh" else "Keep watching the trend layer",
+                "body": "当前更适合关注 24h/7d 曲线和近期异常，而不是立刻执行变更。" if lang == "zh" else "Focus on 24h/7d trends and recent anomalies instead of making immediate changes.",
+            }
+        )
+    return actions
+
+
 def build_dashboard_payload(metrics_dir: Path) -> dict[str, Any]:
     artifacts = []
     for name, filename in ARTIFACTS.items():
@@ -433,15 +522,11 @@ def build_dashboard_payload(metrics_dir: Path) -> dict[str, Any]:
     health_raw = next((item["raw"] for item in artifacts if item["name"] == "Health Summary"), {})
     alerts = health_raw.get("alerts", []) if isinstance(health_raw.get("alerts"), list) else []
     attention_items = [
-        {
-            "name": artifact["name"],
-            "status": artifact["summary"]["status"],
-            "filename": artifact["filename"],
-        }
+        {"name": artifact["name"], "status": artifact["summary"]["status"], "filename": artifact["filename"]}
         for artifact in artifacts
         if artifact["summary"]["status"] != "healthy"
     ]
-    return {
+    payload = {
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "ok": overall_status == "healthy",
         "overall_status": overall_status,
@@ -451,6 +536,9 @@ def build_dashboard_payload(metrics_dir: Path) -> dict[str, Any]:
         "attention_items": attention_items,
         "alerts": alerts,
     }
+    payload["explanations"] = build_explanations(payload, "zh")
+    payload["actions"] = build_actions(payload, "zh")
+    return payload
 
 
 def human_summary(payload: dict[str, Any], lang: str = "zh") -> str:
@@ -463,16 +551,8 @@ def human_summary(payload: dict[str, Any], lang: str = "zh") -> str:
     alerts = payload.get("alerts") if isinstance(payload.get("alerts"), list) else []
     alert_count = len(alerts)
     if lang == "en":
-        return (
-            f"Overall status: {localize_status(overall, lang)}; "
-            f"components={total}; healthy={counts.get('healthy', 0)}; "
-            f"attention={attention}; alerts={alert_count}"
-        )
-    return (
-        f"{copy['overall_status']}：{localize_status(overall, lang)}；"
-        f"组件总数={total}；正常={counts.get('healthy', 0)}；"
-        f"需关注={attention}；告警={alert_count}"
-    )
+        return f"Overall status: {localize_status(overall, lang)}; components={total}; healthy={counts.get('healthy', 0)}; attention={attention}; alerts={alert_count}"
+    return f"{copy['overall_status']}：{localize_status(overall, lang)}；组件总数={total}；正常={counts.get('healthy', 0)}；需关注={attention}；告警={alert_count}"
 
 
 def issue_sections(payload: dict[str, Any], lang: str) -> list[dict[str, Any]]:
@@ -489,7 +569,6 @@ def issue_sections(payload: dict[str, Any], lang: str) -> list[dict[str, Any]]:
         value = payload.get(key)
         if isinstance(value, list) and value:
             sections.append({"title": title, "rows": value})
-
     monitor = payload.get("monitor")
     if isinstance(monitor, dict):
         if isinstance(monitor.get("recent_failures"), list) and monitor["recent_failures"]:
@@ -497,11 +576,6 @@ def issue_sections(payload: dict[str, Any], lang: str) -> list[dict[str, Any]]:
         lag = monitor.get("lag")
         if isinstance(lag, dict) and lag:
             sections.append({"title": copy["sections_lag"], "rows": [lag]})
-
-    upstream_gap = payload.get("upstream_gap")
-    if isinstance(upstream_gap, dict) and upstream_gap:
-        sections.append({"title": copy["sections_upstream_gap"], "rows": [upstream_gap]})
-
     last_forward = payload.get("last_forward")
     if isinstance(last_forward, dict) and last_forward:
         sections.append({"title": copy["sections_last_forward"], "rows": [last_forward]})
@@ -509,14 +583,13 @@ def issue_sections(payload: dict[str, Any], lang: str) -> list[dict[str, Any]]:
 
 
 def render_rows(rows: list[dict[str, Any]], lang: str) -> str:
-    copy = copy_for(lang)
     cards = []
     for row in rows:
         severity = localize_severity(str(row.get("severity") or row.get("status") or "info"), lang)
-        header = row.get("code") or row.get("run_name") or row.get("reason") or row.get("required_capability") or copy["detail_fallback"]
+        header = row.get("code") or row.get("run_name") or row.get("reason") or row.get("title") or "Details"
         body_lines = []
         for key, value in row.items():
-            if key in {"code", "severity"}:
+            if key in {"code", "severity", "title"}:
                 continue
             value_text = json.dumps(value, ensure_ascii=False, indent=2) if isinstance(value, (dict, list)) else str(value)
             body_lines.append(f"<tr><th>{safe(detail_label(str(key), lang))}</th><td>{safe(value_text)}</td></tr>")
@@ -527,11 +600,18 @@ def render_rows(rows: list[dict[str, Any]], lang: str) -> str:
                 <span>{safe(str(header))}</span>
                 <span class="inline-pill">{safe(severity)}</span>
               </summary>
-              <table>{''.join(body_lines) or f"<tr><td>{safe(copy['none'])}</td></tr>"}</table>
+              <table>{''.join(body_lines)}</table>
             </details>
             """
         )
     return "".join(cards)
+
+
+def render_story_cards(rows: list[dict[str, str]]) -> str:
+    return "".join(
+        f"<article class='story-card'><h3>{safe(row['title'])}</h3><p>{safe(row['body'])}</p></article>"
+        for row in rows
+    )
 
 
 def language_href(lang: str, query_params: dict[str, str]) -> str:
@@ -560,8 +640,10 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
     if active_view not in {"overview", "components", "alerts", "observability"}:
         active_view = "overview"
         query_params["view"] = active_view
-    captured_at = datetime.now(timezone.utc).isoformat()
     payload = build_dashboard_payload(metrics_dir)
+    payload["explanations"] = build_explanations(payload, lang)
+    payload["actions"] = build_actions(payload, lang)
+    captured_at = datetime.now(timezone.utc).isoformat()
     status_counts = payload["status_counts"]
     overall_status = payload["overall_status"]
 
@@ -609,28 +691,24 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
 
     alerts = payload["alerts"]
     attention_rows = [
-        {
-            "code": artifact_name(item["name"], lang),
-            "severity": localize_status(item["status"], lang),
-            "artifact": item["filename"],
-        }
+        {"code": artifact_name(item["name"], lang), "severity": localize_status(item["status"], lang), "artifact": item["filename"]}
         for item in payload["attention_items"]
     ]
     attention_html = render_rows(attention_rows, lang) if attention_rows else f"<p class='empty-state'>{safe(copy['attention_empty'])}</p>"
     alerts_html = render_rows(alerts, lang) if alerts else f"<p class='empty-state'>{safe(copy['alerts_empty'])}</p>"
+    recall_p95 = copy["none"]
+    for artifact in payload["artifacts"]:
+        if artifact["name"] == "SLO Rollup":
+            recall_latency = artifact["raw"].get("recall_latency") if isinstance(artifact["raw"].get("recall_latency"), dict) else {}
+            recall_p95 = format_detail_value("recall_latency_p95_s", recall_latency.get("p95_s"), lang) or copy["none"]
+            break
 
-    slo_artifact = next((item for item in payload["artifacts"] if item["name"] == "SLO Rollup"), None)
-    slo_raw = slo_artifact["raw"] if slo_artifact else {}
-    recall_latency = slo_raw.get("recall_latency") if isinstance(slo_raw.get("recall_latency"), dict) else {}
-    recall_p95 = format_detail_value("recall_latency_p95_s", recall_latency.get("p95_s"), lang) or copy["none"]
-
-    base_query = dict(query_params)
-    zh_href = language_href("zh", base_query)
-    en_href = language_href("en", base_query)
-    overview_href = view_href("overview", base_query)
-    components_href = view_href("components", base_query)
-    alerts_href = view_href("alerts", base_query)
-    observability_href = view_href("observability", base_query)
+    zh_href = language_href("zh", query_params)
+    en_href = language_href("en", query_params)
+    overview_href = view_href("overview", query_params)
+    components_href = view_href("components", query_params)
+    alerts_href = view_href("alerts", query_params)
+    observability_href = view_href("observability", query_params)
 
     return f"""<!doctype html>
 <html lang="{safe(copy['lang'])}">
@@ -642,7 +720,7 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
     :root {{
       --bg: #eef4fb;
       --bg-strong: #dde9f9;
-      --surface: rgba(255, 255, 255, 0.86);
+      --surface: rgba(255, 255, 255, 0.88);
       --surface-strong: #ffffff;
       --surface-soft: #f5f8fe;
       --line: rgba(89, 102, 126, 0.18);
@@ -662,11 +740,10 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
       --radius-md: 14px;
     }}
     * {{ box-sizing: border-box; }}
-    html {{ scroll-behavior: smooth; }}
     body {{
       margin: 0;
       color: var(--text);
-      font-family: "Google Sans", "Noto Sans SC", "Segoe UI Variable", "PingFang SC", sans-serif;
+      font-family: "Google Sans", "Noto Sans SC", "Segoe UI Variable", sans-serif;
       background:
         linear-gradient(180deg, rgba(11, 87, 208, 0.12), transparent 18rem),
         radial-gradient(circle at top left, rgba(66, 133, 244, 0.18), transparent 26rem),
@@ -674,203 +751,59 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
     }}
     a {{ color: inherit; text-decoration: none; }}
     main {{ max-width: 1320px; margin: 0 auto; padding: 24px 20px 72px; }}
-    .hero {{
-      background: linear-gradient(160deg, rgba(255,255,255,0.96), rgba(236,243,255,0.86));
-      border: 1px solid rgba(255,255,255,0.74);
-      border-radius: var(--radius-xl);
-      box-shadow: var(--shadow);
-      padding: 28px;
-      backdrop-filter: blur(18px);
-    }}
-    .hero-top {{
-      display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      align-items: start;
-      flex-wrap: wrap;
-    }}
-    .hero h1 {{
-      margin: 0;
-      font-size: clamp(2.1rem, 4.8vw, 3.7rem);
-      line-height: 1.04;
-      font-weight: 800;
-      letter-spacing: 0;
-    }}
-    .subtitle {{
-      margin: 14px 0 0;
-      max-width: 60rem;
-      color: var(--muted);
-      font-size: 1rem;
-      line-height: 1.7;
-    }}
-    .hero-meta, .toolbar, .lang-switch {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
-    }}
-    .hero-meta {{ margin-top: 18px; }}
-    .toolbar {{ margin-top: 18px; }}
-    .chip, .status-pill, .inline-pill, .toolbar-link, .lang-link {{
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      min-height: 40px;
-      padding: 0 14px;
-      border-radius: 999px;
-      font-size: 0.92rem;
-      font-weight: 700;
-      letter-spacing: 0;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.8);
-    }}
-    .chip {{ color: var(--text); }}
-    .inline-pill {{
-      min-height: 30px;
-      padding: 0 10px;
-      font-size: 0.84rem;
-      color: var(--primary);
-      background: var(--primary-soft);
-      border-color: transparent;
-    }}
-    .toolbar-link, .lang-link {{ color: var(--muted); }}
-    .toolbar-link.active, .lang-link.active {{
-      color: var(--primary);
-      background: var(--primary-soft);
-      border-color: rgba(11, 87, 208, 0.22);
-    }}
-    .tone-positive {{ background: var(--positive-soft); color: var(--positive); border-color: transparent; }}
-    .tone-warn {{ background: var(--warn-soft); color: var(--warn); border-color: transparent; }}
-    .tone-critical {{ background: var(--critical-soft); color: var(--critical); border-color: transparent; }}
-    .summary-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
-      margin-top: 24px;
-    }}
-    .summary-link {{
-      background: var(--surface-strong);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 18px 18px 16px;
-      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
-      display: block;
-      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-    }}
-    .summary-link:hover {{
-      transform: translateY(-2px);
-      box-shadow: 0 14px 30px rgba(11, 87, 208, 0.1);
-      border-color: rgba(11, 87, 208, 0.18);
-    }}
-    .summary-link p {{ margin: 0 0 10px; color: var(--muted); font-size: .88rem; }}
-    .summary-link strong {{ display: block; font-size: 2rem; line-height: 1; }}
-    .summary-link span {{ display: block; margin-top: 8px; color: var(--primary); font-size: .9rem; }}
-    .section {{
-      margin-top: 30px;
+    .hero, .section {{
       background: var(--surface);
       border: 1px solid rgba(255,255,255,0.75);
       border-radius: var(--radius-lg);
       box-shadow: var(--shadow);
-      padding: 22px 20px;
       backdrop-filter: blur(16px);
     }}
+    .hero {{ padding: 28px; }}
+    .section {{ margin-top: 28px; padding: 22px 20px; }}
+    .hero-top, .section-head, .hero-meta, .toolbar, .lang-switch {{
+      display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+    }}
+    .hero-top {{ justify-content: space-between; align-items: start; }}
+    .hero h1 {{ margin: 0; font-size: clamp(2.1rem, 4.8vw, 3.7rem); line-height: 1.04; font-weight: 800; }}
+    .subtitle, .section-head p {{ color: var(--muted); line-height: 1.65; }}
+    .subtitle {{ margin: 14px 0 0; max-width: 60rem; }}
+    .chip, .status-pill, .inline-pill, .toolbar-link, .lang-link {{
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line);
+      background: rgba(255,255,255,0.82); font-weight: 700;
+    }}
+    .inline-pill {{ min-height: 30px; padding: 0 10px; font-size: 0.84rem; color: var(--primary); background: var(--primary-soft); border-color: transparent; }}
+    .toolbar-link.active, .lang-link.active {{ color: var(--primary); background: var(--primary-soft); border-color: rgba(11,87,208,0.22); }}
+    .tone-positive {{ background: var(--positive-soft); color: var(--positive); border-color: transparent; }}
+    .tone-warn {{ background: var(--warn-soft); color: var(--warn); border-color: transparent; }}
+    .tone-critical {{ background: var(--critical-soft); color: var(--critical); border-color: transparent; }}
+    .summary-grid, .story-grid, .observability-grid, .grid {{ display: grid; gap: 16px; }}
+    .summary-grid {{ grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 22px; }}
+    .story-grid {{ grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }}
+    .observability-grid {{ grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }}
+    .grid {{ grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }}
+    .summary-link, .story-card, .observability-card, .card {{
+      background: var(--surface-strong); border: 1px solid var(--line); border-radius: 8px;
+    }}
+    .summary-link {{ padding: 18px; display: block; }}
+    .summary-link p, .story-card p, .observability-card p {{ margin: 0; color: var(--muted); }}
+    .summary-link strong {{ display: block; margin-top: 8px; font-size: 2rem; }}
+    .summary-link span {{ display: block; margin-top: 8px; color: var(--primary); font-size: .9rem; }}
+    .story-card, .observability-card {{ padding: 18px; }}
+    .story-card h3, .observability-card h3 {{ margin: 0 0 10px; }}
     .hidden {{ display: none; }}
-    .section-head {{
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: end;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-    }}
-    .section-head h2 {{ margin: 0; font-size: 1.22rem; }}
-    .section-head p {{ margin: 0; color: var(--muted); font-size: .94rem; line-height: 1.6; }}
-    .grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 18px;
-    }}
-    .card {{
-      background: rgba(255,255,255,0.86);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
-    }}
-    .card-head {{
-      list-style: none;
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: start;
-      padding: 18px;
-      cursor: pointer;
-    }}
-    .card-head::-webkit-details-marker, .detail-item summary::-webkit-details-marker {{ display: none; }}
-    .summary-actions {{ display: flex; flex-direction: column; align-items: end; gap: 8px; }}
-    .chevron {{ color: var(--primary); font-size: .84rem; font-weight: 700; }}
-    .eyebrow {{ margin: 0 0 8px; color: var(--primary); font-size: .78rem; font-weight: 700; }}
-    .card h2 {{ margin: 0; font-size: 1.14rem; line-height: 1.26; }}
+    .card-head {{ list-style: none; display: flex; justify-content: space-between; gap: 12px; align-items: start; padding: 18px; cursor: pointer; }}
     .card-body {{ padding: 0 18px 18px; }}
-    .observability-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 16px;
-    }}
-    .observability-card {{
-      background: var(--surface-strong);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 18px;
-    }}
-    .observability-card h3 {{ margin: 0 0 10px; font-size: 1rem; }}
-    .observability-card p {{ margin: 0; color: var(--muted); line-height: 1.6; word-break: break-word; }}
+    .eyebrow {{ margin: 0 0 8px; color: var(--primary); font-size: .78rem; font-weight: 700; }}
+    .summary-actions {{ display: flex; flex-direction: column; align-items: end; gap: 8px; }}
     table {{ width: 100%; border-collapse: collapse; font-size: .94rem; }}
     th, td {{ text-align: left; border-top: 1px solid var(--line); padding: 10px 0; vertical-align: top; }}
-    th {{ width: 42%; font-weight: 700; color: var(--muted); }}
-    td {{ word-break: break-word; }}
-    .issue-section {{ margin-top: 18px; }}
-    .issue-section h3 {{ margin: 0 0 12px; font-size: 1rem; }}
-    .detail-item {{
-      background: rgba(255,255,255,0.72);
-      border: 1px solid var(--line);
-      border-radius: var(--radius-md);
-      padding: 12px 14px;
-      margin-top: 10px;
-    }}
-    .detail-item summary {{
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      align-items: center;
-      font-weight: 700;
-    }}
-    .empty-state {{
-      margin: 0;
-      padding: 18px;
-      background: rgba(255,255,255,0.72);
-      border-radius: var(--radius-md);
-      border: 1px solid var(--line);
-      color: var(--muted);
-    }}
-    pre {{
-      overflow: auto;
-      white-space: pre-wrap;
-      font-size: .82rem;
-      color: #243044;
-      background: var(--surface-soft);
-      border-radius: 12px;
-      padding: 14px;
-      margin: 14px 0 0;
-    }}
-    @media (max-width: 760px) {{
-      main {{ padding: 16px 14px 54px; }}
-      .hero {{ padding: 22px 18px; }}
-      .summary-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
-      .grid {{ grid-template-columns: 1fr; }}
-      th {{ width: 40%; }}
-    }}
+    th {{ width: 42%; color: var(--muted); font-weight: 700; }}
+    .detail-item {{ background: rgba(255,255,255,0.72); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px 14px; margin-top: 10px; }}
+    .detail-item summary {{ cursor: pointer; display: flex; justify-content: space-between; gap: 10px; align-items: center; font-weight: 700; }}
+    .empty-state {{ margin: 0; padding: 18px; background: rgba(255,255,255,0.72); border-radius: var(--radius-md); border: 1px solid var(--line); color: var(--muted); }}
+    pre {{ overflow: auto; white-space: pre-wrap; font-size: .82rem; color: #243044; background: var(--surface-soft); border-radius: 12px; padding: 14px; margin: 14px 0 0; }}
+    @media (max-width: 760px) {{ main {{ padding: 16px 14px 54px; }} .summary-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .grid {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
 <body>
@@ -900,67 +833,45 @@ def render_dashboard(metrics_dir: Path, lang: str = "zh", query_params: dict[str
       </div>
       <div class="summary-grid">
         <a class="summary-link" href="#section-components"><p>{safe(copy['summary_total'])}</p><strong>{len(ARTIFACTS)}</strong><span>{safe(copy['summary_total_cta'])}</span></a>
-        <a class="summary-link" href="#section-components"><p>{safe(copy['summary_healthy'])}</p><strong>{status_counts.get("healthy", 0)}</strong><span>{safe(copy['summary_healthy_cta'])}</span></a>
-        <a class="summary-link" href="#section-attention"><p>{safe(copy['summary_attention'])}</p><strong>{len(payload["attention_items"])}</strong><span>{safe(copy['summary_attention_cta'])}</span></a>
+        <a class="summary-link" href="#section-components"><p>{safe(copy['summary_healthy'])}</p><strong>{status_counts.get('healthy', 0)}</strong><span>{safe(copy['summary_healthy_cta'])}</span></a>
+        <a class="summary-link" href="#section-attention"><p>{safe(copy['summary_attention'])}</p><strong>{len(payload['attention_items'])}</strong><span>{safe(copy['summary_attention_cta'])}</span></a>
         <a class="summary-link" href="#section-alerts"><p>{safe(copy['summary_alerts'])}</p><strong>{len(alerts)}</strong><span>{safe(copy['summary_alerts_cta'])}</span></a>
         <a class="summary-link" href="#section-observability"><p>{safe(copy['summary_recall'])}</p><strong>{safe(recall_p95)}</strong><span>{safe(copy['summary_recall_cta'])}</span></a>
       </div>
     </section>
 
+    <section class="section{section_class(active_view, 'overview')}">
+      <div class="section-head"><div><h2>{safe(copy['explanations_title'])}</h2><p>{safe(copy['explanations_subtitle'])}</p></div></div>
+      <div class="story-grid">{render_story_cards(payload['explanations'])}</div>
+    </section>
+
+    <section class="section{section_class(active_view, 'overview')}">
+      <div class="section-head"><div><h2>{safe(copy['actions_title'])}</h2><p>{safe(copy['actions_subtitle'])}</p></div></div>
+      <div class="story-grid">{render_story_cards(payload['actions'])}</div>
+    </section>
+
     <section id="section-attention" class="section{section_class(active_view, 'overview')}">
-      <div class="section-head">
-        <div>
-          <h2>{safe(copy['attention_title'])}</h2>
-          <p>{safe(copy['attention_subtitle'])}</p>
-        </div>
-      </div>
+      <div class="section-head"><div><h2>{safe(copy['attention_title'])}</h2><p>{safe(copy['attention_subtitle'])}</p></div></div>
       {attention_html}
     </section>
 
     <section id="section-alerts" class="section{section_class(active_view, 'alerts')}">
-      <div class="section-head">
-        <div>
-          <h2>{safe(copy['alerts_title'])}</h2>
-          <p>{safe(copy['alerts_subtitle'])}</p>
-        </div>
-      </div>
+      <div class="section-head"><div><h2>{safe(copy['alerts_title'])}</h2><p>{safe(copy['alerts_subtitle'])}</p></div></div>
       {alerts_html}
     </section>
 
     <section id="section-components" class="section{section_class(active_view, 'components')}">
-      <div class="section-head">
-        <div>
-          <h2>{safe(copy['components_title'])}</h2>
-          <p>{safe(copy['components_subtitle'])}</p>
-        </div>
-      </div>
+      <div class="section-head"><div><h2>{safe(copy['components_title'])}</h2><p>{safe(copy['components_subtitle'])}</p></div></div>
       <div class="grid">{''.join(cards)}</div>
     </section>
 
     <section id="section-observability" class="section{section_class(active_view, 'observability')}">
-      <div class="section-head">
-        <div>
-          <h2>{safe(copy['observability_title'])}</h2>
-          <p>{safe(copy['observability_subtitle'])}</p>
-        </div>
-      </div>
+      <div class="section-head"><div><h2>{safe(copy['observability_title'])}</h2><p>{safe(copy['observability_subtitle'])}</p></div></div>
       <div class="observability-grid">
-        <article class="observability-card">
-          <h3>{safe(copy['observability_metrics'])}</h3>
-          <p><code>/metrics</code></p>
-        </article>
-        <article class="observability-card">
-          <h3>{safe(copy['observability_api'])}</h3>
-          <p><code>/api/status?lang=zh|en</code></p>
-        </article>
-        <article class="observability-card">
-          <h3>{safe(copy['observability_export'])}</h3>
-          <p>{safe(copy['observability_export_value'])}</p>
-        </article>
-        <article class="observability-card">
-          <h3>{safe(copy['observability_stack'])}</h3>
-          <p><code>deploy/observability/</code></p>
-        </article>
+        <article class="observability-card"><h3>{safe(copy['observability_metrics'])}</h3><p><code>/metrics</code></p></article>
+        <article class="observability-card"><h3>{safe(copy['observability_api'])}</h3><p><code>/api/status?lang=zh|en</code></p></article>
+        <article class="observability-card"><h3>{safe(copy['observability_export'])}</h3><p>{safe(copy['observability_export_value'])}</p></article>
+        <article class="observability-card"><h3>{safe(copy['observability_stack'])}</h3><p><code>deploy/observability/</code></p></article>
       </div>
     </section>
   </main>

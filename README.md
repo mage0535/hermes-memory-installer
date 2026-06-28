@@ -258,6 +258,7 @@ Telegram note:
 
 - Telegram client language is only learnable after the user has sent at least one message to the bot.
 - `telegram_language_sync.py` reads bot updates, stores `chat_id -> lang`, and later outbound alerts reuse that language automatically.
+- For multi-recipient delivery, start from `config/alert_recipients.example.json` and place the real file in `$AGENT_HOME/private/alert-recipients.json`.
 
 `metrics_dashboard.py` renders a static HTML dashboard. `metrics_dashboard_server.py` can serve HTML, `/api/status` JSON, and `/metrics` OpenMetrics text behind a bearer/query token, and binds to `127.0.0.1` by default. `slo_rollup.py` summarizes acceptance rate, alert queue growth, dead-letter replay success, and recall latency quantiles into `slo-rollup-latest.json`. `synthetic_recall_benchmark.py` provides a private-data-free recall regression fixture for CI.
 

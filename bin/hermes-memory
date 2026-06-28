@@ -46,6 +46,7 @@ CORE_DEPLOY_SCRIPTS = [
     "alert_queue.py",
     "alert_webhook_receiver.py",
     "telegram_language_sync.py",
+    "prometheus_alert_bridge.py",
     "metrics_dashboard.py",
     "metrics_dashboard_server.py",
     "openmetrics_exporter.py",
@@ -576,6 +577,15 @@ def cmd_telegram_lang_sync(args: argparse.Namespace) -> int:
     return run_script("telegram_language_sync.py", extra_args)
 
 
+def cmd_prometheus_alert_sync(args: argparse.Namespace) -> int:
+    extra_args = ["--prometheus-url", args.prometheus_url, "--webhook-url", args.webhook_url, "--lang", args.lang]
+    if args.status_output:
+        extra_args.extend(["--status-output", args.status_output])
+    if args.dry_run:
+        extra_args.append("--dry-run")
+    return run_script("prometheus_alert_bridge.py", extra_args)
+
+
 def cmd_synthetic_recall(args: argparse.Namespace) -> int:
     extra_args = []
     if args.output:
@@ -638,6 +648,12 @@ def main() -> int:
     telegram_sync.add_argument("--map-path", default=str(AGENT_HOME / "private" / "telegram-chat-languages.json"))
     telegram_sync.add_argument("--offset-path", default=str(AGENT_HOME / "private" / "telegram-updates-offset"))
     telegram_sync.add_argument("--limit", type=int, default=100)
+    prom_sync = sub.add_parser("prometheus-alert-sync", help="Bridge firing Prometheus alerts into the local webhook pipeline")
+    prom_sync.add_argument("--prometheus-url", default=os.environ.get("MEMORY_PROMETHEUS_URL", "http://127.0.0.1:9090"))
+    prom_sync.add_argument("--webhook-url", default=os.environ.get("MEMORY_ALERT_LOCAL_WEBHOOK_URL", "http://127.0.0.1:9499/alerts"))
+    prom_sync.add_argument("--lang", default=os.environ.get("MEMORY_ALERT_LANG", "zh"))
+    prom_sync.add_argument("--status-output", default=str(AGENT_HOME / "metrics" / "prometheus-alert-bridge-latest.json"))
+    prom_sync.add_argument("--dry-run", action="store_true")
     synthetic = sub.add_parser("synthetic-recall", help="Run public synthetic recall regression benchmark")
     synthetic.add_argument("--output", help="Write JSON result to this path")
 
@@ -674,6 +690,8 @@ def main() -> int:
         return cmd_replay_dead_letter(args)
     if args.command == "telegram-lang-sync":
         return cmd_telegram_lang_sync(args)
+    if args.command == "prometheus-alert-sync":
+        return cmd_prometheus_alert_sync(args)
     if args.command == "synthetic-recall":
         return cmd_synthetic_recall(args)
     return 1
