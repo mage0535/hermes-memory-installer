@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
@@ -21,6 +22,7 @@ METRICS_DIR = AGENT_HOME / "metrics"
 DEFAULT_QUEUE = METRICS_DIR / "inbound-alert-webhook.jsonl"
 DEFAULT_DEAD_LETTER = METRICS_DIR / "failed-alert-webhook.jsonl"
 DEFAULT_STATUS = METRICS_DIR / "webhook-receiver-latest.json"
+DEFAULT_TELEGRAM_LANG_MAP = AGENT_HOME / "private" / "telegram-chat-languages.json"
 
 
 SEVERITY_LABELS = {
@@ -130,6 +132,36 @@ def payload_lang(payload: dict[str, Any]) -> str:
     return default_lang()
 
 
+def load_telegram_lang_map(path: Path | None = None) -> dict[str, Any]:
+    target = path or DEFAULT_TELEGRAM_LANG_MAP
+    if not target.exists():
+        return {}
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def telegram_chat_lang(chat_id: str, path: Path | None = None) -> str:
+    payload = load_telegram_lang_map(path)
+    chat = payload.get(str(chat_id))
+    if isinstance(chat, dict):
+        resolved = normalize_lang(chat.get("lang"))
+        if resolved:
+            return resolved
+    return ""
+
+
+def telegram_chat_id(payload: dict[str, Any]) -> str:
+    for key in ("telegram_chat_id", "chat_id"):
+        value = payload.get(key)
+        if value not in (None, ""):
+            return str(value)
+    env_chat = os.environ.get("MEMORY_ALERT_TELEGRAM_CHAT_ID", "")
+    return str(env_chat).strip()
+
+
 def severity_label(severity: str, lang: str) -> str:
     return SEVERITY_LABELS[lang].get(severity, severity or SEVERITY_LABELS[lang]["unknown"])
 
@@ -156,9 +188,14 @@ def format_alert_text(payload: dict[str, Any], lang: str | None = None) -> str:
 
 def build_forward_body(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     normalized = kind.lower().strip()
-    text = format_alert_text(payload)
+    lang = ""
     if normalized == "telegram":
-        chat_id = os.environ.get("MEMORY_ALERT_TELEGRAM_CHAT_ID", "")
+        chat_id = telegram_chat_id(payload)
+        if chat_id:
+            lang = telegram_chat_lang(chat_id)
+    text = format_alert_text(payload, lang=lang)
+    if normalized == "telegram":
+        chat_id = telegram_chat_id(payload)
         if not chat_id:
             raise ValueError("MEMORY_ALERT_TELEGRAM_CHAT_ID is required for telegram forwarding")
         return {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}

@@ -32,6 +32,7 @@ import slo_rollup
 import gbrain_stale_maintenance
 import profile_isolation_soak
 import synthetic_recall_benchmark
+import telegram_language_sync
 
 
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
@@ -511,6 +512,21 @@ def test_alert_webhook_receiver_payload_language_overrides_locale(monkeypatch):
 
     assert "Hermes Memory alert" in body["text"]
 
+
+def test_alert_webhook_receiver_prefers_cached_telegram_chat_language(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("MEMORY_ALERT_TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setenv("LANG", "en_US.UTF-8")
+    lang_map = tmp_path / "telegram-chat-languages.json"
+    lang_map.write_text(json.dumps({"12345": {"lang": "zh"}}), encoding="utf-8")
+    monkeypatch.setattr(alert_webhook_receiver, "DEFAULT_TELEGRAM_LANG_MAP", lang_map)
+
+    body = alert_webhook_receiver.build_forward_body(
+        "telegram",
+        {"status": "action-needed", "alert_count": 1, "alerts": [{"severity": "action-needed", "source": "runtime", "code": "x"}]},
+    )
+
+    assert "Hermes 记忆系统告警" in body["text"]
+
 def test_alert_webhook_receiver_retries_forward(monkeypatch):
     calls = {"count": 0}
 
@@ -846,6 +862,35 @@ def test_prometheus_and_grafana_provisioning_templates_exist():
     assert "homeDashboardUID" in provision
     assert "type: prometheus" in datasource
     assert "hermes-memory-openmetrics-dashboard.json" in dashboards
+
+
+def test_telegram_language_sync_updates_chat_language(monkeypatch, tmp_path: Path):
+    map_path = tmp_path / "telegram-chat-languages.json"
+    offset_path = tmp_path / "telegram-updates-offset"
+    monkeypatch.setattr(
+        telegram_language_sync,
+        "telegram_api",
+        lambda method, params, token: {
+            "ok": True,
+            "result": [
+                {
+                    "update_id": 10,
+                    "message": {
+                        "chat": {"id": 12345},
+                        "from": {"id": 99, "username": "tester", "language_code": "zh-hans"},
+                    },
+                }
+            ],
+        },
+    )
+
+    payload = telegram_language_sync.sync_telegram_languages(map_path, offset_path, "token", limit=10)
+    stored = json.loads(map_path.read_text(encoding="utf-8"))
+
+    assert payload["ok"] is True
+    assert payload["updated"] == 1
+    assert stored["12345"]["lang"] == "zh"
+    assert offset_path.read_text(encoding="utf-8") == "11"
 
 
 def test_status_command_prints_one_line_summary(tmp_path: Path):

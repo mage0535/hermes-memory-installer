@@ -45,6 +45,7 @@ CORE_DEPLOY_SCRIPTS = [
     "gbrain_stale_maintenance.py",
     "alert_queue.py",
     "alert_webhook_receiver.py",
+    "telegram_language_sync.py",
     "metrics_dashboard.py",
     "metrics_dashboard_server.py",
     "openmetrics_exporter.py",
@@ -569,6 +570,12 @@ def cmd_replay_dead_letter(args: argparse.Namespace) -> int:
     return run_script("alert_webhook_receiver.py", extra_args)
 
 
+def cmd_telegram_lang_sync(args: argparse.Namespace) -> int:
+    extra_args = ["--map-path", args.map_path, "--offset-path", args.offset_path]
+    extra_args.extend(["--limit", str(args.limit)])
+    return run_script("telegram_language_sync.py", extra_args)
+
+
 def cmd_synthetic_recall(args: argparse.Namespace) -> int:
     extra_args = []
     if args.output:
@@ -627,6 +634,10 @@ def main() -> int:
     replay.add_argument("--max-replay", type=int, default=100)
     replay.add_argument("--dry-run", action="store_true")
     replay.add_argument("--output", help="Write replay report JSON (defaults to AGENT_HOME metrics)")
+    telegram_sync = sub.add_parser("telegram-lang-sync", help="Learn Telegram chat language from bot updates")
+    telegram_sync.add_argument("--map-path", default=str(AGENT_HOME / "private" / "telegram-chat-languages.json"))
+    telegram_sync.add_argument("--offset-path", default=str(AGENT_HOME / "private" / "telegram-updates-offset"))
+    telegram_sync.add_argument("--limit", type=int, default=100)
     synthetic = sub.add_parser("synthetic-recall", help="Run public synthetic recall regression benchmark")
     synthetic.add_argument("--output", help="Write JSON result to this path")
 
@@ -661,6 +672,8 @@ def main() -> int:
         return cmd_status(args)
     if args.command == "replay-dead-letter":
         return cmd_replay_dead_letter(args)
+    if args.command == "telegram-lang-sync":
+        return cmd_telegram_lang_sync(args)
     if args.command == "synthetic-recall":
         return cmd_synthetic_recall(args)
     return 1
