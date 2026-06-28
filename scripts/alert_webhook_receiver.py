@@ -23,6 +23,7 @@ DEFAULT_QUEUE = METRICS_DIR / "inbound-alert-webhook.jsonl"
 DEFAULT_DEAD_LETTER = METRICS_DIR / "failed-alert-webhook.jsonl"
 DEFAULT_STATUS = METRICS_DIR / "webhook-receiver-latest.json"
 DEFAULT_TELEGRAM_LANG_MAP = AGENT_HOME / "private" / "telegram-chat-languages.json"
+DEFAULT_RECIPIENTS = AGENT_HOME / "private" / "alert-recipients.json"
 
 
 SEVERITY_LABELS = {
@@ -162,6 +163,49 @@ def telegram_chat_id(payload: dict[str, Any]) -> str:
     return str(env_chat).strip()
 
 
+def load_recipients(path: Path | None = None) -> dict[str, Any]:
+    target = path or DEFAULT_RECIPIENTS
+    if not target.exists():
+        return {}
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def severity_rank(value: str) -> int:
+    mapping = {"info": 0, "healthy": 0, "degraded": 1, "warning": 1, "action-needed": 2, "critical": 2}
+    return mapping.get(str(value or "").lower(), 0)
+
+
+def forward_targets(kind: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    normalized = kind.lower().strip()
+    if normalized != "telegram":
+        return []
+    configured = load_recipients().get("telegram")
+    targets: list[dict[str, Any]] = []
+    payload_severity = str(payload.get("status") or "info")
+    if isinstance(configured, list):
+        for row in configured:
+            if not isinstance(row, dict) or not row.get("chat_id") or row.get("enabled", True) is False:
+                continue
+            min_severity = str(row.get("min_severity") or "info")
+            if severity_rank(payload_severity) < severity_rank(min_severity):
+                continue
+            recipient_lang = normalize_lang(row.get("lang")) or telegram_chat_lang(str(row["chat_id"]))
+            body = build_forward_body("telegram", {**payload, "telegram_chat_id": str(row["chat_id"]), "lang": recipient_lang or payload.get("lang")})
+            targets.append({"chat_id": str(row["chat_id"]), "lang": recipient_lang or "", "body": body})
+    if targets:
+        return targets
+    chat_id = telegram_chat_id(payload)
+    if not chat_id:
+        return []
+    lang = telegram_chat_lang(chat_id)
+    body = build_forward_body("telegram", {**payload, "telegram_chat_id": chat_id, "lang": lang or payload.get("lang")})
+    return [{"chat_id": chat_id, "lang": lang or "", "body": body}]
+
+
 def severity_label(severity: str, lang: str) -> str:
     return SEVERITY_LABELS[lang].get(severity, severity or SEVERITY_LABELS[lang]["unknown"])
 
@@ -240,10 +284,39 @@ def forward_payload(
     backoff_s: float = 1.0,
 ) -> dict[str, Any]:
     attempts = max(1, attempts)
+    inferred_kind = infer_forward_kind(url, kind)
+    if inferred_kind == "telegram":
+        targets = forward_targets("telegram", payload)
+        if not targets:
+            return {"error": "forward_failed", "attempts": 0, "errors": [{"error": "missing_telegram_target"}]}
+        results = []
+        for target in targets:
+            target_payload = {**payload, "telegram_chat_id": target["chat_id"], "lang": target["lang"] or payload.get("lang")}
+            target_errors = []
+            for attempt in range(1, attempts + 1):
+                try:
+                    result = forward_payload_once(url, target_payload, timeout, inferred_kind)
+                    result["attempts"] = attempt
+                    result["chat_id"] = target["chat_id"]
+                    results.append(result)
+                    break
+                except urllib.error.HTTPError as exc:
+                    error = {"attempt": attempt, "status": exc.code, "reason": exc.reason, "chat_id": target["chat_id"]}
+                except Exception as exc:
+                    error = {"attempt": attempt, "error": str(exc), "chat_id": target["chat_id"]}
+                target_errors.append(error)
+                if attempt < attempts and backoff_s > 0:
+                    time.sleep(backoff_s * attempt)
+            else:
+                results.append({"error": "forward_failed", "attempts": attempts, "errors": target_errors, "chat_id": target["chat_id"]})
+        failures = [row for row in results if row.get("error")]
+        if failures:
+            return {"error": "forward_failed", "attempts": attempts, "results": results, "errors": failures}
+        return {"status": 200, "reason": "OK", "attempts": max((row.get("attempts") or 1) for row in results), "results": results}
     errors = []
     for attempt in range(1, attempts + 1):
         try:
-            result = forward_payload_once(url, payload, timeout, kind)
+            result = forward_payload_once(url, payload, timeout, inferred_kind)
             result["attempts"] = attempt
             return result
         except urllib.error.HTTPError as exc:

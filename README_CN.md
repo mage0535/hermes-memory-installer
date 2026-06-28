@@ -184,6 +184,7 @@ Telegram 说明：
 
 - 只有在用户至少给 bot 发过一条消息后，Telegram 才会在更新里提供该用户的 `language_code`
 - `telegram_language_sync.py` 会读取这些更新，缓存 `chat_id -> lang`，之后告警推送会自动复用这个语言
+- 多接收人配置可参考 `config/alert_recipients.example.json`，生产实际文件放在 `$AGENT_HOME/private/alert-recipients.json`
 
 公开仓库不会硬编码任何第三方 webhook 地址或 token。生产环境可在私有文件中配置：
 

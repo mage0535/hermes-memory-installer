@@ -1,0 +1,16 @@
+{
+  "telegram": [
+    {
+      "chat_id": "123456789",
+      "lang": "zh",
+      "min_severity": "warning",
+      "enabled": true
+    },
+    {
+      "chat_id": "987654321",
+      "lang": "en",
+      "min_severity": "action-needed",
+      "enabled": true
+    }
+  ]
+}

@@ -33,6 +33,7 @@ import gbrain_stale_maintenance
 import profile_isolation_soak
 import synthetic_recall_benchmark
 import telegram_language_sync
+import prometheus_alert_bridge
 
 
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
@@ -527,6 +528,36 @@ def test_alert_webhook_receiver_prefers_cached_telegram_chat_language(monkeypatc
 
     assert "Hermes 记忆系统告警" in body["text"]
 
+
+def test_alert_webhook_receiver_supports_recipient_preferences(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("MEMORY_ALERT_TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.setenv("LANG", "en_US.UTF-8")
+    recipients = tmp_path / "alert-recipients.json"
+    recipients.write_text(
+        json.dumps(
+            {
+                "telegram": [
+                    {"chat_id": "1001", "lang": "zh", "min_severity": "warning"},
+                    {"chat_id": "1002", "lang": "en", "min_severity": "action-needed"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(alert_webhook_receiver, "DEFAULT_RECIPIENTS", recipients)
+
+    targets = alert_webhook_receiver.forward_targets(
+        "telegram",
+        {
+            "status": "action-needed",
+            "alerts": [{"severity": "action-needed", "source": "runtime", "code": "x"}],
+        },
+    )
+
+    assert [target["chat_id"] for target in targets] == ["1001", "1002"]
+    assert "Hermes 记忆系统告警" in targets[0]["body"]["text"]
+    assert "Hermes Memory alert" in targets[1]["body"]["text"]
+
 def test_alert_webhook_receiver_retries_forward(monkeypatch):
     calls = {"count": 0}
 
@@ -648,6 +679,10 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
         json.dumps({"status": "healthy", "acceptance_ok_rate": 1.0, "alert_queue_growth": 0, "recall_latency": {"p95_s": 0.42}}),
         encoding="utf-8",
     )
+    (metrics / "prometheus-alert-bridge-latest.json").write_text(
+        json.dumps({"status": "healthy", "alert_count": 0}),
+        encoding="utf-8",
+    )
 
     html = metrics_dashboard.render_dashboard(metrics, lang="zh", query_params={"view": "alerts"})
     html_en = metrics_dashboard.render_dashboard(metrics, lang="en", query_params={"view": "components"})
@@ -658,10 +693,10 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
     assert "historical_acceptance_failures" in html
     assert "47" in html
     assert "HTTP 200" in html
-    assert "Hermes 记忆体仪表板" in html
+    assert "Hermes 记忆体监控中心" in html
     assert "Prometheus / Grafana" in html
     assert "view=alerts" in html
-    assert "Hermes Memory Dashboard" in html_en
+    assert "Hermes Memory Control Center" in html_en
     assert "Runtime Drift" in html_en
     assert "Language" in html_en
     assert "Success, HTTP 200, 1 attempt(s)" in html_en
@@ -693,7 +728,7 @@ def test_metrics_dashboard_server_requires_token(tmp_path: Path):
         with urllib.request.urlopen(f"{base}/dashboard?token=secret&lang=en", timeout=5) as response:
             assert response.status == 200
             body = response.read().decode("utf-8")
-            assert "Hermes Memory Dashboard" in body
+            assert "Hermes Memory Control Center" in body
             assert "Language" in body
             assert "Prometheus / Grafana" in body
         with urllib.request.urlopen(f"{base}/api/status?token=secret", timeout=5) as response:
@@ -891,6 +926,57 @@ def test_telegram_language_sync_updates_chat_language(monkeypatch, tmp_path: Pat
     assert payload["updated"] == 1
     assert stored["12345"]["lang"] == "zh"
     assert offset_path.read_text(encoding="utf-8") == "11"
+
+
+def test_prometheus_alert_bridge_builds_local_webhook_payload():
+    payload = prometheus_alert_bridge.build_bridge_payload(
+        [
+            {
+                "labels": {"alertname": "HermesMemoryRecallLatencyHigh", "severity": "warning", "service": "hermes-memory"},
+                "annotations": {"summary": "Recall latency high", "description": "P95 above threshold"},
+                "state": "firing",
+                "activeAt": "2026-06-28T00:00:00Z",
+                "value": "21.4",
+            }
+        ],
+        lang="zh",
+    )
+
+    assert payload["status"] == "action-needed"
+    assert payload["lang"] == "zh"
+    assert payload["alert_count"] == 1
+    assert payload["alerts"][0]["code"] == "HermesMemoryRecallLatencyHigh"
+    assert payload["alerts"][0]["detail"]["summary"] == "Recall latency high"
+
+
+def test_metrics_dashboard_includes_explanations_and_actions(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(
+        json.dumps({"status": "action-needed", "reasons": [{"code": "mismatched_scripts", "severity": "action-needed"}]}),
+        encoding="utf-8",
+    )
+    (metrics / "health-summary-latest.json").write_text(
+        json.dumps({"status": "action-needed", "alert_count": 1, "alerts": [{"code": "x", "severity": "action-needed"}]}),
+        encoding="utf-8",
+    )
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps({"monitor": {"lag": {"status": "action-needed"}, "recent_acceptance_ok_rate": 0.8}}),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "hindsight-security-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "webhook-receiver-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "slo-rollup-latest.json").write_text(json.dumps({"status": "degraded"}), encoding="utf-8")
+
+    payload = metrics_dashboard.build_dashboard_payload(metrics)
+    html = metrics_dashboard.render_dashboard(metrics, lang="zh")
+
+    assert payload["overall_status"] == "action-needed"
+    assert payload["explanations"]
+    assert payload["actions"]
+    assert "原因解读" in html
+    assert "建议动作" in html
 
 
 def test_status_command_prints_one_line_summary(tmp_path: Path):

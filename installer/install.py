@@ -58,6 +58,8 @@ SUPPORTED_SCRIPT_NAMES = [
     "gbrain_stale_maintenance.py",
     "alert_queue.py",
     "alert_webhook_receiver.py",
+    "telegram_language_sync.py",
+    "prometheus_alert_bridge.py",
     "metrics_dashboard.py",
     "metrics_dashboard_server.py",
     "openmetrics_exporter.py",
