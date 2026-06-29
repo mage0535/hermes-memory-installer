@@ -34,6 +34,7 @@ import profile_isolation_soak
 import synthetic_recall_benchmark
 import telegram_language_sync
 import prometheus_alert_bridge
+import sync_embeddings
 
 
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
@@ -1031,6 +1032,58 @@ def test_gbrain_stale_upstream_gap_is_explicit_for_panel_only_debt():
     assert gap["active"] is True
     assert "JSON" in gap["required_capability"]
     assert gap["public_request"] == "docs/gbrain-stale-upstream-request.md"
+
+
+def test_gbrain_stale_maintenance_loads_env_file(monkeypatch, tmp_path: Path):
+    env_file = tmp_path / ".gbrain.env"
+    env_file.write_text("OPENAI_BASE_URL=http://127.0.0.1:8766/v1\nOPENAI_API_KEY=sk-local-dummy\n", encoding="utf-8")
+    monkeypatch.setattr(gbrain_stale_maintenance, "DEFAULT_GBRAIN_ENV_FILE", env_file)
+
+    env = gbrain_stale_maintenance.gbrain_env()
+
+    assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:8766/v1"
+    assert env["OPENAI_API_KEY"] == "sk-local-dummy"
+
+
+def test_sync_embeddings_stats_handles_missing_legacy_state_table(tmp_path: Path, monkeypatch, capsys):
+    state_db = tmp_path / "state.db"
+    semantics_db = tmp_path / "semantics.db"
+
+    conn = sqlite3.connect(str(state_db))
+    try:
+        conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, content TEXT)")
+        conn.execute("INSERT INTO messages (content) VALUES (?)", ("x" * 32,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    conn = sqlite3.connect(str(semantics_db))
+    try:
+        conn.execute(
+            """
+            CREATE TABLE embeddings (
+                message_id INTEGER PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                content_len INTEGER NOT NULL,
+                indexed_at REAL NOT NULL
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(sync_embeddings, "STATE_DB", state_db)
+    monkeypatch.setattr(sync_embeddings, "SEMANTICS_DB", semantics_db)
+
+    sync_embeddings.get_stats()
+    out = capsys.readouterr().out
+
+    assert "state.db message_embeddings: n/a (table missing)" in out
+    assert "state.db gap:                n/a (table missing)" in out
 
 
 def test_manifest_respects_agent_home_per_profile(tmp_path: Path):

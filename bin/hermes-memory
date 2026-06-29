@@ -58,6 +58,7 @@ CORE_DEPLOY_SCRIPTS = [
     "profile_isolation_check.py",
     "rotate_dashboard_token.py",
     "system_metrics_collector.py",
+    "snapshot_retention.py",
 ]
 REQUIRED_REPO_FILES = [
     "README.md",
