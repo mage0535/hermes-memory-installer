@@ -2973,6 +2973,14 @@ def query_canonical_semantic(query: str, top: int = 5) -> list[dict]:
     return scored[:top]
 
 
+def hindsight_headers(content_type: bool = False) -> dict:
+    headers = {"Content-Type": "application/json"} if content_type else {}
+    if HINDSIGHT_AUTH_TOKEN:
+        headers["Authorization"] = f"Bearer {HINDSIGHT_AUTH_TOKEN}"
+        headers["X-Hindsight-Token"] = HINDSIGHT_AUTH_TOKEN
+    return headers
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Rebuild and query Hermes memory governance index")
     parser.add_argument("--force", action="store_true", help="Force a full rebuild")
@@ -3006,9 +3014,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-def hindsight_headers(content_type: bool = False) -> dict:
-    headers = {"Content-Type": "application/json"} if content_type else {}
-    if HINDSIGHT_AUTH_TOKEN:
-        headers["Authorization"] = f"Bearer {HINDSIGHT_AUTH_TOKEN}"
-        headers["X-Hindsight-Token"] = HINDSIGHT_AUTH_TOKEN
-    return headers
