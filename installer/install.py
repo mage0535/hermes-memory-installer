@@ -71,6 +71,7 @@ SUPPORTED_SCRIPT_NAMES = [
     "profile_isolation_check.py",
     "rotate_dashboard_token.py",
     "system_metrics_collector.py",
+    "snapshot_retention.py",
 ]
 
 TRANSLATIONS: dict[str, dict[str, str]] = {

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -17,11 +18,31 @@ HEALTH_PATTERNS = {
     "stale_pages": r"Stale pages:\s*(\d+)",
     "orphan_pages": r"Orphan pages:\s*(\d+)",
 }
+DEFAULT_GBRAIN_ENV_FILE = Path(os.environ.get("GBRAIN_ENV_FILE", str(Path.home() / ".gbrain.env"))).expanduser()
+
+
+def load_env_file(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    data = {}
+    for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        data[key.strip()] = value.strip()
+    return data
+
+
+def gbrain_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(load_env_file(DEFAULT_GBRAIN_ENV_FILE))
+    return env
 
 
 def run(command: list[str], timeout: int = 300) -> dict:
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=gbrain_env())
     except FileNotFoundError:
         return {"returncode": 127, "stdout": "", "stderr": f"command not found: {command[0]}"}
     except subprocess.TimeoutExpired:

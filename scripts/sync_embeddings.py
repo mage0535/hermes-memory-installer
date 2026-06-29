@@ -18,11 +18,19 @@ import time
 from pathlib import Path
 
 AGENT_HOME = Path(
-    os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))
+    os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
 ).expanduser()
 STATE_DB = AGENT_HOME / "state.db"
 SEMANTICS_DB = AGENT_HOME / "semantics.db"
 BATCH_SIZE = 50
+
+
+def table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
 
 
 def deserialize(blob: bytes) -> list[float]:
@@ -37,34 +45,48 @@ def serialize(vec: list[float]) -> bytes:
 def get_stats() -> None:
     sc = sqlite3.connect(STATE_DB)
     ec = sqlite3.connect(SEMANTICS_DB)
+    state_has_embeddings = table_exists(sc, "message_embeddings")
+    semantics_has_embeddings = table_exists(ec, "embeddings")
 
-    s_emb = sc.execute("SELECT COUNT(*) FROM message_embeddings").fetchone()[0]
-    e_emb = ec.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+    s_emb = sc.execute("SELECT COUNT(*) FROM message_embeddings").fetchone()[0] if state_has_embeddings else None
+    e_emb = ec.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0] if semantics_has_embeddings else 0
     s_msg = sc.execute(
         "SELECT COUNT(*) FROM messages WHERE content IS NOT NULL AND length(content) > 20"
     ).fetchone()[0]
 
     ec.execute("ATTACH DATABASE ? AS sdb", (str(STATE_DB),))
-    e_gap = ec.execute(
-        """
-        SELECT COUNT(*) FROM sdb.messages m
-        WHERE m.content IS NOT NULL AND length(m.content) > 20
-          AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.message_id = m.id)
-        """
-    ).fetchone()[0]
-    s_gap = sc.execute(
-        """
-        SELECT COUNT(*) FROM messages m
-        WHERE m.content IS NOT NULL AND length(m.content) > 20
-          AND NOT EXISTS (SELECT 1 FROM message_embeddings me WHERE me.message_id = m.id)
-        """
-    ).fetchone()[0]
+    if semantics_has_embeddings:
+        e_gap = ec.execute(
+            """
+            SELECT COUNT(*) FROM sdb.messages m
+            WHERE m.content IS NOT NULL AND length(m.content) > 20
+              AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.message_id = m.id)
+            """
+        ).fetchone()[0]
+    else:
+        e_gap = s_msg
+    if state_has_embeddings:
+        s_gap = sc.execute(
+            """
+            SELECT COUNT(*) FROM messages m
+            WHERE m.content IS NOT NULL AND length(m.content) > 20
+              AND NOT EXISTS (SELECT 1 FROM message_embeddings me WHERE me.message_id = m.id)
+            """
+        ).fetchone()[0]
+    else:
+        s_gap = None
 
-    print(f"state.db message_embeddings: {s_emb:,}")
+    if s_emb is None:
+        print("state.db message_embeddings: n/a (table missing)")
+    else:
+        print(f"state.db message_embeddings: {s_emb:,}")
     print(f"semantics.db embeddings:     {e_emb:,}")
     print(f"eligible messages (>20):     {s_msg:,}")
     print(f"semantics.db gap:            {e_gap}")
-    print(f"state.db gap:                {s_gap}")
+    if s_gap is None:
+        print("state.db gap:                n/a (table missing)")
+    else:
+        print(f"state.db gap:                {s_gap}")
 
     sc.close()
     ec.close()
