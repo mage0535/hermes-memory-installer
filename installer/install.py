@@ -67,13 +67,10 @@ SUPPORTED_SCRIPT_NAMES = [
     "profile_isolation_soak.py",
     "hindsight_security_audit.py",
     "synthetic_recall_benchmark.py",
-    "openmetrics_exporter.py",
-    "system_metrics_collector.py",
     "auto_archive_sessions.py",
-    "dead_letter_replay.py",
-    "rotate_dashboard_token.py",
     "profile_isolation_check.py",
-    "compact_memory.py",
+    "rotate_dashboard_token.py",
+    "system_metrics_collector.py",
 ]
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
