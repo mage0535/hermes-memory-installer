@@ -40,3 +40,23 @@ groups:
         annotations:
           summary: "Hermes component requires action"
           description: "At least one Hermes component has been in action-needed state for 10 minutes."
+
+      - alert: HermesMemoryCronFreshnessStale
+        expr: max(hermes_memory_cron_job_status) >= 1
+        for: 20m
+        labels:
+          severity: warning
+          service: hermes-memory
+        annotations:
+          summary: "Hermes cron freshness is stale"
+          description: "One or more Hermes cron-driven jobs have stale freshness status for 20 minutes."
+
+      - alert: HermesMemorySwapPressureHigh
+        expr: hermes_memory_system_swap_used_pct > 60
+        for: 30m
+        labels:
+          severity: warning
+          service: hermes-memory
+        annotations:
+          summary: "Hermes host swap usage is high"
+          description: "Hermes host swap usage stayed above 60 percent for 30 minutes."

@@ -39,6 +39,8 @@ ARTIFACTS = {
     "hindsight_security": "hindsight-security-latest.json",
     "webhook_receiver": "webhook-receiver-latest.json",
     "slo_rollup": "slo-rollup-latest.json",
+    "cron_freshness": "cron-freshness-latest.json",
+    "system_metrics": "system-metrics-latest.json",
 }
 
 
@@ -173,6 +175,44 @@ def render_openmetrics(metrics_dir: Path) -> str:
                     ]
                 )
             lines.append(metric_line("hermes_memory_slo_recall_latency_seconds", float(value), {"quantile": quantile}))
+
+    cron = payloads["cron_freshness"]
+    jobs = cron.get("jobs") if isinstance(cron.get("jobs"), list) else []
+    if jobs:
+        lines.extend(
+            [
+                "# HELP hermes_memory_cron_job_status Cron freshness status code: healthy=0 degraded=1 action-needed=2 missing=3.",
+                "# TYPE hermes_memory_cron_job_status gauge",
+            ]
+        )
+        for job in jobs:
+            status = str(job.get("status") or "unknown")
+            age_s = job.get("age_s")
+            lines.append(metric_line("hermes_memory_cron_job_status", STATUS_VALUE.get(status, STATUS_VALUE["unknown"]), {"job": str(job.get("name") or "unknown")}))
+            if age_s is not None:
+                lines.append(metric_line("hermes_memory_cron_job_age_seconds", float(age_s), {"job": str(job.get("name") or "unknown")}))
+            lines.append(metric_line("hermes_memory_cron_job_max_age_seconds", int(job.get("max_age_s") or 0), {"job": str(job.get("name") or "unknown")}))
+
+    system_metrics = payloads["system_metrics"]
+    memory = system_metrics.get("memory") if isinstance(system_metrics.get("memory"), dict) else {}
+    disk = system_metrics.get("disk") if isinstance(system_metrics.get("disk"), dict) else {}
+    if memory or disk:
+        lines.extend(
+            [
+                "# HELP hermes_memory_system_memory_available_mb Latest available memory in MB.",
+                "# TYPE hermes_memory_system_memory_available_mb gauge",
+                metric_line("hermes_memory_system_memory_available_mb", float(memory.get("available_mb") or 0)),
+                "# HELP hermes_memory_system_swap_used_pct Latest swap usage percentage.",
+                "# TYPE hermes_memory_system_swap_used_pct gauge",
+                metric_line("hermes_memory_system_swap_used_pct", float(memory.get("swap_pct") or 0)),
+                "# HELP hermes_memory_system_disk_used_pct Latest root filesystem usage percentage.",
+                "# TYPE hermes_memory_system_disk_used_pct gauge",
+                metric_line("hermes_memory_system_disk_used_pct", float(disk.get("pct") or 0)),
+                "# HELP hermes_memory_state_db_size_mb Size of state.db in MB.",
+                "# TYPE hermes_memory_state_db_size_mb gauge",
+                metric_line("hermes_memory_state_db_size_mb", float(system_metrics.get("state_db_size_mb") or 0)),
+            ]
+        )
 
     generated = int(datetime.now(timezone.utc).timestamp())
     lines.extend(

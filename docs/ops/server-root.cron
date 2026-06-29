@@ -1,0 +1,32 @@
+# Hermes crontab
+0 3 * * 0 python3 /root/knowledge/scanner/cache-cleaner.py >> /var/log/cache-cleaner.log 2>&1
+*/30 * * * * rclone copy /root/knowledge/notes/default/ 'onedrive:Obsidian/学习笔记/学习笔记/' --create-empty-src-dirs >> /var/log/rclone-sync.log 2>&1
+0 4 * * * /root/knowledge/scanner/gbrain-maintenance.sh >> /var/log/gbrain-maintenance.log 2>&1
+
+20 3 * * * /root/.hermes/scripts/gbrain-bulk-deorphan-wrapper.sh >> /var/log/gbrain-deorphan.log 2>&1 # gbrain-deorphan
+45 1 * * * /root/.hermes/scripts/state-db-checkpoint.sh >> /var/log/hermes-state-db-checkpoint.cron.log 2>&1 # state-db-checkpoint
+# Archive pipeline
+15 */6 * * * /root/.hermes/scripts/run_langsmith_monitor.sh >> /var/log/langsmith-monitor.log 2>&1 # langsmith-monitor
+25 */6 * * * /root/.hermes/scripts/run_langsmith_trend_report.sh >> /var/log/langsmith-trend.log 2>&1 # langsmith-trend
+0 */6 * * * /root/.hermes/scripts/run_auto_with_langsmith.sh >> /var/log/auto-summary.log 2>&1
+30 */6 * * * /root/.hermes/scripts/run_session_with_langsmith.sh >> /var/log/session-gbrain.log 2>&1
+0 2 * * * /root/.hermes/scripts/run_archive_with_langsmith.sh >> /var/log/archive-sessions.log 2>&1
+35 */6 * * * /usr/local/bin/hermes-memory drift-check --repo-root /root/hermes-memory-installer --format json && /usr/local/bin/cron-heartbeat drift-check $? >> /var/log/runtime-drift-check.log 2>&1 # runtime-drift-check
+40 */6 * * * AGENT_HOME=/root/.hermes /root/.hermes/scripts/hindsight_security_audit.py --public-host 207.57.129.132 >> /var/log/hindsight-security-audit.log 2>&1 # hindsight-security-audit
+45 */6 * * * AGENT_HOME=/root/.hermes MEMORY_ALERT_WEBHOOK_URL=http://127.0.0.1:9499/alerts /usr/bin/python3 /root/.hermes/scripts/alert_queue.py && /usr/local/bin/cron-heartbeat alert-queue $? >> /var/log/alert-queue.log 2>&1 # alert-queue
+50 */6 * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/metrics_dashboard.py >> /var/log/metrics-dashboard.log 2>&1 # metrics-dashboard
+55 */6 * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/openmetrics_exporter.py --output /root/.hermes/metrics/openmetrics.prom >> /var/log/hermes-openmetrics-exporter.log 2>&1 # openmetrics-exporter
+*/15 * * * * /usr/local/bin/hermes-memory slo-rollup >> /var/log/hermes-slo-rollup.log 2>&1 # hermes-slo-rollup
+*/15 * * * * /usr/local/bin/hermes-memory telegram-lang-sync >> /var/log/telegram-lang-sync.log 2>&1 # telegram-lang-sync
+*/5 * * * * /usr/local/bin/hermes-memory prometheus-alert-sync >> /var/log/prometheus-alert-sync.log 2>&1 # prometheus-alert-sync
+*/15 * * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/cron_freshness.py >> /var/log/cron-freshness.log 2>&1 # cron-freshness
+10 * * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/system_metrics_collector.py >> /var/log/system-metrics.log 2>&1 # system-metrics
+12 * * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/gbrain_stale_maintenance.py --output /root/.hermes/metrics/gbrain-stale-latest.json >> /var/log/gbrain-stale.log 2>&1 # gbrain-stale-refresh
+
+0 */4 * * * sqlite3 /root/.hermes/state.db "PRAGMA wal_checkpoint(TRUNCATE);" >> /var/log/wal-checkpoint.log 2>&1
+
+0 3 * * 0 sqlite3 /root/.hermes/state.db "PRAGMA optimize; VACUUM;" >> /var/log/state-db-vacuum.log 2>&1
+0 4 * * 0 AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/auto_archive_sessions.py >> /var/log/auto-archive.log 2>&1
+0 2 1 * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/rotate_dashboard_token.py >> /var/log/token-rotation.log 2>&1
+30 2 * * 0 AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/profile_isolation_check.py >> /var/log/profile-isolation.log 2>&1
+20 2 * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/snapshot_retention.py >> /var/log/hermes-snapshot-retention.log 2>&1 # snapshot-retention
