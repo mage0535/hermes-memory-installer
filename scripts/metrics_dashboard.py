@@ -26,6 +26,8 @@ ARTIFACTS = {
     "Webhook Receiver": "webhook-receiver-latest.json",
     "SLO Rollup": "slo-rollup-latest.json",
     "Prometheus Alert Bridge": "prometheus-alert-bridge-latest.json",
+    "Cron Freshness": "cron-freshness-latest.json",
+    "System Metrics": "system-metrics-latest.json",
 }
 
 TEXT = {
@@ -88,6 +90,8 @@ TEXT = {
             "Webhook Receiver": "Webhook 转发",
             "SLO Rollup": "SLO 汇总",
             "Prometheus Alert Bridge": "Prometheus 告警桥接",
+            "Cron Freshness": "定时任务新鲜度",
+            "System Metrics": "系统资源",
         },
         "detail_labels": {
             "recent_acceptance_ok_rate": "最近接受率",
@@ -110,6 +114,12 @@ TEXT = {
             "recall_latency_p50_s": "召回 P50（秒）",
             "recall_latency_max_s": "召回最大延迟（秒）",
             "bridge_alert_count": "桥接告警数",
+            "stale_job_count": "陈旧任务数",
+            "action_needed_job_count": "失效任务数",
+            "memory_available_mb": "可用内存(MB)",
+            "swap_pct": "Swap 使用率",
+            "disk_pct": "磁盘使用率",
+            "state_db_size_mb": "state.db 大小(MB)",
         },
         "sections_reasons": "异常原因",
         "sections_classifications": "分类详情",
@@ -197,6 +207,8 @@ TEXT = {
             "Webhook Receiver": "Webhook Forwarding",
             "SLO Rollup": "SLO Rollup",
             "Prometheus Alert Bridge": "Prometheus Alert Bridge",
+            "Cron Freshness": "Cron Freshness",
+            "System Metrics": "System Metrics",
         },
         "detail_labels": {
             "recent_acceptance_ok_rate": "Recent acceptance OK rate",
@@ -219,6 +231,12 @@ TEXT = {
             "recall_latency_p50_s": "Recall P50 (s)",
             "recall_latency_max_s": "Recall max latency (s)",
             "bridge_alert_count": "Bridge alert count",
+            "stale_job_count": "Stale jobs",
+            "action_needed_job_count": "Action-needed jobs",
+            "memory_available_mb": "Available memory (MB)",
+            "swap_pct": "Swap usage %",
+            "disk_pct": "Disk usage %",
+            "state_db_size_mb": "state.db size (MB)",
         },
         "sections_reasons": "Reasons",
         "sections_classifications": "Classifications",
@@ -340,6 +358,8 @@ def format_detail_value(key: str, value: Any, lang: str) -> str | None:
         return percent(value)
     if key in {"recall_latency_p95_s", "recall_latency_p50_s", "recall_latency_max_s"}:
         return float_text(value)
+    if key in {"swap_pct", "disk_pct"}:
+        return f"{float(value):.1f}%" if isinstance(value, (int, float)) else str(value)
     if key == "external_forward_configured":
         return copy["yes"] if bool(value) else copy["no"]
     if key == "last_forward":
@@ -369,6 +389,18 @@ def infer_langsmith_status(payload: dict[str, Any]) -> str:
 def summarize(name: str, payload: dict[str, Any]) -> dict[str, Any]:
     if name == "LangSmith Trend":
         status = infer_langsmith_status(payload)
+        ok = status == "healthy"
+    elif name == "System Metrics":
+        memory = payload.get("memory") if isinstance(payload.get("memory"), dict) else {}
+        disk = payload.get("disk") if isinstance(payload.get("disk"), dict) else {}
+        swap_pct = float(memory.get("swap_pct") or 0)
+        disk_pct = float(disk.get("pct") or 0)
+        if swap_pct >= 80 or disk_pct >= 90:
+            status = "action-needed"
+        elif swap_pct >= 60 or disk_pct >= 80:
+            status = "degraded"
+        else:
+            status = "healthy"
         ok = status == "healthy"
     else:
         status = str(payload.get("status") or ("healthy" if payload.get("ok") else "unknown"))
@@ -410,6 +442,21 @@ def summarize(name: str, payload: dict[str, Any]) -> dict[str, Any]:
         summary["details"] = {
             "bridge_alert_count": payload.get("alert_count"),
             "last_forward": payload.get("forwarded"),
+        }
+    elif name == "Cron Freshness":
+        jobs = payload.get("jobs") if isinstance(payload.get("jobs"), list) else []
+        summary["details"] = {
+            "stale_job_count": sum(1 for job in jobs if job.get("status") == "degraded"),
+            "action_needed_job_count": sum(1 for job in jobs if job.get("status") == "action-needed"),
+        }
+    elif name == "System Metrics":
+        memory = payload.get("memory") if isinstance(payload.get("memory"), dict) else {}
+        disk = payload.get("disk") if isinstance(payload.get("disk"), dict) else {}
+        summary["details"] = {
+            "memory_available_mb": memory.get("available_mb"),
+            "swap_pct": memory.get("swap_pct"),
+            "disk_pct": disk.get("pct"),
+            "state_db_size_mb": payload.get("state_db_size_mb"),
         }
     else:
         summary["details"] = {"reason_count": len(payload.get("reasons", [])), "error": payload.get("error")}
@@ -459,6 +506,23 @@ def build_explanations(payload: dict[str, Any], lang: str = "zh") -> list[dict[s
                 "body": "生产脚本与仓库内容不一致时，排障和发布验证会失真。" if lang == "zh" else "When production scripts drift away from the repository, troubleshooting and release validation become unreliable.",
             }
         )
+    cron = next((item["raw"] for item in payload["artifacts"] if item["name"] == "Cron Freshness"), {})
+    if cron.get("status") == "action-needed":
+        out.append(
+            {
+                "title": "定时任务存在失效或长时间未刷新" if lang == "zh" else "One or more cron jobs are stale or not refreshing",
+                "body": "这通常意味着归档、告警、趋势或面板不会继续自动更新，应该先恢复调度链路。" if lang == "zh" else "This usually means archive, alert, trend, or dashboard state will stop refreshing until the scheduling chain is restored.",
+            }
+        )
+    sys_metrics = next((item["raw"] for item in payload["artifacts"] if item["name"] == "System Metrics"), {})
+    memory = sys_metrics.get("memory") if isinstance(sys_metrics.get("memory"), dict) else {}
+    if float(memory.get("swap_pct") or 0) >= 60:
+        out.append(
+            {
+                "title": "Swap 压力偏高" if lang == "zh" else "Swap pressure is elevated",
+                "body": "当前机器已经开始明显依赖 swap，建议优先回收缓存或降低非核心常驻负载。" if lang == "zh" else "The host is relying on swap noticeably; reclaim caches or reduce non-critical resident load first.",
+            }
+        )
     if not out:
         out.append(
             {
@@ -493,6 +557,23 @@ def build_actions(payload: dict[str, Any], lang: str = "zh") -> list[dict[str, s
             {
                 "title": "核对 Prometheus 告警桥接结果" if lang == "zh" else "Verify the Prometheus alert bridge output",
                 "body": "确认桥接告警与本地 health summary 告警语义一致，避免重复通知或噪声放大。" if lang == "zh" else "Verify that bridged alerts align with local health-summary alerts to avoid duplicate notifications and amplified noise.",
+            }
+        )
+    cron = next((item["raw"] for item in payload["artifacts"] if item["name"] == "Cron Freshness"), {})
+    if cron.get("status") in {"degraded", "action-needed"}:
+        actions.append(
+            {
+                "title": "先恢复定时任务新鲜度" if lang == "zh" else "Restore cron freshness first",
+                "body": "优先检查缺失或过期的 cron 任务日志/产物，避免健康面板停止自动刷新。" if lang == "zh" else "Inspect stale cron log/artifact producers first so health state does not silently stop updating.",
+            }
+        )
+    sys_metrics = next((item["raw"] for item in payload["artifacts"] if item["name"] == "System Metrics"), {})
+    memory = sys_metrics.get("memory") if isinstance(sys_metrics.get("memory"), dict) else {}
+    if float(memory.get("swap_pct") or 0) >= 60:
+        actions.append(
+            {
+                "title": "回收缓存并观察 swap" if lang == "zh" else "Reclaim caches and watch swap",
+                "body": "优先清理非核心缓存、重复备份和旧浏览器运行时，再观察 24h 系统趋势。" if lang == "zh" else "Reclaim non-critical caches, duplicate backups, and old browser runtimes first, then watch 24h system trends.",
             }
         )
     if not actions:

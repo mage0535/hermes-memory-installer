@@ -98,92 +98,6 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 12,
-        "y": 0
-      },
-      "id": 6,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "value"
-      },
-      "targets": [
-        {
-          "expr": "hermes_memory_gbrain_health_score",
-          "legendFormat": "gbrain health",
-          "refId": "A"
-        }
-      ],
-      "title": "gbrain Health Score / gbrain 健康分",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "hermes-prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 18,
-        "y": 0
-      },
-      "id": 7,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "value"
-      },
-      "targets": [
-        {
-          "expr": "hermes_memory_webhook_last_forward_attempts",
-          "legendFormat": "forward attempts",
-          "refId": "A"
-        }
-      ],
-      "title": "Last Forward Attempts / 最近转发尝试次数",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "hermes-prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
           "unit": "percentunit"
         },
         "overrides": []
@@ -336,6 +250,190 @@
       ],
       "title": "Component Detail / 组件明细",
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hermes-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "hermes_memory_gbrain_health_score",
+          "legendFormat": "gbrain health",
+          "refId": "A"
+        }
+      ],
+      "title": "gbrain Health Score / gbrain 健康分",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hermes-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "hermes_memory_webhook_last_forward_attempts",
+          "legendFormat": "forward attempts",
+          "refId": "A"
+        }
+      ],
+      "title": "Last Forward Attempts / 最近转发尝试次数",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hermes-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "hermes_memory_cron_job_age_seconds",
+          "legendFormat": "{{job}} age",
+          "refId": "A"
+        },
+        {
+          "expr": "hermes_memory_cron_job_max_age_seconds",
+          "legendFormat": "{{job}} max age",
+          "refId": "B"
+        }
+      ],
+      "title": "Cron Freshness / ???????",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hermes-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "hermes_memory_system_swap_used_pct",
+          "legendFormat": "swap %",
+          "refId": "A"
+        },
+        {
+          "expr": "hermes_memory_system_disk_used_pct",
+          "legendFormat": "disk %",
+          "refId": "B"
+        },
+        {
+          "expr": "hermes_memory_system_memory_available_mb",
+          "legendFormat": "available MB",
+          "refId": "C"
+        },
+        {
+          "expr": "hermes_memory_state_db_size_mb",
+          "legendFormat": "state.db MB",
+          "refId": "D"
+        }
+      ],
+      "title": "System Pressure / ????",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -354,6 +452,6 @@
   "timezone": "browser",
   "title": "Hermes Memory OpenMetrics / Hermes 记忆体指标看板",
   "uid": "hermes-memory-openmetrics",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
