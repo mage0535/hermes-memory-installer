@@ -29,6 +29,8 @@ import json as _json
 
 _GBRAIN_MCP = os.environ.get("GBRAIN_MCP_URL", "http://localhost:8787/mcp")
 _GBRAIN_TOKEN = os.environ.get("GBRAIN_MCP_TOKEN", "")
+_GBRAIN_MCP_TIMEOUT_S = float(os.environ.get("GBRAIN_MCP_TIMEOUT_S", "60"))
+_GBRAIN_CLI_TIMEOUT_S = float(os.environ.get("GBRAIN_CLI_TIMEOUT_S", "60"))
 # Configure authentication through GBRAIN_MCP_TOKEN.
 
 def _mcp_call(method, params, req_id=1):
@@ -37,7 +39,7 @@ def _mcp_call(method, params, req_id=1):
     req = _urllib.Request(_GBRAIN_MCP, data=data,
         headers={"Content-Type":"application/json","Authorization":f"Bearer {_GBRAIN_TOKEN}"})
     try:
-        resp = _urllib.urlopen(req, timeout=15)
+        resp = _urllib.urlopen(req, timeout=_GBRAIN_MCP_TIMEOUT_S)
         result = _json.loads(resp.read())
         if "error" in result:
             raise subprocess.CalledProcessError(1, "gbrain-mcp", result["error"].get("message",""))
@@ -469,7 +471,7 @@ def run_gbrain(args: list[str], *, input_text: str | None = None) -> subprocess.
             text=True,
             capture_output=True,
             check=True,
-            timeout=30,
+            timeout=_GBRAIN_CLI_TIMEOUT_S,
         )
 
 

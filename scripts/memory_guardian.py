@@ -108,6 +108,8 @@ CONSOLIDATION_DRAIN_POLL_SECONDS = 8
 CONSOLIDATION_STUCK_NONZERO_RUN = 8
 HINDSIGHT_RESTART_COOLDOWN_SECONDS = 6 * 3600
 HINDSIGHT_RESTART_GUARD = AGENT_HOME / '.hindsight_restart_guard.json'
+HINDSIGHT_READY_TIMEOUT_S = int(os.environ.get("HINDSIGHT_READY_TIMEOUT_S", "90"))
+HINDSIGHT_READY_INTERVAL_S = float(os.environ.get("HINDSIGHT_READY_INTERVAL_S", "3"))
 
 
 def resolve_memory_limit() -> int:
@@ -151,6 +153,26 @@ def hs(method, path, body=None, timeout=10):
         return {'_error': f'HTTP {e.code}', '_body': body}
     except Exception as e:
         return {'_error': str(e)}
+
+
+def wait_for_hindsight_ready(timeout_s: int = HINDSIGHT_READY_TIMEOUT_S, interval_s: float = HINDSIGHT_READY_INTERVAL_S) -> bool:
+    deadline = time.time() + max(1, timeout_s)
+    while time.time() < deadline:
+        payload = None
+        try:
+            payload = hs('GET', '/health', timeout=min(5, max(1, int(interval_s) + 1)))
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and payload.get('status') == 'healthy':
+            return True
+        try:
+            stats = hs('GET', '/stats', timeout=min(5, max(1, int(interval_s) + 1)))
+        except Exception:
+            stats = None
+        if isinstance(stats, dict) and '_error' not in stats:
+            return True
+        time.sleep(max(0.5, interval_s))
+    return False
 
 # ─── Index Database ─────────────────────────────────────────────────────
 def init_db():
@@ -446,6 +468,8 @@ def drain_consolidation_if_needed(
 
 # ─── Monitor — Query Hindsight for capacity ────────────────────────────
 def monitor(verbose=True):
+    if not wait_for_hindsight_ready():
+        return [], {'error': f'hindsight health timed out after {HINDSIGHT_READY_TIMEOUT_S}s', 'level': 'unknown'}
     stats = hs('GET', '/stats')
     entities = hs('GET', '/entities')
     

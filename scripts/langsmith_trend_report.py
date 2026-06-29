@@ -116,7 +116,7 @@ def lag_summary(values: list[int], threshold_s: int = DEFAULT_LAG_THRESHOLD_S) -
         else:
             break
     status = "healthy"
-    if consecutive >= 2:
+    if consecutive >= 4:
         status = "action-needed"
     elif values and values[0] > threshold_s:
         status = "degraded"

@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 SCRIPTS_DIR = AGENT_HOME / "scripts"
 PROFILE_PATH = AGENT_HOME / "memory-sidecar" / "install-profile.json"
 DEFAULT_GRAY_DIR = AGENT_HOME / "gray" / "memory-sidecar"
@@ -54,6 +54,10 @@ CORE_DEPLOY_SCRIPTS = [
     "profile_isolation_soak.py",
     "hindsight_security_audit.py",
     "synthetic_recall_benchmark.py",
+    "auto_archive_sessions.py",
+    "profile_isolation_check.py",
+    "rotate_dashboard_token.py",
+    "system_metrics_collector.py",
 ]
 REQUIRED_REPO_FILES = [
     "README.md",
