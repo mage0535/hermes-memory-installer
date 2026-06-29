@@ -72,6 +72,9 @@ SUPPORTED_SCRIPT_NAMES = [
     "rotate_dashboard_token.py",
     "system_metrics_collector.py",
     "snapshot_retention.py",
+    "cron_freshness.py",
+    "snapshot_compress.py",
+    "snapshot_restore.py",
 ]
 
 TRANSLATIONS: dict[str, dict[str, str]] = {

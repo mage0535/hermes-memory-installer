@@ -25,6 +25,7 @@ import sidecar_acceptance_check as acceptance_check
 import tiered_context_injector as injector
 import alert_queue
 import alert_webhook_receiver
+import cron_freshness
 import metrics_dashboard
 import metrics_dashboard_server
 import openmetrics_exporter
@@ -32,9 +33,12 @@ import slo_rollup
 import gbrain_stale_maintenance
 import profile_isolation_soak
 import synthetic_recall_benchmark
+import system_metrics_collector
 import telegram_language_sync
 import prometheus_alert_bridge
 import sync_embeddings
+import snapshot_compress
+import snapshot_restore
 
 
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
@@ -684,6 +688,14 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
         json.dumps({"status": "healthy", "alert_count": 0}),
         encoding="utf-8",
     )
+    (metrics / "cron-freshness-latest.json").write_text(
+        json.dumps({"status": "healthy", "jobs": []}),
+        encoding="utf-8",
+    )
+    (metrics / "system-metrics-latest.json").write_text(
+        json.dumps({"memory": {"available_mb": 2048, "swap_pct": 10.0}, "disk": {"pct": 50.0}, "state_db_size_mb": 100.0}),
+        encoding="utf-8",
+    )
 
     html = metrics_dashboard.render_dashboard(metrics, lang="zh", query_params={"view": "alerts"})
     html_en = metrics_dashboard.render_dashboard(metrics, lang="en", query_params={"view": "components"})
@@ -856,6 +868,40 @@ def test_openmetrics_exporter_includes_slo_rollup(tmp_path: Path):
     assert 'hermes_memory_slo_recall_latency_seconds{quantile="0.95"} 0.3' in text
 
 
+def test_openmetrics_exporter_includes_cron_and_system_metrics(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "cron-freshness-latest.json").write_text(
+        json.dumps(
+            {
+                "status": "degraded",
+                "jobs": [
+                    {"name": "cron_a", "status": "healthy", "age_s": 30.0, "max_age_s": 600},
+                    {"name": "cron_b", "status": "degraded", "age_s": 900.0, "max_age_s": 600},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics / "system-metrics-latest.json").write_text(
+        json.dumps(
+            {
+                "memory": {"available_mb": 2048, "swap_pct": 61.5},
+                "disk": {"pct": 77.2},
+                "state_db_size_mb": 3979.1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    text = openmetrics_exporter.render_openmetrics(metrics)
+
+    assert 'hermes_memory_cron_job_status{job="cron_b"} 1' in text
+    assert 'hermes_memory_cron_job_age_seconds{job="cron_a"} 30.0' in text
+    assert "hermes_memory_system_swap_used_pct 61.5" in text
+    assert "hermes_memory_system_disk_used_pct 77.2" in text
+
+
 def test_grafana_dashboard_template_consumes_openmetrics():
     dashboard = json.loads((REPO / "docs" / "grafana" / "hermes-memory-openmetrics-dashboard.json").read_text(encoding="utf-8"))
     serialized = json.dumps(dashboard)
@@ -865,6 +911,8 @@ def test_grafana_dashboard_template_consumes_openmetrics():
     assert "hermes_memory_component_status" in serialized
     assert "hermes_memory_slo_acceptance_ok_rate" in serialized
     assert "hermes_memory_slo_recall_latency_seconds" in serialized
+    assert "hermes_memory_cron_job_age_seconds" in serialized
+    assert "hermes_memory_system_swap_used_pct" in serialized
     assert "Overall Component Status / 整体组件状态" in panel_titles
 
 
@@ -1045,6 +1093,33 @@ def test_gbrain_stale_maintenance_loads_env_file(monkeypatch, tmp_path: Path):
     assert env["OPENAI_API_KEY"] == "sk-local-dummy"
 
 
+def test_cron_freshness_reports_stale_jobs(tmp_path: Path, monkeypatch):
+    fresh = tmp_path / "fresh.log"
+    stale = tmp_path / "stale.log"
+    fresh.write_text("ok\n", encoding="utf-8")
+    stale.write_text("old\n", encoding="utf-8")
+    now = 1_700_000_000
+    os.utime(fresh, (now, now))
+    os.utime(stale, (now - 10000, now - 10000))
+    monkeypatch.setattr(
+        cron_freshness,
+        "CHECKS",
+        [
+            {"name": "fresh_job", "path": fresh, "max_age_s": 600},
+            {"name": "stale_job", "path": stale, "max_age_s": 600},
+        ],
+    )
+    monkeypatch.setattr(cron_freshness.time, "time", lambda: now)
+
+    payload = cron_freshness.build_report()
+
+    assert payload["status"] == "action-needed"
+    assert {job["name"]: job["status"] for job in payload["jobs"]} == {
+        "fresh_job": "healthy",
+        "stale_job": "action-needed",
+    }
+
+
 def test_sync_embeddings_stats_handles_missing_legacy_state_table(tmp_path: Path, monkeypatch, capsys):
     state_db = tmp_path / "state.db"
     semantics_db = tmp_path / "semantics.db"
@@ -1084,6 +1159,36 @@ def test_sync_embeddings_stats_handles_missing_legacy_state_table(tmp_path: Path
 
     assert "state.db message_embeddings: n/a (table missing)" in out
     assert "state.db gap:                n/a (table missing)" in out
+
+
+def test_system_metrics_collector_appends_history(tmp_path: Path, monkeypatch):
+    home = tmp_path / "home"
+    metrics_dir = home / "metrics"
+    metrics_dir.mkdir(parents=True)
+    monkeypatch.setattr(system_metrics_collector, "AGENT_HOME", home)
+    monkeypatch.setattr(system_metrics_collector, "OUTPUT", metrics_dir / "system-metrics-latest.json")
+    monkeypatch.setattr(system_metrics_collector, "HISTORY", metrics_dir / "system-metrics-history.jsonl")
+
+    assert system_metrics_collector.main() == 0
+    lines = (metrics_dir / "system-metrics-history.jsonl").read_text(encoding="utf-8").splitlines()
+
+    assert len(lines) == 1
+    assert json.loads(lines[0])["disk"]["pct"] >= 0
+
+
+def test_snapshot_compress_and_restore_roundtrip(tmp_path: Path):
+    snapshot_dir = tmp_path / "snap-1"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "file.txt").write_text("hello\n", encoding="utf-8")
+
+    compressed = snapshot_compress.compress_snapshot(snapshot_dir, dry_run=False, remove_source=False)
+    restored_dir = tmp_path / "restore"
+    restored = snapshot_restore.restore_archive(Path(compressed["archive_path"]), restored_dir, dry_run=False)
+
+    assert compressed["compressed"] is True
+    assert Path(compressed["archive_path"]).exists()
+    assert restored["restored"] is True
+    assert (restored_dir / "snap-1" / "file.txt").read_text(encoding="utf-8") == "hello\n"
 
 
 def test_manifest_respects_agent_home_per_profile(tmp_path: Path):

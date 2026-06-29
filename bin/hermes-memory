@@ -59,6 +59,9 @@ CORE_DEPLOY_SCRIPTS = [
     "rotate_dashboard_token.py",
     "system_metrics_collector.py",
     "snapshot_retention.py",
+    "cron_freshness.py",
+    "snapshot_compress.py",
+    "snapshot_restore.py",
 ]
 REQUIRED_REPO_FILES = [
     "README.md",
@@ -598,6 +601,22 @@ def cmd_synthetic_recall(args: argparse.Namespace) -> int:
     return run_script("synthetic_recall_benchmark.py", extra_args)
 
 
+def cmd_snapshot_compress(args: argparse.Namespace) -> int:
+    extra_args = ["--snapshot-dir", args.snapshot_dir]
+    if args.dry_run:
+        extra_args.append("--dry-run")
+    if args.remove_source:
+        extra_args.append("--remove-source")
+    return run_script("snapshot_compress.py", extra_args)
+
+
+def cmd_snapshot_restore(args: argparse.Namespace) -> int:
+    extra_args = ["--archive", args.archive, "--target-dir", args.target_dir]
+    if args.dry_run:
+        extra_args.append("--dry-run")
+    return run_script("snapshot_restore.py", extra_args)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Memory Sidecar CLI v3.5.1")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -661,6 +680,14 @@ def main() -> int:
     prom_sync.add_argument("--dry-run", action="store_true")
     synthetic = sub.add_parser("synthetic-recall", help="Run public synthetic recall regression benchmark")
     synthetic.add_argument("--output", help="Write JSON result to this path")
+    snap_compress = sub.add_parser("snapshot-compress", help="Compress a runtime snapshot directory into a tar.gz archive")
+    snap_compress.add_argument("--snapshot-dir", required=True)
+    snap_compress.add_argument("--dry-run", action="store_true")
+    snap_compress.add_argument("--remove-source", action="store_true")
+    snap_restore = sub.add_parser("snapshot-restore", help="Restore a compressed runtime snapshot archive")
+    snap_restore.add_argument("--archive", required=True)
+    snap_restore.add_argument("--target-dir", required=True)
+    snap_restore.add_argument("--dry-run", action="store_true")
 
     args = parser.parse_args()
     if args.command == "doctor":
@@ -699,6 +726,10 @@ def main() -> int:
         return cmd_prometheus_alert_sync(args)
     if args.command == "synthetic-recall":
         return cmd_synthetic_recall(args)
+    if args.command == "snapshot-compress":
+        return cmd_snapshot_compress(args)
+    if args.command == "snapshot-restore":
+        return cmd_snapshot_restore(args)
     return 1
 
 
