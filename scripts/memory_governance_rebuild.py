@@ -17,6 +17,15 @@ from collections import defaultdict
 from pathlib import Path
 import yaml
 
+try:
+    import sys as _kmm_sys
+    _kmm_sys.path.insert(0, "/root/.hermes/knowledge-plugin")
+    from knowledge_collector.sidecar_indexer import (
+        refresh_knowledge_object_index as _refresh_knowledge_object_index,
+    )
+except (ImportError, ModuleNotFoundError):
+    _refresh_knowledge_object_index = None
+
 from knowledge_notes import (
     build_knowledge_note_rows as _build_knowledge_note_rows,
     compute_knowledge_notes_signature as _compute_knowledge_notes_signature,
@@ -2081,6 +2090,18 @@ def rebuild_index(force: bool = False, max_age_seconds: int = DEFAULT_MAX_AGE_SE
     hub_rows, hub_fts_rows = build_hub_rows(session_dict_rows, hindsight_items, now)
     object_rows, object_fts_rows = build_memory_object_rows(session_dict_rows, hindsight_items, now)
     knowledge_index_stats = refresh_knowledge_note_index(gov, indexed_at=now, force=force)
+    knowledge_object_stats = {"count": 0, "reused": False}
+    if _refresh_knowledge_object_index is not None:
+        try:
+            knowledge_object_stats = _refresh_knowledge_object_index(
+                gov,
+                notes_dir=_resolve_knowledge_notes_dir(),
+                indexed_at=now,
+                force=force,
+            )
+        except Exception:
+            pass
+
     gov.executemany(
         """
         INSERT INTO memory_hubs (
@@ -2175,6 +2196,8 @@ def rebuild_index(force: bool = False, max_age_seconds: int = DEFAULT_MAX_AGE_SE
         "memory_objects": len(object_rows),
         "knowledge_notes": int(knowledge_index_stats["count"]),
         "knowledge_notes_reused": bool(knowledge_index_stats["reused"]),
+        "knowledge_objects": int(knowledge_object_stats["count"]),
+        "knowledge_objects_reused": bool(knowledge_object_stats["reused"]),
     }
 
 
