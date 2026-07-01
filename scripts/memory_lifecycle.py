@@ -3,7 +3,10 @@
 import json, sqlite3, sys, os, time, re, argparse
 from pathlib import Path
 from datetime import datetime
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", os.environ.get("AGENT_HOME", "~/.agent"))).expanduser()
+AGENT_HOME = Path(
+    os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
+).expanduser()
+HERMES_HOME = AGENT_HOME
 STATE_DB = HERMES_HOME / "state.db"
 GBRAIN_DB = HERMES_HOME / "gbrain" / "brain.db"
 PROTECTED_SLUGS = ["hub-system-operations", "hub-stock-analysis", "hub-promotion-matrix"]

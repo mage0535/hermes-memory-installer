@@ -1,0 +1,96 @@
+# Memory Quality Optimization Report
+
+Date: 2026-07-02
+
+## Scope
+
+This update implements the first three optimization priorities after v3.5.2:
+
+1. Runtime path normalization and continuous evaluation governance.
+2. Policy metadata for importance, current-vs-historical retrieval, and conflict handling.
+3. gbrain edge planning visibility and operational reporting.
+
+The work stays additive. It does not modify Hindsight, gateway, headroom, or existing memory service internals.
+
+## Implemented
+
+### Runtime Paths
+
+`runtime_paths.py` is now the canonical helper for new code. It resolves:
+
+- `AGENT_HOME` before `HERMES_HOME`
+- fallback `$HOME/.hermes`
+- sidecar home
+- logs directory
+- private production registry path
+- governance database path
+
+Legacy helpers touched during acceptance now follow the same precedence.
+
+### Evaluation Governance
+
+`memory_eval.trends` compares report payloads and produces per-registry metric deltas.
+
+`memory_eval.registry_lint` validates public or private registries and reports:
+
+- duplicate IDs
+- missing required fields
+- secret-like values
+- IP-like values
+- credential-bearing URLs
+
+The linter reports rule names and case IDs only. It does not echo matched values.
+
+### Policy Layer
+
+The additive `memory_policy` table now owns these governance-only fields:
+
+- `fact_key`
+- `conflict_group`
+- `valid_from`
+- `valid_to`
+- `superseded_by`
+
+`current_policies()` filters superseded and expired policy rows for current retrieval decisions.
+
+### gbrain Edge Visibility
+
+`gbrain_edges.planner.summarize_plan()` reports planned edge counts by type and provenance. It does not apply edges and keeps the existing `--dry-run` default boundary intact.
+
+### Operational Report
+
+`memory_ops.report` returns a single JSON summary for operators:
+
+- latest memory evaluation report
+- policy row count
+- eviction candidate count
+- gbrain edge dry-run state
+- disabled temporal/MTM flags
+
+### Installer Surface
+
+The installer now exposes explicit flags:
+
+- `--enable-memory-quality`
+- `--install-memory-quality-cron`
+- `--init-memory-policy`
+
+`deploy_memory_quality_modules()` installs only public modules and excludes private production registries.
+
+## Recommended Next Work
+
+1. Increase the private production registry from a small baseline to 20-50 stable, sanitized cases.
+2. Add a scheduled `registry_lint` run before monthly production benchmarks.
+3. Add a real Hindsight/gbrain feeder for edge candidates once dry-run reports are reviewed.
+4. Promote `current_policies()` into the live recall ranking path only after trend reports prove it improves recall or lowers stale-hit rate.
+5. Keep Temporal Truth and MTM disabled until they have a separate design and acceptance plan.
+
+## Acceptance Commands
+
+```bash
+python3 -m pytest -q
+python3 -m compileall -q memory_eval governance gbrain_edges mtm memory_ops installer scripts
+python3 bin/hermes-memory audit-repo --format json
+python3 -m memory_eval.runner --mode full --registry default --backend synthetic --output build/memory-benchmark-default.json
+python3 -m memory_ops.report --agent-home "$AGENT_HOME"
+```

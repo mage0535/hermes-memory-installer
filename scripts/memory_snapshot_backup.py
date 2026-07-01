@@ -8,7 +8,10 @@ from datetime import datetime
 import os
 from pathlib import Path
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", os.environ.get("AGENT_HOME", str(Path.home() / ".agent"))))
+AGENT_HOME = Path(
+    os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
+).expanduser()
+HERMES_HOME = AGENT_HOME
 BACKUP_ROOT = HERMES_HOME / "backups" / "rolling"
 FILES_TO_COPY = [
     HERMES_HOME / "state.db",

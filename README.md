@@ -4,6 +4,8 @@
 
 v3.5.2 adds privacy-safe synthetic and private memory evaluation registries, five quality metrics, additive governance policy metadata, and dry-run-first gbrain edge planning. See [the v3.5.2 release notes](docs/release-v3.5.2.md).
 
+The follow-up memory quality optimization adds canonical runtime path resolution, evaluation trend comparison, private registry linting, policy validity/conflict metadata, gbrain plan summaries, and an operator report. See [the optimization report](docs/memory-quality-optimization-report.md).
+
 **A publishable, agent-agnostic memory sidecar for Hermes, Claude Code, Codex, Cursor, and similar agents.**
 
 [![Version](https://img.shields.io/badge/version-3.5.1-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5.1)

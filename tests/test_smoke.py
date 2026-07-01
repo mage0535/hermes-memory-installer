@@ -201,16 +201,16 @@ def test_supporting_docs_and_headers_do_not_advertise_v3_1_1():
 def test_remaining_runtime_scripts_use_agent_home_fallback():
     for path in [
         REPO / "scripts" / "memory_snapshot_backup.py",
-        REPO / "scripts" / "memory_watermark.py",
         REPO / "scripts" / "memory_reflect.py",
         REPO / "scripts" / "memory_lifecycle.py",
     ]:
         content = path.read_text(encoding="utf-8")
-        assert ".agent" in content
+        assert ".hermes" in content
 
 
 def test_legacy_runtime_helpers_respect_agent_home_env(tmp_path: Path, monkeypatch):
     agent_home = tmp_path / "agent-home"
+    (agent_home / "logs").mkdir(parents=True)
     monkeypatch.setenv("AGENT_HOME", str(agent_home))
 
     def load_module(name: str, path: Path):
@@ -224,6 +224,9 @@ def test_legacy_runtime_helpers_respect_agent_home_env(tmp_path: Path, monkeypat
     memory_prewrite_guard = load_module("memory_prewrite_guard_test", REPO / "scripts" / "memory_prewrite_guard.py")
     sync_embeddings = load_module("sync_embeddings_test", REPO / "scripts" / "sync_embeddings.py")
     memory_watermark = load_module("memory_watermark_test", REPO / "scripts" / "memory_watermark.py")
+    memory_archiver = load_module("memory_archiver_test", REPO / "scripts" / "memory_archiver.py")
+    memory_reflect = load_module("memory_reflect_test", REPO / "scripts" / "memory_reflect.py")
+    memory_snapshot_backup = load_module("memory_snapshot_backup_test", REPO / "scripts" / "memory_snapshot_backup.py")
     memory_lifecycle = load_module("memory_lifecycle_test", REPO / "scripts" / "memory_lifecycle.py")
 
     assert memory_guard.MEMORY_FILE == agent_home / "memory.json"
@@ -231,6 +234,9 @@ def test_legacy_runtime_helpers_respect_agent_home_env(tmp_path: Path, monkeypat
     assert sync_embeddings.STATE_DB == agent_home / "state.db"
     assert sync_embeddings.SEMANTICS_DB == agent_home / "semantics.db"
     assert memory_watermark.MEMORY_DIR == agent_home / "memories"
+    assert memory_archiver.AGENT_HOME == agent_home
+    assert memory_reflect.HERMES_HOME == agent_home
+    assert memory_snapshot_backup.HERMES_HOME == agent_home
     assert memory_lifecycle.STATE_DB == agent_home / "state.db"
     assert memory_lifecycle.GBRAIN_DB == agent_home / "gbrain" / "brain.db"
 
