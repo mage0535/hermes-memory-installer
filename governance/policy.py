@@ -17,6 +17,11 @@ class MemoryPolicy:
     provenance: str
     promotion_reason: str | None = None
     eviction_candidate: bool = False
+    fact_key: str | None = None
+    conflict_group: str | None = None
+    valid_from: str | None = None
+    valid_to: str | None = None
+    superseded_by: str | None = None
 
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS memory_policy (
@@ -25,7 +30,16 @@ tier TEXT NOT NULL CHECK(tier IN ('core','mtm','archive')),
 policy_confidence REAL NOT NULL, source_layer TEXT NOT NULL,
 provenance TEXT NOT NULL, promotion_reason TEXT,
 eviction_candidate INTEGER NOT NULL DEFAULT 0,
+fact_key TEXT, conflict_group TEXT, valid_from TEXT, valid_to TEXT, superseded_by TEXT,
 created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"""
+
+POLICY_COLUMNS = {
+    "fact_key": "TEXT",
+    "conflict_group": "TEXT",
+    "valid_from": "TEXT",
+    "valid_to": "TEXT",
+    "superseded_by": "TEXT",
+}
 
 
 def sanitize_provenance(value: str) -> str:
@@ -36,23 +50,69 @@ def sanitize_provenance(value: str) -> str:
 def ensure_policy_schema(db_path: str | Path) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.execute(SCHEMA)
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(memory_policy)")}
+        for name, column_type in POLICY_COLUMNS.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE memory_policy ADD COLUMN {name} {column_type}")
 
 
 def upsert_policy(db_path: str | Path, policy: MemoryPolicy) -> None:
     ensure_policy_schema(db_path)
     now = datetime.now(timezone.utc).isoformat()
-    values = (policy.memory_id, policy.importance_score, policy.tier, policy.policy_confidence,
-              policy.source_layer, sanitize_provenance(policy.provenance), policy.promotion_reason,
-              int(policy.eviction_candidate), now, now)
+    values = (
+        policy.memory_id, policy.importance_score, policy.tier, policy.policy_confidence,
+        policy.source_layer, sanitize_provenance(policy.provenance), policy.promotion_reason,
+        int(policy.eviction_candidate), policy.fact_key, policy.conflict_group,
+        policy.valid_from, policy.valid_to, policy.superseded_by, now, now,
+    )
     with sqlite3.connect(db_path) as conn:
-        conn.execute("""INSERT INTO memory_policy VALUES (?,?,?,?,?,?,?,?,?,?)
+        conn.execute("""INSERT INTO memory_policy (
+        memory_id, importance_score, tier, policy_confidence, source_layer, provenance,
+        promotion_reason, eviction_candidate, fact_key, conflict_group, valid_from,
+        valid_to, superseded_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(memory_id) DO UPDATE SET importance_score=excluded.importance_score,
         tier=excluded.tier, policy_confidence=excluded.policy_confidence,
         source_layer=excluded.source_layer, provenance=excluded.provenance,
         promotion_reason=excluded.promotion_reason, eviction_candidate=excluded.eviction_candidate,
+        fact_key=excluded.fact_key, conflict_group=excluded.conflict_group,
+        valid_from=excluded.valid_from, valid_to=excluded.valid_to,
+        superseded_by=excluded.superseded_by,
         updated_at=excluded.updated_at""", values)
 
 
 def decay(policy: MemoryPolicy, fact_type: str, threshold: float = .2) -> MemoryPolicy:
     confidence = max(0.0, policy.policy_confidence - {"observation": .05, "world": .02, "experience": .01}.get(fact_type, .02))
     return MemoryPolicy(**{**policy.__dict__, "policy_confidence": confidence, "eviction_candidate": confidence < threshold})
+
+
+def _policy_from_row(row: sqlite3.Row) -> MemoryPolicy:
+    return MemoryPolicy(
+        memory_id=row["memory_id"],
+        importance_score=row["importance_score"],
+        tier=row["tier"],
+        policy_confidence=row["policy_confidence"],
+        source_layer=row["source_layer"],
+        provenance=row["provenance"],
+        promotion_reason=row["promotion_reason"],
+        eviction_candidate=bool(row["eviction_candidate"]),
+        fact_key=row["fact_key"],
+        conflict_group=row["conflict_group"],
+        valid_from=row["valid_from"],
+        valid_to=row["valid_to"],
+        superseded_by=row["superseded_by"],
+    )
+
+
+def current_policies(db_path: str | Path, now: str | None = None) -> list[MemoryPolicy]:
+    ensure_policy_schema(db_path)
+    now = now or datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """SELECT * FROM memory_policy
+            WHERE superseded_by IS NULL
+            AND (valid_to IS NULL OR valid_to > ?)
+            ORDER BY tier, importance_score DESC, memory_id""",
+            (now,),
+        ).fetchall()
+    return [_policy_from_row(row) for row in rows]

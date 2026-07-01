@@ -13,6 +13,7 @@ from .adapters import LiveAdapter, SyntheticAdapter
 from .metrics import calculate_metrics
 from .models import EvalReport
 from .registry_loader import load_registries
+from .trends import compare_report_payloads
 
 
 def run_eval(category="all", model=None, mode="smoke", registry="all", backend="synthetic", adapter=None, k=5):
@@ -51,6 +52,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     reports = run_eval(args.category, mode=args.mode, registry=args.registry, backend=args.backend, k=args.k)
     payload = {"reports": [asdict(report) for report in reports], "comparison": None}
+    if args.previous:
+        previous_path = Path(args.previous)
+        if previous_path.exists():
+            payload["comparison"] = compare_report_payloads(payload, json.loads(previous_path.read_text(encoding="utf-8")))
     if args.output:
         target = Path(args.output)
         target.parent.mkdir(parents=True, exist_ok=True)

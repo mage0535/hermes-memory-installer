@@ -36,6 +36,8 @@ DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 SIDECAR_DIRNAME = "memory-sidecar"
 MEMORY_QUALITY_BEGIN = "# BEGIN hermes-memory-quality"
 MEMORY_QUALITY_END = "# END hermes-memory-quality"
+MEMORY_QUALITY_MODULES = ["memory_eval", "governance", "gbrain_edges", "mtm", "memory_ops"]
+MEMORY_QUALITY_FILES = ["runtime_paths.py"]
 
 
 def memory_quality_cron(agent_home: Path) -> str:
@@ -62,6 +64,35 @@ def reconcile_cron(current: str, block: str) -> str:
         if not skipping:
             kept.append(line)
     return "\n".join([*kept, block]).strip() + "\n"
+
+
+def deploy_memory_quality_modules(agent_home: Path, source_root: Path | None = None) -> list[str]:
+    source_root = source_root or repo_root()
+    sidecar = agent_home / SIDECAR_DIRNAME
+    sidecar.mkdir(parents=True, exist_ok=True)
+    deployed: list[str] = []
+    for name in MEMORY_QUALITY_MODULES:
+        src = source_root / name
+        if not src.exists():
+            continue
+        dst = sidecar / name
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "registry_production.py"))
+        deployed.append(name)
+    for name in MEMORY_QUALITY_FILES:
+        src = source_root / name
+        if src.exists():
+            shutil.copy2(src, sidecar / name)
+            deployed.append(name)
+    return deployed
+
+
+def install_memory_quality_cron(agent_home: Path) -> None:
+    current = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    existing = current.stdout if current.returncode == 0 else ""
+    updated = reconcile_cron(existing, memory_quality_cron(agent_home))
+    subprocess.run(["crontab", "-"], input=updated, text=True, check=True)
 
 SUPPORTED_SCRIPT_NAMES = [
     "memory_family_registry.py",
@@ -532,6 +563,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="auto",
         help="Installer output language. Defaults to locale detection.",
     )
+    parser.add_argument(
+        "--enable-memory-quality",
+        action="store_true",
+        help="Deploy memory quality modules and run an initial synthetic smoke check.",
+    )
+    parser.add_argument(
+        "--install-memory-quality-cron",
+        action="store_true",
+        help="Install the idempotent memory quality cron block.",
+    )
+    parser.add_argument(
+        "--init-memory-policy",
+        action="store_true",
+        help="Initialize the additive memory_policy table.",
+    )
     return parser.parse_args(argv)
 
 
@@ -952,11 +998,22 @@ def main(argv: list[str] | None = None) -> int:
 
     embedding = choose_embedding_model(args, lang)
     installed_scripts, config_path, profile_path = install_sidecar(agent_home, embedding, src_dir)
+    memory_quality_deployed: list[str] = []
+    if args.enable_memory_quality:
+        memory_quality_deployed = deploy_memory_quality_modules(agent_home)
+    if args.init_memory_policy:
+        from governance.policy import ensure_policy_schema
+
+        ensure_policy_schema(agent_home / "memory_governance.db")
+    if args.install_memory_quality_cron:
+        install_memory_quality_cron(agent_home)
 
     print(f"\n{translate(lang, 'installed_title', version=VERSION)}")
     print(translate(lang, "installed_agent_home", agent_home=agent_home))
     print(translate(lang, "installed_embedding", embedding=embedding.model_id))
     print(translate(lang, "installed_scripts", count=len(installed_scripts)))
+    if memory_quality_deployed:
+        print(f"  Memory quality modules: {len(memory_quality_deployed)} deployed")
     if config_path:
         print(translate(lang, "installed_config", config_path=config_path))
     print(translate(lang, "installed_profile", profile_path=profile_path))

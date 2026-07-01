@@ -13,7 +13,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", os.environ.get("AGENT_HOME", "~/.agent"))).expanduser()
+AGENT_HOME = Path(
+    os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
+).expanduser()
+HERMES_HOME = AGENT_HOME
 sys.path.insert(0, str(HERMES_HOME / "hermes-agent"))
 
 logging.basicConfig(

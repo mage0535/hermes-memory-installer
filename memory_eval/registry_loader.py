@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
 from types import ModuleType
-from typing import Iterable
 
 from .models import Case, LoadedRegistry
 from .registry_default import REGISTRY as DEFAULT_REGISTRY
+from runtime_paths import RuntimePaths
 
 
 def _agent_home() -> Path:
-    return Path(os.environ.get("AGENT_HOME", Path.home())).expanduser()
+    return RuntimePaths.from_agent_home().agent_home
 
 
 def _case_from_mapping(payload: dict) -> Case:
@@ -52,7 +51,7 @@ def _default_registry() -> LoadedRegistry:
 
 
 def _production_registry(required: bool = False) -> LoadedRegistry:
-    private = _agent_home() / ".memory_eval" / "registry_production.py"
+    private = RuntimePaths.from_agent_home(_agent_home()).production_registry
     if not private.exists():
         if required:
             raise FileNotFoundError(f"production registry not found: {private}")

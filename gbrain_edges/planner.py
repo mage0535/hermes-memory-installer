@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections import Counter
 
 from .models import EdgeCandidate
 
@@ -32,3 +33,13 @@ def apply_edges(edges, apply=False, binary="gbrain"):
         if result.returncode:
             return result.returncode
     return 0
+
+
+def summarize_plan(edges, applied=False):
+    edge_list = list(edges)
+    return {
+        "mode": "apply" if applied else "dry-run",
+        "planned_edges": len(edge_list),
+        "by_type": dict(Counter(edge.edge_type for edge in edge_list)),
+        "by_provenance": dict(Counter(edge.provenance for edge in edge_list)),
+    }

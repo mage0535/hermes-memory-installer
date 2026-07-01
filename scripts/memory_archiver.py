@@ -16,7 +16,9 @@ from datetime import datetime
 import os
 from pathlib import Path
 
-AGENT_HOME = Path(os.environ.get("HERMES_HOME", os.environ.get("AGENT_HOME", str(Path.home() / ".hermes"))))
+AGENT_HOME = Path(
+    os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
+).expanduser()
 MEMORY_DIR = AGENT_HOME / "memories"
 MEMORY_FILE = MEMORY_DIR / "MEMORY.md"
 USER_FILE = MEMORY_DIR / "USER.md"

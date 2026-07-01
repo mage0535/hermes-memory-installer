@@ -2,6 +2,10 @@
 
 The memory quality layer consists of `memory_eval`, additive `governance` metadata, dry-run-first `gbrain_edges`, and disabled-by-default temporal/MTM extension contracts. It does not patch the agent or memory services.
 
+New modules should derive paths through `runtime_paths.RuntimePaths` instead of reading `AGENT_HOME` and `HERMES_HOME` directly. The canonical precedence is `AGENT_HOME`, then `HERMES_HOME`, then `$HOME/.hermes`.
+
+Operational visibility is provided by `memory_ops.report`, which summarizes the latest evaluation report, policy metadata counts, dry-run gbrain edge plans, and disabled extension flags.
+
 Memory Sidecar v3.5.1 is the public, agent-agnostic release of the project. It is designed to sit beside an agent, read its durable data directory, and improve recall without patching the agent itself.
 
 Release page: https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5.1
