@@ -18,8 +18,8 @@ sys.path.insert(0, str(REPO))
 from installer import install
 
 
-def test_version_is_3_5_1():
-    assert install.VERSION == "3.5.1"
+def test_version_is_3_5_2():
+    assert install.VERSION == "3.5.2"
 
 
 def test_supported_script_set_matches_repo():
@@ -202,7 +202,7 @@ def test_patch_agent_config_adds_sidecar_settings(tmp_path: Path):
     payload = yaml.safe_load(updated_path.read_text(encoding="utf-8"))
     assert payload["memory"]["provider"] == "hindsight"
     assert "existing-skill" in payload["skills"]
-    assert payload["memory_sidecar"]["version"] == "3.5.1"
+    assert payload["memory_sidecar"]["version"] == "3.5.2"
     assert payload["memory_sidecar"]["scripts_dir"] == str(agent_home / "scripts")
 
 
@@ -419,7 +419,7 @@ def test_write_install_profile_records_embedding_metadata(tmp_path: Path):
     )
     payload = json.loads(profile_path.read_text(encoding="utf-8"))
 
-    assert payload["version"] == "3.5.1"
+    assert payload["version"] == "3.5.2"
     assert payload["embedding_model"]["model_id"] == model.model_id
     assert payload["installed_scripts"] == ["memory_guardian.py", "tiered_context_injector.py"]
 

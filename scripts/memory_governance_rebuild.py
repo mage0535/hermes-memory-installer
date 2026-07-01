@@ -19,7 +19,8 @@ import yaml
 
 try:
     import sys as _kmm_sys
-    _kmm_sys.path.insert(0, "/root/.hermes/knowledge-plugin")
+    _agent_home = Path(os.environ.get("AGENT_HOME", Path.home() / ".agent"))
+    _kmm_sys.path.insert(0, str(_agent_home / "knowledge-plugin"))
     from knowledge_collector.sidecar_indexer import (
         refresh_knowledge_object_index as _refresh_knowledge_object_index,
     )

@@ -1,6 +1,8 @@
 <div align="center">
 
-# Memory Sidecar v3.5.1
+# Memory Sidecar v3.5.2
+
+v3.5.2 adds privacy-safe synthetic and private memory evaluation registries, five quality metrics, additive governance policy metadata, and dry-run-first gbrain edge planning. See [the v3.5.2 release notes](docs/release-v3.5.2.md).
 
 **A publishable, agent-agnostic memory sidecar for Hermes, Claude Code, Codex, Cursor, and similar agents.**
 

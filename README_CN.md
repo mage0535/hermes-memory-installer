@@ -1,6 +1,8 @@
 <div align="center">
 
-# Memory Sidecar v3.5.1
+# Memory Sidecar v3.5.2
+
+v3.5.2 新增公开合成/生产私有双注册表、五项记忆质量指标、独立治理政策元数据，以及默认 dry-run 的 gbrain 补边规划。
 
 **面向 Hermes、Claude Code、Codex、Cursor 等智能体的可发布外挂记忆体。**
 
