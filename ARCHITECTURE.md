@@ -1,4 +1,6 @@
-# Memory Sidecar Architecture v3.5.1
+# Memory Sidecar Architecture v3.5.2
+
+The memory quality layer consists of `memory_eval`, additive `governance` metadata, dry-run-first `gbrain_edges`, and disabled-by-default temporal/MTM extension contracts. It does not patch the agent or memory services.
 
 Memory Sidecar v3.5.1 is the public, agent-agnostic release of the project. It is designed to sit beside an agent, read its durable data directory, and improve recall without patching the agent itself.
 

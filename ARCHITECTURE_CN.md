@@ -1,4 +1,6 @@
-# Memory Sidecar 架构说明 v3.5.1
+# Memory Sidecar 架构说明 v3.5.2
+
+记忆质量层由 `memory_eval`、增量式 `governance` 元数据、默认 dry-run 的 `gbrain_edges`，以及默认关闭的时间真值/MTM 扩展契约组成，不修改智能体或记忆服务。
 
 Memory Sidecar v3.5.1 是项目的公开可发布版。它部署在智能体旁边，读取智能体的数据目录，在不修改智能体核心代码的前提下增强记忆和召回能力。
 

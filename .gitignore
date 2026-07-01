@@ -23,3 +23,5 @@ Thumbs.db
 .env
 *.db
 archives/
+# Private production registry is local-only.
+.memory_eval/registry_production.py

@@ -31,9 +31,37 @@ from urllib.request import urlopen
 
 import yaml
 
-VERSION = "3.5.1"
+VERSION = "3.5.2"
 DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
 SIDECAR_DIRNAME = "memory-sidecar"
+MEMORY_QUALITY_BEGIN = "# BEGIN hermes-memory-quality"
+MEMORY_QUALITY_END = "# END hermes-memory-quality"
+
+
+def memory_quality_cron(agent_home: Path) -> str:
+    home = str(agent_home)
+    sidecar = f"{home}/{SIDECAR_DIRNAME}"
+    return "\n".join([
+        MEMORY_QUALITY_BEGIN,
+        f"0 7 * * 1 AGENT_HOME={home} MEMORY_SIDECAR_HOME={sidecar} TEMPORAL_TRUTH_ENABLED=false MTM_ENABLED=false {sidecar}/memory_eval/smoke.sh",
+        f"0 4 1 * * cd {sidecar} && python3 -m memory_eval.runner --mode full --registry all --output {home}/logs/memory-benchmark-monthly.json",
+        f"0 3 * * 0 cd {sidecar} && python3 -m governance.inject_policy --decay --apply",
+        MEMORY_QUALITY_END,
+    ])
+
+
+def reconcile_cron(current: str, block: str) -> str:
+    lines, kept, skipping = current.splitlines(), [], False
+    for line in lines:
+        if line == MEMORY_QUALITY_BEGIN:
+            skipping = True
+            continue
+        if line == MEMORY_QUALITY_END:
+            skipping = False
+            continue
+        if not skipping:
+            kept.append(line)
+    return "\n".join([*kept, block]).strip() + "\n"
 
 SUPPORTED_SCRIPT_NAMES = [
     "memory_family_registry.py",

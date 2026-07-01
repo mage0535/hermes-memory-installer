@@ -294,3 +294,13 @@ def test_release_check_workflow_and_proxy_docs_exist():
     assert "Authorization: Bearer" in proxy_doc
     assert "profile_isolation_soak.py" in checklist
     assert "release_checksums.py" in checklist
+
+
+def test_v3_5_2_memory_quality_docs_cover_safety_contracts():
+    release = (REPO / "docs" / "release-v3.5.2.md").read_text(encoding="utf-8")
+    for phrase in ("synthetic registry", "private registry", "recall@k", "precision@k",
+                   "contradiction rate", "stale-hit rate", "cross-layer agreement",
+                   "--dry-run", "--apply", "--sanitize-provenance"):
+        assert phrase in release
+    assert "TEMPORAL_TRUTH_ENABLED=false" in release
+    assert "MTM_ENABLED=false" in release
