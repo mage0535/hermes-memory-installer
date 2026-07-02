@@ -103,3 +103,8 @@ def test_tiered_context_shadow_log_does_not_change_returned_candidates(tmp_path,
     payload = json.loads(log_path.read_text(encoding="utf-8"))
     assert payload["after_top_ids"] == ["m2", "m1"]
     assert "private query" not in json.dumps(payload)
+
+
+def test_tiered_context_exposes_sidecar_home_for_runtime_imports():
+    assert hasattr(injector, "MEMORY_SIDECAR_HOME")
+    assert str(injector.MEMORY_SIDECAR_HOME) in sys.path
