@@ -23,3 +23,4 @@ def test_ops_report_collects_latest_eval_policy_and_edge_state(tmp_path):
     assert report["policy"]["rows"] == 2
     assert report["policy"]["eviction_candidates"] == 1
     assert report["gbrain_edges"]["planned_edges"] == 3
+    assert report["mtm"]["items"] == 0

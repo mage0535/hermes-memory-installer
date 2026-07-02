@@ -116,3 +116,51 @@ def current_policies(db_path: str | Path, now: str | None = None) -> list[Memory
             (now,),
         ).fetchall()
     return [_policy_from_row(row) for row in rows]
+
+
+def policy_by_memory_id(db_path: str | Path, now: str | None = None) -> dict[str, MemoryPolicy]:
+    return {policy.memory_id: policy for policy in current_policies(db_path, now=now)}
+
+
+def inactive_policy_ids(db_path: str | Path, now: str | None = None) -> set[str]:
+    ensure_policy_schema(db_path)
+    now = now or datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        return {
+            row[0]
+            for row in conn.execute(
+                """SELECT memory_id FROM memory_policy
+                WHERE superseded_by IS NOT NULL
+                OR (valid_to IS NOT NULL AND valid_to <= ?)""",
+                (now,),
+            ).fetchall()
+        }
+
+
+def apply_policy_to_candidates(
+    db_path: str | Path,
+    candidates: list[dict],
+    now: str | None = None,
+) -> list[dict]:
+    policies = policy_by_memory_id(db_path, now=now)
+    inactive_ids = inactive_policy_ids(db_path, now=now)
+    ranked: list[dict] = []
+    for item in candidates:
+        memory_id = str(item.get("session_id") or item.get("object_id") or item.get("slug") or "")
+        normalized_id = memory_id.removeprefix("hindsight:")
+        if memory_id in inactive_ids or normalized_id in inactive_ids:
+            continue
+        policy = policies.get(memory_id)
+        if not policy and memory_id.startswith("hindsight:"):
+            policy = policies.get(normalized_id)
+        adjusted = dict(item)
+        base_score = float(adjusted.get("score", adjusted.get("rrf_score", 0.0)) or 0.0)
+        if policy:
+            tier_boost = {"core": 0.45, "mtm": 0.18, "archive": 0.02}.get(policy.tier, 0.0)
+            adjusted["score"] = round(base_score + tier_boost + (policy.importance_score / 20.0) + (policy.policy_confidence / 10.0), 6)
+            adjusted["policy_tier"] = policy.tier
+            adjusted["policy_confidence"] = policy.policy_confidence
+        else:
+            adjusted["score"] = base_score
+        ranked.append(adjusted)
+    return sorted(ranked, key=lambda row: float(row.get("score", 0.0)), reverse=True)
