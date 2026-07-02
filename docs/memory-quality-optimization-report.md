@@ -96,6 +96,7 @@ The optimization layer now has working implementations beyond the original dry-r
 - `governance.temporal.temporal_retrieve()` supports `mode=current` and `mode=historical` when `TEMPORAL_TRUTH_ENABLED=true`.
 - `mtm.consolidator.MidTermMemory` and `consolidate()` provide a lightweight JSONL mid-term buffer with heuristic promotion into policy metadata.
 - `memory_ops.report` includes MTM item counts and computes the same gbrain dry-run edge count used by the feeder CLI.
+- `memory_ops.shadow_log` records policy-ranking shadow comparisons without raw query text, titles, snippets, or memory content.
 
 Production validation on 2026-07-02:
 
@@ -103,6 +104,35 @@ Production validation on 2026-07-02:
 - gbrain feeder dry-run planned 96 candidate edges from the production governance database without writing to gbrain.
 - `memory_ops.report` reports the same 96 dry-run planned edges.
 - Hindsight and gateway remained active after deployment; feature flags that alter runtime retrieval behavior remain disabled by default.
+
+## Policy Ranking Shadow Observation
+
+Shadow observation is the recommended next production phase before enabling policy ranking:
+
+- Enable only `MEMORY_POLICY_SHADOW_LOG_ENABLED=true`.
+- Keep `MEMORY_POLICY_RANKING_ENABLED=false` until a 7-day report is reviewed.
+- The live recall path still returns the original ranking; the shadow path only computes the policy-ranked alternative and writes metadata.
+- The JSONL log stores `query_hash`, candidate IDs, before/after top-k IDs, promoted/demoted IDs, elapsed milliseconds, and candidate-set hash.
+- Raw query text, snippets, titles, and memory content are not logged.
+
+Default locations:
+
+- `$AGENT_HOME/logs/memory-policy-shadow.jsonl`
+- `$AGENT_HOME/logs/memory-policy-shadow-latest.json`
+
+Daily analysis is included in the memory-quality cron block:
+
+```bash
+python3 -m memory_ops.shadow_log --days 7 --output "$AGENT_HOME/logs/memory-policy-shadow-latest.json"
+```
+
+Decision rule:
+
+- `enable_policy_ranking_gray`: enough events, meaningful ranking changes, acceptable latency.
+- `continue_shadow_until_enough_data`: fewer than the minimum event count.
+- `keep_disabled_latency_too_high`: policy shadow adds too much latency.
+- `keep_disabled_low_impact`: ranking rarely changes.
+- `continue_shadow_review_samples`: ambiguous result, review promoted/demoted IDs.
 
 Recommended production order:
 

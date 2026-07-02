@@ -266,6 +266,17 @@ def l3_layer_plan(query: str, top: int) -> list[tuple[str, int]]:
 
 
 def trim_l3_candidates(query: str, candidates: list[dict], top: int) -> list[dict]:
+    if os.environ.get("MEMORY_POLICY_SHADOW_LOG_ENABLED", "false").lower() in {"1", "true", "yes"}:
+        try:
+            from memory_ops.shadow_log import record_shadow_event
+
+            log_path = os.environ.get(
+                "MEMORY_POLICY_SHADOW_LOG_PATH",
+                str(AGENT_HOME / "logs" / "memory-policy-shadow.jsonl"),
+            )
+            record_shadow_event(query, candidates, governance_rebuild.GOVERNANCE_DB, log_path, top_k=top)
+        except Exception as exc:
+            print(f"[tiered_context] policy shadow logging skipped: {exc}", file=sys.stderr)
     if os.environ.get("MEMORY_POLICY_RANKING_ENABLED", "false").lower() in {"1", "true", "yes"}:
         try:
             from governance.policy import apply_policy_to_candidates

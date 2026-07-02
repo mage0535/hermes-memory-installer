@@ -28,6 +28,8 @@ The additive `memory_policy` table now owns policy-only fields for `fact_key`, `
 
 Production validation populated 16,600 policy rows and confirmed that gbrain dry-run planning now reports 96 candidate edges from governance data. Runtime-impacting feature flags remain opt-in so deployment does not alter existing recall behavior until explicitly enabled.
 
+`MEMORY_POLICY_SHADOW_LOG_ENABLED=true` enables a safe observation mode for policy ranking. It leaves live recall unchanged, computes the policy-ranked alternative in the background, and writes only hashes, memory IDs, rank deltas, and latency to `$AGENT_HOME/logs/memory-policy-shadow.jsonl`. The memory-quality cron block analyzes the last 7 days into `$AGENT_HOME/logs/memory-policy-shadow-latest.json`.
+
 The installer exposes explicit memory quality switches:
 
 - `--enable-memory-quality`
