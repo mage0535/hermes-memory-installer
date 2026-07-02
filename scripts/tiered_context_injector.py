@@ -51,6 +51,9 @@ from memory_family_registry import (
 )
 
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
+MEMORY_SIDECAR_HOME = Path(os.environ.get("MEMORY_SIDECAR_HOME", str(AGENT_HOME / "memory-sidecar"))).expanduser()
+if str(MEMORY_SIDECAR_HOME) not in sys.path:
+    sys.path.insert(0, str(MEMORY_SIDECAR_HOME))
 STATE_DB = Path(os.environ.get("MEMORY_STATE_DB_PATH", str(AGENT_HOME / "state.db"))).expanduser()
 OUTPUT_CONTEXT = Path(os.environ.get("MEMORY_OUTPUT_CONTEXT_PATH", str(AGENT_HOME / "memories" / "TIERED_CONTEXT.md"))).expanduser()
 OUTPUT_RECALL = Path(os.environ.get("MEMORY_OUTPUT_RECALL_PATH", str(AGENT_HOME / "memories" / "PROACTIVE_RECALL.md"))).expanduser()
