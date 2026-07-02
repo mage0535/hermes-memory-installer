@@ -6,6 +6,10 @@ New modules should derive paths through `runtime_paths.RuntimePaths` instead of 
 
 Operational visibility is provided by `memory_ops.report`, which summarizes the latest evaluation report, policy metadata counts, dry-run gbrain edge plans, and disabled extension flags.
 
+Policy metadata can now enter runtime ranking through `MEMORY_POLICY_RANKING_ENABLED=true`. The default remains unchanged until an operator enables that flag after a baseline evaluation.
+
+Temporal retrieval and MTM consolidation are implemented behind explicit flags. `TEMPORAL_TRUTH_ENABLED=true` enables current/historical policy lookup, and `MTM_ENABLED=true` enables the JSONL mid-term consolidation buffer.
+
 Memory Sidecar v3.5.1 is the public, agent-agnostic release of the project. It is designed to sit beside an agent, read its durable data directory, and improve recall without patching the agent itself.
 
 Release page: https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5.1

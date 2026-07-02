@@ -82,8 +82,28 @@ The installer now exposes explicit flags:
 1. Increase the private production registry from a small baseline to 20-50 stable, sanitized cases.
 2. Add a scheduled `registry_lint` run before monthly production benchmarks.
 3. Add a real Hindsight/gbrain feeder for edge candidates once dry-run reports are reviewed.
-4. Promote `current_policies()` into the live recall ranking path only after trend reports prove it improves recall or lowers stale-hit rate.
-5. Keep Temporal Truth and MTM disabled until they have a separate design and acceptance plan.
+4. Enable `MEMORY_POLICY_RANKING_ENABLED=true` for a controlled production window after policy rows are populated and baseline reports are saved.
+5. Review MTM promoted rows before wiring them into direct Hindsight writes.
+
+## 2026-07-02 Implementation Update
+
+The optimization layer now has working implementations beyond the original dry-run shells:
+
+- `governance.inject_policy.inject_from_governance()` reads `memory_objects` and writes sanitized policy rows.
+- `governance.policy.apply_policy_to_candidates()` can boost core memories and filter expired or superseded candidates.
+- `scripts/tiered_context_injector.py` can apply policy ranking when `MEMORY_POLICY_RANKING_ENABLED=true`.
+- `gbrain_edges.hindsight_feeder.build_candidates_from_governance()` builds semantic and temporal edge candidates from governance rows.
+- `governance.temporal.temporal_retrieve()` supports `mode=current` and `mode=historical` when `TEMPORAL_TRUTH_ENABLED=true`.
+- `mtm.consolidator.MidTermMemory` and `consolidate()` provide a lightweight JSONL mid-term buffer with heuristic promotion into policy metadata.
+- `memory_ops.report` includes MTM item counts.
+
+Recommended production order:
+
+1. Run `python3 -m governance.inject_policy --db-path "$AGENT_HOME/memory_governance.db" --apply`.
+2. Run `python3 -m memory_eval.runner --mode full --registry production --backend live --output "$AGENT_HOME/logs/memory-policy-baseline.json"`.
+3. Enable `MEMORY_POLICY_RANKING_ENABLED=true` for `tiered_context_injector.py` only after the baseline exists.
+4. Run `python3 -m gbrain_edges.hindsight_feeder --db-path "$AGENT_HOME/memory_governance.db" --dry-run` and inspect planned edge counts before any `--apply`.
+5. Run MTM with `MTM_ENABLED=true python3 -m mtm.consolidator --apply`.
 
 ## Acceptance Commands
 

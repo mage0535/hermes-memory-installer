@@ -266,6 +266,13 @@ def l3_layer_plan(query: str, top: int) -> list[tuple[str, int]]:
 
 
 def trim_l3_candidates(query: str, candidates: list[dict], top: int) -> list[dict]:
+    if os.environ.get("MEMORY_POLICY_RANKING_ENABLED", "false").lower() in {"1", "true", "yes"}:
+        try:
+            from governance.policy import apply_policy_to_candidates
+
+            candidates = apply_policy_to_candidates(governance_rebuild.GOVERNANCE_DB, candidates)
+        except Exception as exc:
+            print(f"[tiered_context] policy ranking skipped: {exc}", file=sys.stderr)
     planned = []
     seen = set()
     grouped: dict[str, list[dict]] = {}

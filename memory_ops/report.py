@@ -31,6 +31,25 @@ def _policy_state(db_path: Path) -> dict:
     return {"rows": int(row[0]), "eviction_candidates": int(row[1])}
 
 
+def _mtm_state(sidecar_home: Path) -> dict:
+    path = sidecar_home / "mtm.jsonl"
+    if not path.exists():
+        return {"items": 0, "pending": 0, "promoted": 0}
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            return {"items": len(rows), "pending": 0, "promoted": 0, "error": "invalid_jsonl"}
+    return {
+        "items": len(rows),
+        "pending": sum(1 for row in rows if row.get("status") == "pending"),
+        "promoted": sum(1 for row in rows if row.get("status") == "promoted"),
+    }
+
+
 def build_ops_report(agent_home: str | Path | None = None, edge_plan: dict | None = None) -> dict:
     paths = RuntimePaths.from_agent_home(agent_home)
     return {
@@ -38,6 +57,7 @@ def build_ops_report(agent_home: str | Path | None = None, edge_plan: dict | Non
         "eval": _latest_eval(paths.logs_dir),
         "policy": _policy_state(paths.governance_db),
         "gbrain_edges": edge_plan or {"mode": "dry-run", "planned_edges": 0},
+        "mtm": _mtm_state(paths.sidecar_home),
         "feature_flags": {"TEMPORAL_TRUTH_ENABLED": False, "MTM_ENABLED": False},
     }
 
