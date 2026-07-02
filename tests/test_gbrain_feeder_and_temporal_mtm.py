@@ -21,10 +21,27 @@ def test_gbrain_feeder_builds_candidates_from_governance(tmp_path):
 
     candidates = build_candidates_from_governance(db)
 
-    assert [(edge.source, edge.target, edge.edge_type) for edge in candidates] == [
-        ("project-alpha", "project-alpha-note", "semantic"),
-        ("project-alpha", "project-alpha-note", "temporal"),
-    ]
+    planned_edges = {(edge.source, edge.target, edge.edge_type) for edge in candidates}
+    assert ("project-alpha", "project-alpha-note", "semantic") in planned_edges
+    assert ("project-alpha", "project-alpha-note", "temporal") in planned_edges
+    assert ("project-alpha", "project-alpha-note", "structure") in planned_edges
+
+
+def test_gbrain_feeder_uses_entity_type_when_conflict_groups_are_unique(tmp_path):
+    db = tmp_path / "gov.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE memory_objects (object_id TEXT, title TEXT, entity_type TEXT, source_kind TEXT, conflict_group TEXT, valid_from TEXT)")
+        conn.executemany(
+            "INSERT INTO memory_objects VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                ("alpha-1", "Alpha One", "project", "hindsight", "unique-a", "2026-01-01"),
+                ("alpha-2", "Alpha Two", "project", "session", "unique-b", "2026-01-02"),
+            ],
+        )
+
+    candidates = build_candidates_from_governance(db)
+
+    assert any(edge.edge_type == "structure" for edge in candidates)
 
 
 def test_temporal_retrieve_filters_current_and_marks_historical(tmp_path, monkeypatch):
