@@ -92,10 +92,17 @@ The optimization layer now has working implementations beyond the original dry-r
 - `governance.inject_policy.inject_from_governance()` reads `memory_objects` and writes sanitized policy rows.
 - `governance.policy.apply_policy_to_candidates()` can boost core memories and filter expired or superseded candidates.
 - `scripts/tiered_context_injector.py` can apply policy ranking when `MEMORY_POLICY_RANKING_ENABLED=true`.
-- `gbrain_edges.hindsight_feeder.build_candidates_from_governance()` builds semantic and temporal edge candidates from governance rows.
+- `gbrain_edges.hindsight_feeder.build_candidates_from_governance()` builds semantic and temporal edge candidates from governance conflict groups, and structure candidates from shared entity types when production conflict groups are too granular.
 - `governance.temporal.temporal_retrieve()` supports `mode=current` and `mode=historical` when `TEMPORAL_TRUTH_ENABLED=true`.
 - `mtm.consolidator.MidTermMemory` and `consolidate()` provide a lightweight JSONL mid-term buffer with heuristic promotion into policy metadata.
-- `memory_ops.report` includes MTM item counts.
+- `memory_ops.report` includes MTM item counts and computes the same gbrain dry-run edge count used by the feeder CLI.
+
+Production validation on 2026-07-02:
+
+- Policy injection populated 16,600 governance policy rows.
+- gbrain feeder dry-run planned 96 candidate edges from the production governance database without writing to gbrain.
+- `memory_ops.report` reports the same 96 dry-run planned edges.
+- Hindsight and gateway remained active after deployment; feature flags that alter runtime retrieval behavior remain disabled by default.
 
 Recommended production order:
 

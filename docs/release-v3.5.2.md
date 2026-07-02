@@ -26,6 +26,8 @@ The additive `memory_policy` table now owns policy-only fields for `fact_key`, `
 
 `memory_ops.report` produces a compact operational report covering the latest evaluation report, policy row counts, eviction candidates, gbrain edge planning state, and disabled extension flags.
 
+Production validation populated 16,600 policy rows and confirmed that gbrain dry-run planning now reports 96 candidate edges from governance data. Runtime-impacting feature flags remain opt-in so deployment does not alter existing recall behavior until explicitly enabled.
+
 The installer exposes explicit memory quality switches:
 
 - `--enable-memory-quality`
