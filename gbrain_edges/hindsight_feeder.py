@@ -12,6 +12,19 @@ def _slug(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in value.strip().lower()).strip("-")
 
 
+def _append_sequential_edges(
+    candidates: list[EdgeCandidate],
+    rows: list[sqlite3.Row],
+    edge_type: str,
+    score: float,
+) -> None:
+    ordered = sorted(rows, key=lambda row: (str(row["valid_from"] or ""), str(row["object_id"] or "")))
+    for left, right in zip(ordered, ordered[1:]):
+        source, target = _slug(str(left["object_id"])), _slug(str(right["object_id"]))
+        if source and target:
+            candidates.append(EdgeCandidate(source, target, edge_type, score, "governance"))
+
+
 def build_candidates_from_governance(db_path: str | Path | None = None, limit: int = 500) -> list[EdgeCandidate]:
     db = Path(db_path) if db_path is not None else RuntimePaths.from_agent_home().governance_db
     if not db.exists():
@@ -29,19 +42,25 @@ def build_candidates_from_governance(db_path: str | Path | None = None, limit: i
             (limit,),
         ).fetchall()
     candidates: list[EdgeCandidate] = []
-    by_group: dict[str, list[sqlite3.Row]] = {}
+    by_conflict: dict[str, list[sqlite3.Row]] = {}
+    by_entity_type: dict[str, list[sqlite3.Row]] = {}
     for row in rows:
-        group = row["conflict_group"] or row["entity_type"] or ""
-        if group:
-            by_group.setdefault(str(group), []).append(row)
-    for group_rows in by_group.values():
-        ordered = sorted(group_rows, key=lambda row: str(row["valid_from"] or ""))
-        for left, right in zip(ordered, ordered[1:]):
-            source, target = _slug(str(left["object_id"])), _slug(str(right["object_id"]))
-            if source and target:
-                candidates.append(EdgeCandidate(source, target, "semantic", 0.8, "governance"))
-                if left["valid_from"] or right["valid_from"]:
-                    candidates.append(EdgeCandidate(source, target, "temporal", 0.65, "governance"))
+        conflict_group = row["conflict_group"] or ""
+        entity_type = row["entity_type"] or ""
+        if conflict_group:
+            by_conflict.setdefault(str(conflict_group), []).append(row)
+        if entity_type:
+            by_entity_type.setdefault(str(entity_type), []).append(row)
+    for group_rows in by_conflict.values():
+        if len(group_rows) < 2:
+            continue
+        _append_sequential_edges(candidates, group_rows, "semantic", 0.8)
+        if any(row["valid_from"] for row in group_rows):
+            _append_sequential_edges(candidates, group_rows, "temporal", 0.65)
+    for group_rows in by_entity_type.values():
+        if len(group_rows) < 2:
+            continue
+        _append_sequential_edges(candidates, group_rows, "structure", 0.55)
     return candidates
 
 
