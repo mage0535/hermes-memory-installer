@@ -5,6 +5,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from gbrain_edges.hindsight_feeder import build_candidates_from_governance
+from gbrain_edges.planner import plan_edges
 from runtime_paths import RuntimePaths
 
 
@@ -50,13 +52,22 @@ def _mtm_state(sidecar_home: Path) -> dict:
     }
 
 
+def _gbrain_edge_state(db_path: Path) -> dict:
+    try:
+        candidates = build_candidates_from_governance(db_path, limit=100)
+        planned = plan_edges(candidates, set(), top_k=100)
+    except Exception as exc:  # pragma: no cover - defensive ops report path
+        return {"mode": "dry-run", "planned_edges": 0, "error": type(exc).__name__}
+    return {"mode": "dry-run", "planned_edges": len(planned)}
+
+
 def build_ops_report(agent_home: str | Path | None = None, edge_plan: dict | None = None) -> dict:
     paths = RuntimePaths.from_agent_home(agent_home)
     return {
         "agent_home": str(paths.agent_home),
         "eval": _latest_eval(paths.logs_dir),
         "policy": _policy_state(paths.governance_db),
-        "gbrain_edges": edge_plan or {"mode": "dry-run", "planned_edges": 0},
+        "gbrain_edges": edge_plan or _gbrain_edge_state(paths.governance_db),
         "mtm": _mtm_state(paths.sidecar_home),
         "feature_flags": {"TEMPORAL_TRUTH_ENABLED": False, "MTM_ENABLED": False},
     }
