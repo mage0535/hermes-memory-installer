@@ -46,6 +46,7 @@ def memory_quality_cron(agent_home: Path) -> str:
     return "\n".join([
         MEMORY_QUALITY_BEGIN,
         f"0 7 * * 1 AGENT_HOME={home} MEMORY_SIDECAR_HOME={sidecar} TEMPORAL_TRUTH_ENABLED=false MTM_ENABLED=false {sidecar}/memory_eval/smoke.sh",
+        f"20 7 * * * cd {sidecar} && AGENT_HOME={home} MEMORY_SIDECAR_HOME={sidecar} python3 -m memory_ops.shadow_log --days 7 --output {home}/logs/memory-policy-shadow-latest.json",
         f"0 4 1 * * cd {sidecar} && python3 -m memory_eval.runner --mode full --registry all --output {home}/logs/memory-benchmark-monthly.json",
         f"0 3 * * 0 cd {sidecar} && python3 -m governance.inject_policy --decay --apply",
         MEMORY_QUALITY_END,
