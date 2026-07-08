@@ -77,6 +77,12 @@ The installer now exposes explicit flags:
 
 `deploy_memory_quality_modules()` installs only public modules and excludes private production registries.
 
+Production integration note:
+
+- Runtime authority stays in `$AGENT_HOME/scripts`.
+- The sidecar directory provides Python modules, reports, and installer assets.
+- On the production Hermes host, `tiered_context_injector.py` runs from `$AGENT_HOME/scripts` and imports policy/shadow helpers from `$AGENT_HOME/memory-sidecar`.
+
 ## Recommended Next Work
 
 1. Increase the private production registry from a small baseline to 20-50 stable, sanitized cases.
@@ -120,11 +126,13 @@ Default locations:
 - `$AGENT_HOME/logs/memory-policy-shadow.jsonl`
 - `$AGENT_HOME/logs/memory-policy-shadow-latest.json`
 
-Daily analysis is included in the memory-quality cron block:
+Daily analysis is staged inside the memory-quality cron block:
 
 ```bash
 python3 -m memory_ops.shadow_log --days 7 --output "$AGENT_HOME/logs/memory-policy-shadow-latest.json"
 ```
+
+Production keeps the entire memory-quality cron block registered but paused with `# REMEDIATION-PAUSED` markers. Shadow logging itself is enabled by gateway environment overrides, so the recall path can be observed without automatically turning on the maintenance jobs.
 
 Decision rule:
 
