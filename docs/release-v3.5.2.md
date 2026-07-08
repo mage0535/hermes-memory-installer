@@ -30,6 +30,8 @@ Production validation populated 16,600 policy rows and confirmed that gbrain dry
 
 `MEMORY_POLICY_SHADOW_LOG_ENABLED=true` enables a safe observation mode for policy ranking. It leaves live recall unchanged, computes the policy-ranked alternative in the background, and writes only hashes, memory IDs, rank deltas, and latency to `$AGENT_HOME/logs/memory-policy-shadow.jsonl`. The memory-quality cron block analyzes the last 7 days into `$AGENT_HOME/logs/memory-policy-shadow-latest.json`.
 
+Production integration keeps `$AGENT_HOME/scripts` as the authoritative runtime path and `$AGENT_HOME/memory-sidecar` as the module bundle. The installer now mirrors the production posture by registering the memory-quality cron block in a paused `REMEDIATION-PAUSED` state; operators explicitly unpause jobs after a remediation window is approved.
+
 The installer exposes explicit memory quality switches:
 
 - `--enable-memory-quality`
