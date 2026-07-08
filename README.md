@@ -6,6 +6,8 @@ v3.5.2 adds privacy-safe synthetic and private memory evaluation registries, fiv
 
 The follow-up memory quality optimization adds canonical runtime path resolution, evaluation trend comparison, private registry linting, policy validity/conflict metadata, gbrain plan summaries, and an operator report. See [the optimization report](docs/memory-quality-optimization-report.md).
 
+In production, runtime scripts execute from `$AGENT_HOME/scripts`. The sibling `$AGENT_HOME/memory-sidecar` directory supplies additive Python modules, docs, and installer assets. The memory-quality cron block is registered in a paused remediation state by default and is explicitly unpaused only after operational review.
+
 **A publishable, agent-agnostic memory sidecar for Hermes, Claude Code, Codex, Cursor, and similar agents.**
 
 [![Version](https://img.shields.io/badge/version-3.5.1-blue?style=flat-square)](https://github.com/mage0535/hermes-memory-installer/releases/tag/v3.5.1)
