@@ -8,6 +8,8 @@ def test_memory_quality_release_and_feature_defaults(tmp_path):
     assert "MTM_ENABLED=false" in block
     assert "memory_ops.shadow_log" in block
     assert "memory-policy-shadow-latest.json" in block
+    assert "# REMEDIATION-PAUSED 0 7 * * 1" in block
+    assert "# REMEDIATION-PAUSED 20 7 * * *" in block
 
 
 def test_cron_reconciliation_is_idempotent(tmp_path):
@@ -17,6 +19,7 @@ def test_cron_reconciliation_is_idempotent(tmp_path):
     assert twice.count("# BEGIN hermes-memory-quality") == 1
     assert twice.count("memory_eval.runner --mode full") == 1
     assert twice.count("memory_ops.shadow_log") == 1
+    assert twice.count("REMEDIATION-PAUSED") == 4
 
 
 def test_memory_quality_installer_flags_are_explicit():

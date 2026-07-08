@@ -43,12 +43,13 @@ MEMORY_QUALITY_FILES = ["runtime_paths.py"]
 def memory_quality_cron(agent_home: Path) -> str:
     home = str(agent_home)
     sidecar = f"{home}/{SIDECAR_DIRNAME}"
+    paused = "# REMEDIATION-PAUSED "
     return "\n".join([
         MEMORY_QUALITY_BEGIN,
-        f"0 7 * * 1 AGENT_HOME={home} MEMORY_SIDECAR_HOME={sidecar} TEMPORAL_TRUTH_ENABLED=false MTM_ENABLED=false {sidecar}/memory_eval/smoke.sh",
-        f"20 7 * * * cd {sidecar} && AGENT_HOME={home} MEMORY_SIDECAR_HOME={sidecar} python3 -m memory_ops.shadow_log --days 7 --output {home}/logs/memory-policy-shadow-latest.json",
-        f"0 4 1 * * cd {sidecar} && python3 -m memory_eval.runner --mode full --registry all --output {home}/logs/memory-benchmark-monthly.json",
-        f"0 3 * * 0 cd {sidecar} && python3 -m governance.inject_policy --decay --apply",
+        f"{paused}0 7 * * 1 AGENT_HOME={home} MEMORY_SIDECAR_HOME={sidecar} TEMPORAL_TRUTH_ENABLED=false MTM_ENABLED=false {sidecar}/memory_eval/smoke.sh",
+        f"{paused}20 7 * * * cd {sidecar} && AGENT_HOME={home} MEMORY_SIDECAR_HOME={sidecar} python3 -m memory_ops.shadow_log --days 7 --output {home}/logs/memory-policy-shadow-latest.json",
+        f"{paused}0 4 1 * * cd {sidecar} && python3 -m memory_eval.runner --mode full --registry all --output {home}/logs/memory-benchmark-monthly.json",
+        f"{paused}0 3 * * 0 cd {sidecar} && python3 -m governance.inject_policy --decay --apply",
         MEMORY_QUALITY_END,
     ])
 
@@ -436,8 +437,9 @@ def translate(language: str, key: str, **kwargs: object) -> str:
 def resolve_language(args: argparse.Namespace) -> str:
     if getattr(args, "lang", "auto") in {"zh", "en"}:
         return args.lang
-    locale = (os.environ.get("LC_ALL") or os.environ.get("LANG") or "").lower()
-    if locale.startswith("zh"):
+    lang_hint = (os.environ.get("LANG") or "").lower()
+    locale_hint = (os.environ.get("LC_ALL") or "").lower()
+    if lang_hint.startswith("zh") or locale_hint.startswith("zh"):
         return "zh"
     return "en"
 
@@ -572,7 +574,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--install-memory-quality-cron",
         action="store_true",
-        help="Install the idempotent memory quality cron block.",
+        help="Install the idempotent paused memory quality cron block.",
     )
     parser.add_argument(
         "--init-memory-policy",
