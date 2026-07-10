@@ -1676,3 +1676,52 @@ Next recommended enhancements:
 2. Add an OpenMetrics exporter so dashboard data can be scraped without HTML parsing.
 3. Add dead-letter replay tooling for recovered webhook destinations.
 4. Add a small synthetic recall benchmark dataset to catch cross-platform retrieval regressions earlier.
+## 28. Runtime Recovery - 2026-07-10
+
+- Scope: stabilize production memory-sidecar runtime without changing user-facing memory features.
+- Root cause 1: `memory_governance_rebuild.py` still defaulted to `$HOME/.agent`, so direct production runs could miss `$AGENT_HOME/state.db` and leave `governance_meta.hindsight_synced_at` stale.
+- Root cause 2: `session_to_gbrain.py` required `GBRAIN_MCP_TOKEN`, but production wrappers did not export it; MCP archive calls returned HTTP 401 before any real work happened.
+- Root cause 3: `session_to_gbrain.py` was willing to archive large `request_dump_*.json` raw transport dumps. Those files are noisy, low-value, and can stall `gbrain put`.
+- Root cause 4: LangSmith monitor/trend semantics conflated wrapper execution success with business health, so runs looked green even when acceptance or storage checks were failing.
+- Root cause 5: alert messages implied automatic recovery was guaranteed, which was not true for the current runtime.
+
+Implemented fixes:
+
+- `scripts/memory_governance_rebuild.py`
+  - default runtime fallback changed from `$HOME/.agent` to `$HOME/.hermes`.
+- `scripts/session_to_gbrain.py`
+  - default runtime fallback changed from `$HOME/.agent` to `$HOME/.hermes`;
+  - auto-discovers gbrain MCP bearer token from `$AGENT_HOME/config.yaml` when `GBRAIN_MCP_TOKEN` is absent;
+  - skips `request_dump_*.json` by default unless `SESSION_TO_GBRAIN_INCLUDE_REQUEST_DUMPS=true`;
+  - extended MCP/CLI timeout defaults to 180s.
+- `scripts/memory_guardian.py`
+  - slight Hindsight node-budget overflow now downgrades to `action` instead of `critical` when the overage stays within a configurable grace window and consolidation is otherwise clean.
+- `scripts/gbrain_stale_maintenance.py`
+  - uses the `gbrain-embed` wrapper for embedding refresh;
+  - runs the deorphan wrapper when orphan pages exist;
+  - reports `auto_fix_attempted`, `auto_fix_succeeded`, and `auto_fix_failed`.
+- `scripts/langsmith_monitor.py`
+  - child commands now inherit `AGENT_HOME`;
+  - sanitized outputs now distinguish `execution_ok` and `business_ok`.
+- `scripts/langsmith_task_wrapper.py`
+  - extracts business status from JSON stdout and publishes `business_ok`, `business_status`, and `business_reason_buckets`.
+- `scripts/langsmith_trend_report.py`
+  - monitor metrics now separate `execution_ok_rate` from `acceptance_ok_rate`;
+  - task metrics now separate technical success from business success.
+- `scripts/alert_queue.py` and `scripts/alert_webhook_receiver.py`
+  - alerts now carry stricter reason/recommended_action text;
+  - notifications are transition-based, with resolved alerts emitted once and duplicate spam suppressed.
+
+Observed production outcome after deployment:
+
+- `hindsight_sync_lag_seconds` dropped from about 21597s to well under 1000s after governance rebuild succeeded against the real `AGENT_HOME`.
+- guardian status dropped from `critical` to `action`.
+- `session_to_gbrain.py --resume` no longer fails on MCP 401.
+- recent LangSmith monitor window recovered to `recent_acceptance_ok_rate = 1.0`.
+- `hindsight_lag` and `recent_acceptance_failures` disappeared from the active alert set.
+- gbrain embedding recovery reduced missing embeddings from 147 to low single digits; remaining actionable issue is stale/orphan cleanup.
+
+Residual work:
+
+- gbrain stale/orphan remediation is still incomplete.
+- latest production health picture is no longer a hot-layer/Hindsight emergency; it is now primarily a cold-layer cleanup problem.
