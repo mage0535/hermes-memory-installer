@@ -59,17 +59,19 @@ def chunked(items: list[dict], size: int) -> list[list[dict]]:
     return [items[index : index + size] for index in range(0, len(items), size)]
 
 
-def write_index_pages(out_dir: Path, orphans: list[dict]) -> list[str]:
+def write_index_pages(out_dir: Path, orphans: list[dict]) -> tuple[list[str], dict[str, list[str]]]:
     groups: dict[str, list[dict]] = defaultdict(list)
     for row in orphans:
         groups[group_key(str(row["slug"]), row.get("domain"))].append(row)
 
     index_slugs = []
+    link_plan: dict[str, list[str]] = {}
     for key, rows in sorted(groups.items()):
         chunks = chunked(sorted(rows, key=lambda item: item["slug"]), MAX_LINKS_PER_PAGE)
         for part, batch in enumerate(chunks, start=1):
             index_slug = f"hub-orphans-{key}" if len(chunks) == 1 else f"hub-orphans-{key}-{part:02d}"
             index_slugs.append(index_slug)
+            link_plan[index_slug] = [str(row["slug"]) for row in batch]
             page = out_dir / f"{index_slug}.md"
             lines = [
                 "---",
@@ -91,7 +93,7 @@ def write_index_pages(out_dir: Path, orphans: list[dict]) -> list[str]:
                 slug = str(row["slug"])
                 lines.append(f"- [[{slug}]] - {title}")
             page.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    return index_slugs
+    return index_slugs, link_plan
 
 
 def update_root_hub(index_slugs: list[str]) -> None:
@@ -111,6 +113,30 @@ def update_root_hub(index_slugs: list[str]) -> None:
         raise SystemExit(proc.stderr or proc.stdout or f"gbrain put {HUB} failed")
 
 
+def apply_direct_links(link_plan: dict[str, list[str]], root_index: str) -> tuple[int, int]:
+    created = 0
+    errors = 0
+    for index_slug, orphan_slugs in sorted(link_plan.items()):
+        proc = run(["gbrain", "link", HUB, index_slug, "--type", "belongs_to"], timeout=120)
+        if proc.returncode == 0:
+            created += 1
+        else:
+            errors += 1
+        if index_slug != root_index:
+            proc = run(["gbrain", "link", root_index, index_slug, "--type", "belongs_to"], timeout=120)
+            if proc.returncode == 0:
+                created += 1
+            else:
+                errors += 1
+        for orphan_slug in orphan_slugs:
+            proc = run(["gbrain", "link", index_slug, orphan_slug, "--type", "belongs_to"], timeout=120)
+            if proc.returncode == 0:
+                created += 1
+            else:
+                errors += 1
+    return created, errors
+
+
 def main() -> int:
     orphans = load_orphans()
     filtered = [
@@ -125,7 +151,7 @@ def main() -> int:
 
     tmp = Path(tempfile.mkdtemp(prefix="gbrain-deorphan-index-"))
     try:
-        index_slugs = write_index_pages(tmp, filtered)
+        index_slugs, link_plan = write_index_pages(tmp, filtered)
         root_page = tmp / f"{ROOT_INDEX}.md"
         root_page.write_text(
             "\n".join(
@@ -155,10 +181,8 @@ def main() -> int:
         if proc.returncode != 0:
             raise SystemExit(proc.stderr or "gbrain import failed")
 
-        proc = run(["gbrain", "extract", "links", "--source", "db", "--include-frontmatter"], timeout=600)
-        print(proc.stdout.strip())
-        if proc.returncode != 0:
-            raise SystemExit(proc.stderr or "gbrain extract links failed")
+        created, errors = apply_direct_links(link_plan, ROOT_INDEX)
+        print(f"Direct links created: {created}, errors: {errors}")
 
         health = run(["gbrain", "health"], timeout=120)
         print("=== FINAL ===")
