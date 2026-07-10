@@ -225,6 +225,13 @@ def format_alert_text(payload: dict[str, Any], lang: str | None = None) -> str:
         sev = str(item.get("severity", "unknown"))
         label = severity_label(sev, resolved_lang)
         lines.append(f"- {label} {item.get('source', 'unknown')}:{item.get('code', 'unknown')}")
+        detail = item.get("detail") if isinstance(item.get("detail"), dict) else {}
+        reason = detail.get("reason")
+        action = detail.get("recommended_action")
+        if reason:
+            lines.append(f"  {'原因' if resolved_lang == 'zh' else 'Reason'}: {reason}")
+        if action:
+            lines.append(f"  {'建议' if resolved_lang == 'zh' else 'Suggested action'}: {action}")
     if len(alerts) > 8:
         lines.append(copy["more"].format(count=len(alerts) - 8))
     return "\n".join(lines)
