@@ -23,6 +23,7 @@ DEFAULT_QUERIES = (
 CHILD_PYTHON = os.environ.get("MONITOR_CHILD_PYTHON", sys.executable)
 INCLUDE_QUERY_TEXT = os.environ.get("LANGSMITH_INCLUDE_QUERY_TEXT", "").lower() in {"1", "true", "yes"}
 MONITOR_ACCEPTANCE_MODE = os.environ.get("MEMORY_MONITOR_ACCEPTANCE_MODE", "fast")
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 
 
 def query_identity(query: str) -> dict:
@@ -35,9 +36,15 @@ def query_identity(query: str) -> dict:
     return identity
 
 
+def child_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("AGENT_HOME", str(AGENT_HOME))
+    return env
+
+
 def run_json_command(command: list[str], timeout: int = 180) -> dict:
     started = time.time()
-    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=child_env())
     elapsed = round(time.time() - started, 3)
     payload: dict[str, object]
     try:
@@ -139,10 +146,12 @@ def sanitize_acceptance(acceptance: dict) -> dict:
         sanitized_recalls.append(out)
     return {
         "returncode": acceptance.get("returncode"),
+        "execution_ok": int(acceptance.get("returncode") or 0) == 0,
         "elapsed_s": acceptance.get("elapsed_s"),
         "stderr_present": bool(acceptance.get("stderr")),
         "command": _safe_command(acceptance.get("command") or []),
         "ok": payload.get("ok"),
+        "business_ok": payload.get("ok"),
         "mode": payload.get("mode"),
         "error_count": len(errors),
         "reason_buckets": payload.get("reason_buckets") or {},
@@ -155,12 +164,15 @@ def sanitize_acceptance(acceptance: dict) -> dict:
 def sanitize_command_result(result: dict | None) -> dict | None:
     if not isinstance(result, dict):
         return None
+    payload = result.get("payload") if isinstance(result.get("payload"), dict) else {}
     return {
         "returncode": result.get("returncode"),
+        "execution_ok": int(result.get("returncode") or 0) == 0,
+        "business_ok": payload.get("ok") if "ok" in payload else (int(result.get("returncode") or 0) == 0),
         "elapsed_s": result.get("elapsed_s"),
         "stderr_present": bool(result.get("stderr")),
         "command": _safe_command(result.get("command") or []),
-        "payload": result.get("payload") if isinstance(result.get("payload"), dict) else {},
+        "payload": payload,
     }
 
 
