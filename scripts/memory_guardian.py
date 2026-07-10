@@ -20,7 +20,7 @@ from urllib.error import HTTPError
 from memory_family_registry import active_focus_profiles
 
 # ─── Constants ──────────────────────────────────────────────────────────
-AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 HINDSIGHT_BANK = os.environ.get("HINDSIGHT_BANK", "hermes")
 HINDSIGHT_URL = os.environ.get("HINDSIGHT_BASE_URL", "http://127.0.0.1:8890") + f"/v1/default/banks/{HINDSIGHT_BANK}"
 HINDSIGHT_AUTH_TOKEN = (
@@ -32,6 +32,7 @@ DEFAULT_MEMORY_LIMIT = 20000  # Default Hindsight node budget for multi-agent in
 WARN = 0.75       # 75% — 开始分类预备
 ACTION = 0.85     # 85% — 执行转移+压缩
 CRITICAL = 0.95   # 95% — 强制紧急处理
+OVERFLOW_GRACE_NODES = max(100, int(os.environ.get("MEMORY_GUARDIAN_OVERFLOW_GRACE_NODES", "500")))
 
 INDEX_DB = AGENT_HOME / 'memory_index.db'
 GOVERNANCE_DB = AGENT_HOME / 'memory_governance.db'
@@ -484,7 +485,18 @@ def monitor(verbose=True):
     pending_ops = stats.get('pending_operations', 0)
     failed_ops = stats.get('failed_operations', 0)
     last_consolidated_at = stats.get('last_consolidated_at')
-    pct = min(100, round(nodes / MEMORY_LIMIT * 100, 1))
+    usage_ratio = (nodes / MEMORY_LIMIT) if MEMORY_LIMIT else 0.0
+    pct = round(usage_ratio * 100, 1)
+    if usage_ratio < WARN:
+        level = 'ok'
+    elif usage_ratio < ACTION:
+        level = 'warn'
+    elif usage_ratio < CRITICAL:
+        level = 'action'
+    elif nodes <= MEMORY_LIMIT + OVERFLOW_GRACE_NODES and pending <= 0 and failed <= 0:
+        level = 'action'
+    else:
+        level = 'critical'
     
     cap = {
         'docs': docs, 'nodes': nodes, 'observations': obs,
@@ -495,9 +507,9 @@ def monitor(verbose=True):
         'last_consolidated_at': last_consolidated_at,
         'node_limit': MEMORY_LIMIT,
         'usage_pct': pct,
+        'overflow_grace_nodes': OVERFLOW_GRACE_NODES,
         'remaining': max(0, MEMORY_LIMIT - nodes),
-        'level': 'ok' if pct < WARN*100 else ('warn' if pct < ACTION*100 else
-                 'action' if pct < CRITICAL*100 else 'critical')
+        'level': level,
     }
     cap.update(read_governance_meta())
     cap.update(summarize_guardian_history())

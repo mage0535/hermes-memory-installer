@@ -1854,7 +1854,7 @@ def test_memory_guardian_node_limit_can_be_overridden_by_env(monkeypatch):
     try:
         _, cap = guardian.monitor(verbose=False)
         assert cap["node_limit"] == 10000
-        assert cap["level"] == "critical"
+        assert cap["level"] == "action"
     finally:
         monkeypatch.delenv("MEMORY_GUARDIAN_NODE_LIMIT", raising=False)
         importlib.reload(guardian)
