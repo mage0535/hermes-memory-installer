@@ -16,6 +16,7 @@ AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", 
 METRICS_DIR = AGENT_HOME / "metrics"
 DEFAULT_ALERTS = METRICS_DIR / "alerts.jsonl"
 DEFAULT_STATUS = METRICS_DIR / "health-summary-latest.json"
+DEFAULT_STATE = METRICS_DIR / "alert-state-latest.json"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -35,6 +36,63 @@ def alert(source: str, code: str, severity: str, detail: dict | None = None) -> 
         "severity": severity,
         "detail": detail or {},
     }
+
+
+def alert_key(row: dict[str, Any]) -> str:
+    return f"{row.get('source','unknown')}:{row.get('code','unknown')}"
+
+
+def enrich_alert(row: dict[str, Any]) -> dict[str, Any]:
+    detail = row.get("detail") if isinstance(row.get("detail"), dict) else {}
+    code = str(row.get("code") or "")
+    if code == "hindsight_lag":
+        detail.setdefault("reason", "Hindsight 记忆服务处理延迟过高")
+        detail.setdefault("recommended_action", "系统已尝试自动修复，请核查最新健康结果；若连续 2-3 个周期仍存在，请人工介入。")
+    elif code == "recent_acceptance_failures":
+        detail.setdefault("reason", "近期 acceptance 业务检查连续失败")
+        detail.setdefault("recommended_action", "优先检查 guardian 状态、Hindsight lag 和 recall 结果；不要只看 LangSmith run 是否 success。")
+    elif code == "gbrain_stale_action_needed":
+        detail.setdefault("reason", "gbrain 知识图谱 embedding 或 orphan 状态异常")
+        if detail.get("auto_fix_attempted"):
+            if detail.get("auto_fix_succeeded"):
+                detail.setdefault("recommended_action", "系统已尝试自动修复，请核查最新健康结果。")
+            else:
+                detail.setdefault("recommended_action", "系统已尝试自动修复但未成功，请人工检查 gbrain embed/deorphan 链路。")
+        else:
+            detail.setdefault("recommended_action", "系统尚未完成自动修复，请先执行 embedding/orphan 恢复，再观察后续周期。")
+    row["detail"] = detail
+    return row
+
+
+def read_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def diff_notifications(previous: dict[str, Any], current_alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    previous_map = {key: value for key, value in (previous.get("alerts") or {}).items()} if isinstance(previous.get("alerts"), dict) else {}
+    current_map = {alert_key(row): row for row in current_alerts}
+    notifications: list[dict[str, Any]] = []
+    for key, row in current_map.items():
+        prev = previous_map.get(key)
+        if not prev or prev.get("severity") != row.get("severity"):
+            notifications.append(row)
+    for key, prev in previous_map.items():
+        if key not in current_map:
+            notifications.append(
+                {
+                    "captured_at": datetime.now(timezone.utc).isoformat(),
+                    "source": str(prev.get("source") or key.split(":", 1)[0]),
+                    "code": str(prev.get("code") or key.split(":", 1)[-1]) + "_resolved",
+                    "severity": "healthy",
+                    "detail": {"reason": "告警恢复", "recommended_action": "状态已恢复，无需动作。"},
+                }
+            )
+    return notifications
 
 
 def resolve_lang() -> str:
@@ -94,7 +152,11 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
 
     stale_status = stale.get("status")
     if stale_status == "action-needed":
-        alerts.append(alert("gbrain-stale", "gbrain_stale_action_needed", "action-needed", stale))
+        detail = dict(stale)
+        detail["auto_fix_attempted"] = stale.get("auto_fix_attempted")
+        detail["auto_fix_succeeded"] = stale.get("auto_fix_succeeded")
+        detail["auto_fix_failed"] = stale.get("auto_fix_failed")
+        alerts.append(alert("gbrain-stale", "gbrain_stale_action_needed", "action-needed", detail))
     elif stale_status == "degraded":
         actionable = [
             item for item in stale.get("classifications", [])
@@ -115,7 +177,7 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
         status = "action-needed"
     elif any(row["severity"] == "degraded" for row in alerts):
         status = "degraded"
-    return status, alerts
+    return status, [enrich_alert(row) for row in alerts]
 
 
 def post_webhook(webhook_url: str, payload: dict) -> dict:
@@ -135,6 +197,7 @@ def main() -> int:
     parser.add_argument("--metrics-dir", default=str(METRICS_DIR))
     parser.add_argument("--alerts", default=str(DEFAULT_ALERTS))
     parser.add_argument("--status-output", default=str(DEFAULT_STATUS))
+    parser.add_argument("--state-output", default=str(DEFAULT_STATE))
     parser.add_argument("--webhook-url", default=os.environ.get("MEMORY_ALERT_WEBHOOK_URL", ""))
     args = parser.parse_args()
 
@@ -149,23 +212,45 @@ def main() -> int:
         "alerts": alerts,
     }
     status_path = Path(args.status_output).expanduser()
+    state_path = Path(args.state_output).expanduser()
+    previous_state = read_state(state_path)
     status_path.parent.mkdir(parents=True, exist_ok=True)
+    notifications = diff_notifications(previous_state, alerts)
     status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    if alerts:
+    if notifications:
         alerts_path = Path(args.alerts).expanduser()
         alerts_path.parent.mkdir(parents=True, exist_ok=True)
         with alerts_path.open("a", encoding="utf-8") as handle:
-            for row in alerts:
+            for row in notifications:
                 handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     webhook = None
-    if args.webhook_url and any(row["severity"] == "action-needed" for row in alerts):
+    if args.webhook_url and any(row["severity"] in {"action-needed", "degraded", "healthy"} for row in notifications):
         try:
-            webhook = post_webhook(args.webhook_url, payload)
+            webhook_payload = dict(payload)
+            webhook_payload["alerts"] = notifications
+            webhook_payload["alert_count"] = len(notifications)
+            webhook = post_webhook(args.webhook_url, webhook_payload)
         except Exception as exc:
             webhook = {"error": str(exc)}
     payload["webhook"] = webhook
+    payload["notifications"] = notifications
     status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    state_path.write_text(
+        json.dumps(
+            {
+                "captured_at": payload["captured_at"],
+                "status": status,
+                "alerts": {
+                    alert_key(row): {"source": row["source"], "code": row["code"], "severity": row["severity"]}
+                    for row in alerts
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if status in {"healthy", "degraded"} else 1
 
