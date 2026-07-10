@@ -1725,3 +1725,24 @@ Residual work:
 
 - gbrain stale/orphan remediation is still incomplete.
 - latest production health picture is no longer a hot-layer/Hindsight emergency; it is now primarily a cold-layer cleanup problem.
+
+## 29. Cold-Layer Closure - 2026-07-10
+
+- Follow-up stabilization finished the remaining cold-layer remediation loop.
+- `session_to_gbrain.py` now ignores `request_dump_*.json` by default, which removed low-value raw transport dumps from the archive path.
+- `gbrain_deorphan_index.py` now returns an explicit orphan-link plan and can create direct links from generated orphan hubs instead of relying only on link extraction side effects.
+- `gbrain_stale_maintenance.py` now ignores generated orphan-index maintenance pages when computing actionable orphan count.
+
+Observed production outcome:
+
+- actionable gbrain orphans dropped from `40` to `0`;
+- missing embeddings dropped from `147` to `0`;
+- `gbrain-stale-latest.json` now classifies the remaining `stale_pages` and orphan-index root as info-level panel noise rather than actionable degradation;
+- `hindsight_lag` and `recent_acceptance_failures` remained cleared from active alerts after the final refresh.
+
+Net system state after this batch:
+
+- hot-layer emergency resolved;
+- Hindsight lag resolved to within threshold;
+- cold-layer actionable debt resolved;
+- remaining gbrain health deductions are upstream accounting / contributor-visibility gaps, not local runtime failure.
