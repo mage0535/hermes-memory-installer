@@ -176,3 +176,56 @@ def test_gbrain_stale_report_marks_auto_fix_attempt(monkeypatch):
     assert report["auto_fix_attempted"] is True
     assert report["auto_fix_succeeded"] is True
     assert report["auto_fix_failed"] is False
+
+
+def test_gbrain_deorphan_index_returns_explicit_link_plan(tmp_path):
+    script = load_script("gbrain_deorphan_index")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    orphans = [
+        {"slug": "session-alpha", "title": "Alpha"},
+        {"slug": "session-beta", "title": "Beta"},
+    ]
+
+    slugs, plan = script.write_index_pages(out_dir, orphans)
+
+    assert slugs == ["hub-orphans-sessions"]
+    assert plan == {"hub-orphans-sessions": ["session-alpha", "session-beta"]}
+
+
+def test_gbrain_stale_filters_generated_orphan_indexes(monkeypatch):
+    stale = load_script("gbrain_stale_maintenance")
+
+    def fake_run(command, timeout=300):
+        if command[-2:] == ["orphans", "--json"]:
+            return {
+                "returncode": 0,
+                "stdout": json.dumps(
+                    {
+                        "orphans": [
+                            {"slug": "hub-orphan-index"},
+                            {"slug": "hub-orphans-sessions"},
+                            {"slug": "real-page"},
+                        ]
+                    }
+                ),
+                "stderr": "",
+            }
+        if command[-2:] == ["orphans", "--count"]:
+            return {"returncode": 0, "stdout": "3", "stderr": ""}
+        return {"returncode": 0, "stdout": "", "stderr": ""}
+
+    monkeypatch.setattr(stale, "run", fake_run)
+
+    assert stale.actual_orphan_count() == 1
+
+
+def test_gbrain_stale_classifies_non_actionable_stale_pages_as_info():
+    stale = load_script("gbrain_stale_maintenance")
+    health = {"stale_pages": 10, "missing_embeddings": 0, "orphan_pages": 0, "orphan_pages_actual": 0}
+    effects = {"stale_pages_changed": False, "embed_stale_found_chunks": 1, "reindex_code_failures": None}
+
+    rows = stale.classify_health(health, effects)
+
+    assert rows[0]["code"] == "stale_health_counter_not_embedding_stale"
+    assert rows[0]["severity"] == "info"
