@@ -15,7 +15,7 @@ from typing import Any
 PROJECT_NAME = os.environ.get("LANGSMITH_PROJECT", "hermes-memory-installer")
 DEFAULT_LAG_THRESHOLD_S = int(os.environ.get("MEMORY_LAG_WARN_THRESHOLD_S", "3600"))
 RECENT_MONITOR_WINDOW = max(1, int(os.environ.get("MEMORY_TREND_RECENT_MONITOR_WINDOW", "5")))
-AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 DEFAULT_LOCAL_MONITOR = AGENT_HOME / "metrics" / "langsmith-monitor-latest.json"
 
 
@@ -133,6 +133,7 @@ def lag_summary(values: list[int], threshold_s: int = DEFAULT_LAG_THRESHOLD_S) -
 def monitor_metrics(runs: list[Any]) -> dict:
     monitor_runs = [run for run in runs if getattr(run, "name", None) == "memory-sidecar-monitor"]
     acceptance_ok = []
+    execution_ok = []
     acceptance_elapsed = []
     recall_elapsed = []
     latest_guardian = {}
@@ -147,9 +148,10 @@ def monitor_metrics(runs: list[Any]) -> dict:
         acceptance = payload.get("acceptance") if isinstance(payload.get("acceptance"), dict) else {}
         acceptance_payload = acceptance_payload_from_monitor(payload)
         storage = payload.get("storage_cross_check") if isinstance(payload.get("storage_cross_check"), dict) else {}
+        execution_ok.append(bool(acceptance.get("execution_ok", acceptance.get("returncode") in (0, None))))
         ok_value = acceptance.get("ok")
         if ok_value is None:
-            ok_value = acceptance_payload.get("ok")
+            ok_value = acceptance.get("business_ok", acceptance_payload.get("ok"))
         acceptance_ok.append(bool(ok_value))
         reason_codes = acceptance_reason_codes(acceptance_payload)
         for code in reason_codes:
@@ -188,6 +190,7 @@ def monitor_metrics(runs: list[Any]) -> dict:
                     recall_stage_timings[key].append(float(timings[key]))
 
     recent_acceptance = acceptance_ok[:RECENT_MONITOR_WINDOW]
+    recent_execution = execution_ok[:RECENT_MONITOR_WINDOW]
     weak_recalls = []
     latest_acceptance = acceptance_payload_from_monitor(output_payload(monitor_runs[0])) if monitor_runs else {}
     for row in latest_acceptance.get("recalls", []) if isinstance(latest_acceptance.get("recalls"), list) else []:
@@ -198,7 +201,9 @@ def monitor_metrics(runs: list[Any]) -> dict:
 
     return {
         "count": len(monitor_runs),
+        "execution_ok_rate": round(sum(execution_ok) / len(execution_ok), 3) if execution_ok else None,
         "acceptance_ok_rate": round(sum(acceptance_ok) / len(acceptance_ok), 3) if acceptance_ok else None,
+        "recent_execution_ok_rate": round(sum(recent_execution) / len(recent_execution), 3) if recent_execution else None,
         "recent_acceptance_ok_rate": round(sum(recent_acceptance) / len(recent_acceptance), 3) if recent_acceptance else None,
         "recent_window": len(recent_acceptance),
         "acceptance_latency": summarize_values(acceptance_elapsed),
@@ -231,15 +236,22 @@ def task_metrics(runs: list[Any]) -> dict:
     for name, rows in sorted(tasks.items()):
         elapsed = [value for value in (elapsed_from_run(run) for run in rows) if value is not None]
         failures = sum(1 for run in rows if getattr(run, "status", "") != "success" or bool(getattr(run, "error", None)))
+        business_failures = 0
         returncodes = [
             output_payload(run).get("returncode")
             for run in rows
             if isinstance(output_payload(run).get("returncode"), int)
         ]
+        for run in rows:
+            payload = output_payload(run)
+            if payload.get("business_ok") is False:
+                business_failures += 1
         out[name] = {
             "count": len(rows),
             "failure_count": failures,
             "success_rate": round((len(rows) - failures) / len(rows), 3) if rows else None,
+            "business_failure_count": business_failures,
+            "business_success_rate": round((len(rows) - business_failures) / len(rows), 3) if rows else None,
             "latency": summarize_values(elapsed),
             "nonzero_returncodes": sum(1 for code in returncodes if code != 0),
         }

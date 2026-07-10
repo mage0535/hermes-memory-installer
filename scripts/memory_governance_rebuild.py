@@ -19,7 +19,7 @@ import yaml
 
 try:
     import sys as _kmm_sys
-    _agent_home = Path(os.environ.get("AGENT_HOME", Path.home() / ".agent"))
+    _agent_home = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
     _kmm_sys.path.insert(0, str(_agent_home / "knowledge-plugin"))
     from knowledge_collector.sidecar_indexer import (
         refresh_knowledge_object_index as _refresh_knowledge_object_index,
@@ -50,7 +50,7 @@ from memory_family_registry import (
     project_query_mode,
 )
 
-AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 STATE_DB = Path(os.environ.get("MEMORY_STATE_DB_PATH", str(AGENT_HOME / "state.db"))).expanduser()
 GOVERNANCE_DB = Path(os.environ.get("MEMORY_GOVERNANCE_DB_PATH", str(AGENT_HOME / "memory_governance.db"))).expanduser()
 KNOWLEDGE_NOTES_DIR = Path(os.environ.get("MEMORY_KNOWLEDGE_NOTES_DIR", str(AGENT_HOME / "knowledge" / "notes"))).expanduser()

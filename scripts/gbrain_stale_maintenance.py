@@ -19,6 +19,11 @@ HEALTH_PATTERNS = {
     "orphan_pages": r"Orphan pages:\s*(\d+)",
 }
 DEFAULT_GBRAIN_ENV_FILE = Path(os.environ.get("GBRAIN_ENV_FILE", str(Path.home() / ".gbrain.env"))).expanduser()
+GBRAIN_EMBED_BIN = os.environ.get("GBRAIN_EMBED_BIN") or "gbrain-embed"
+GBRAIN_DEORPHAN_BIN = os.environ.get(
+    "GBRAIN_DEORPHAN_BIN",
+    str((Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser() / "scripts" / "gbrain-bulk-deorphan-wrapper.sh")),
+)
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -167,12 +172,18 @@ def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> d
     actions = []
 
     if refresh_embeddings and int(before.get("stale_pages") or 0) > 0:
-        action = run(["gbrain", "embed", "--stale"], timeout=900)
+        action = run([GBRAIN_EMBED_BIN, "embed", "--stale"], timeout=900)
         actions.append({"name": "embed_stale", "command": ["gbrain", "embed", "--stale"], **action})
+    if refresh_embeddings and int(before.get("missing_embeddings") or 0) > 0:
+        action = run([GBRAIN_EMBED_BIN, "embed", "--all"], timeout=1800)
+        actions.append({"name": "embed_all", "command": ["gbrain", "embed", "--all"], **action})
 
     if reindex_code:
         action = run(["gbrain", "reindex-code", "--yes"], timeout=900)
         actions.append({"name": "reindex_code", "command": ["gbrain", "reindex-code", "--yes"], **action})
+    if int(before.get("orphan_pages") or 0) > 0:
+        action = run([GBRAIN_DEORPHAN_BIN], timeout=900)
+        actions.append({"name": "deorphan", "command": [GBRAIN_DEORPHAN_BIN], **action})
 
     after_cmd = run(["gbrain", "health"], timeout=60)
     after = parse_health(after_cmd["stdout"] + after_cmd["stderr"])
@@ -196,6 +207,9 @@ def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> d
         "upstream_gap": upstream_gap(classifications),
         "action_effects": effects,
         "actions": actions,
+        "auto_fix_attempted": bool(actions),
+        "auto_fix_succeeded": bool(actions) and all((action.get("returncode") or 0) == 0 for action in actions),
+        "auto_fix_failed": any((action.get("returncode") or 0) != 0 for action in actions),
     }
     if output:
         path = Path(output).expanduser()
