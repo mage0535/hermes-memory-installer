@@ -645,7 +645,7 @@ them together:
 3. Current local working-copy CLI
    - includes additional repo-hygiene work
    - is not yet the same thing as the committed server repository or deployed
-     production runtime
+   production runtime
 
 Implication:
 
@@ -672,7 +672,7 @@ The next-step order should now be treated as:
 1. Preserve the production-only CLI logic in version control
    - especially the production `audit-deploy` implementation
 
-2. Commit the 657/214 server-repo diff
+2. Commit the 657/214 diff
    - before any additional feature work
 
 3. Push the reconciled runtime to the public baseline
@@ -762,535 +762,459 @@ Another analysis round is not the highest-value next action.
 
 Recommended policy from this point:
 
-- stop adding new “round” sections unless one of the verified facts above
-  changes
-- do not continue expanding feature-roadmap prose while P0/P1 remain open
-- treat the next meaningful update to this file as an execution-status update
+- stop adding new analysis sections until real implementation happens
+- treat the wrapper fix + credential rotation + repo reconciliation as the only
+  justified immediate tasks
+- resume documentation updates only after one of those is actually completed
 
-### 11.3 Confirmed next-step order
+### 11.3 Execution-first recommendation
 
-The next-step order remains:
+The strongest next move is now clear:
 
-1. P0
-   - fix wrapper env handling
-   - fix wrapper `"$@"`
-   - confirm credential rotation
+1. fix `/usr/local/bin/hermes-memory`
+2. reconcile the server repo into version control
+3. then re-run deploy + trend + cross-check verification
+4. only after that, decide whether additional observability work is still needed
 
-2. P1
-   - preserve production-only CLI logic in version control
-   - commit the 657/214 diff
-   - push reconciled runtime baseline
-   - break down `acceptance_ok_rate = 0.846` by failure family
+## 12. Eighth-Round Consolidation — Freeze Analysis, Execute Repairs
 
-3. P2
-   - determine whether `latest_hindsight_lag_s = 6484` is persistent or spiky
-   - determine why 47 stale pages remain
-   - make cross-check fallback explicit
+This section converts the previous review rounds into an execution baseline.
+It intentionally avoids adding another comparative narrative and instead freezes
+what should be treated as current truth until implementation lands.
 
-4. Only then expand
-   - deploy manifest
-   - runtime-to-repo drift alerting
-   - acceptance failure summarization
-   - lag thresholding
-   - stale-page refresh/classification helper
+### 12.1 Frozen current truth
 
-### 11.4 Recommended communication framing
+Treat the following as the current baseline unless a new verification run proves
+otherwise:
 
-When discussing next work with the team, use this framing:
+- production runtime is healthy enough to operate
+- wrapper is still wrong in two ways:
+  - forced env override
+  - unquoted `$@`
+- production CLI and local repo CLI are still not the same surface
+- server repository still lags the running runtime and remains the biggest
+  operational integrity risk
+- `acceptance_ok_rate = 0.846` is still the live quality signal to explain
+- `latest_hindsight_lag_s = 6484` is still the live lag signal to interpret
+- `gbrain health_score = 8` with `stale_pages = 47` remains real but non-blocking
 
-- do not describe the project as needing more diagnosis
-- describe it as needing release reconciliation and signal interpretation
-- feature expansion is allowed only after the current runtime is brought back
-  under version control discipline
+### 12.2 What is explicitly not the problem right now
 
-## 12. Implementation Readiness Confirmation
+Do not let the next execution round drift into these areas first:
 
-Based on the current verified system state and the repeated convergence of the
-last several review rounds, there is now enough agreement to begin execution.
+- inventing new memory layers
+- redesigning the memory product architecture
+- genericizing all Hermes-only scripts
+- debating more documentation structure
+- building more alert surfaces before the wrapper/runtime mismatch is fixed
 
-### 12.1 Decision
+### 12.3 Single execution order to follow
 
-Yes: implementation can begin.
+Use this exact order:
 
-This is not because every uncertainty is gone. It is because:
+1. fix wrapper
+2. confirm credential rotation status
+3. reconcile runtime into version control
+4. align production and repo CLI surfaces
+5. explain the 0.846 acceptance failures by family
+6. only then decide whether lag alerting or stale-page maintenance needs more work
 
-- the core production system is stable
-- the highest-priority risks are already identified and ordered
-- the team is no longer disagreeing about execution sequence
-- further analysis rounds are producing restatements, not materially new facts
+### 12.4 Expansion gate
 
-### 12.2 Execution scope that is safe to start now
+No feature-expansion work should be treated as active until all of the following
+are true at the same time:
 
-Safe to start immediately:
+- wrapper fixed
+- server repo committed and reconciled
+- production and repo CLI parity established
+- acceptance failure families understood
 
-1. P0 wrapper fixes
-   - quote `"$@"`
-   - stop unconditional production env override
-
-2. P1 source-of-truth reconciliation
-   - preserve production-only CLI logic in version control
-   - commit the 657/214 diff
-   - push reconciled baseline
-
-3. P1 signal interpretation
-   - investigate the current `0.846` acceptance success rate by failure family
-
-### 12.3 What is still not approved to start as feature expansion
-
-Not yet approved to start:
+When those four are true, the first valid expansion remains:
 
 - deploy manifest
-- runtime-to-repo drift alerting
-- lag threshold alerts
-- stale-page helper commands
-- broader memory/recall feature expansion
-
-Those remain gated behind completion of P0 and material closure of P1.
-
-### 12.4 Recommended practical message to the team
-
-Use this exact framing:
-
-- consensus is sufficient to implement
-- start with P0 and P1 now
-- do not open a new analysis round unless a verified fact changes
-
-## 13. Post-P1 Reality Check And Immediate Next Actions
-
-A fresh server-side inspection shows that P0/P1 were materially advanced, but a
-new small repo/production gap has already reopened. That means feature
-expansion should pause one step longer until these deltas are captured.
-
-### 13.1 Newly observed facts
-
-Verified on the live server:
-
-- wrapper fix is in place:
-  - `AGENT_HOME` now uses an env-default fallback form instead of a hardcoded production export
-  - wrapper now forwards `"$@"`
-- production health remains good:
-  - deploy audit passes
-  - cross-check returns `ok = true`
-  - Guardian is active
-- production content has grown further:
-  - `sessions = 7955`
-  - `messages = 167006`
-  - `total_documents = 719`
-  - `total_nodes = 12635`
-- `gbrain` still reports:
-  - `health_score = 8`
-  - `stale_pages = 47`
-  - `orphan_pages_actual = 0`
-
-### 13.2 New uncommitted server-repo deltas
-
-Current server-repository status shows:
-
-- modified `scripts/archive_sessions.py`
-- modified `scripts/memory_watermark.py`
-- untracked `scripts/memory_storage_cross_check.py`
-- modified `DEVELOPMENT_CONTINUATION.md`
-
-These are not noise. They are meaningful implementation candidates:
-
-1. `archive_sessions.py`
-   - adds one retry around transient gbrain publish failure
-   - directly targets the known acceptance-rate degradation source
-
-2. `memory_watermark.py`
-   - re-applies the `AGENT_HOME` portability fix
-   - should be preserved because the earlier version was lost during repo reset
-
-3. `memory_storage_cross_check.py`
-   - is currently untracked in the server repo
-   - includes the explicit fallback warning behavior that was on the P2 list
-
-### 13.3 Revised immediate implementation advice
-
-Because these three deltas are already present on the server, the next
-implementation step should be:
-
-1. Preserve these repo-side changes first
-   - `archive_sessions.py`
-   - `memory_watermark.py`
-   - `memory_storage_cross_check.py`
-   - this document update
-
-2. Commit and push this small follow-up reconciliation batch
-
-3. Only then resume planned P2 / feature-expansion work
-
-Reason:
-
-- otherwise the same source-of-truth drift pattern reopens immediately
-- the acceptance-rate hardening and portability fixes are more valuable than
-  starting `manifest` one step early
-
-### 13.4 Updated next-step order
-
-The effective order is now:
-
-1. P1.5 reconciliation batch
-   - commit `archive_sessions.py` retry hardening
-   - commit `memory_watermark.py` AGENT_HOME fix
-   - add `memory_storage_cross_check.py` to tracked repo state
-   - commit the document update
-
-2. P2 interpretation and cleanup
-   - determine whether the gbrain stale set can be cleared by targeted reindex
-   - validate whether archive-session retry improves future acceptance trend
-   - continue lag trend interpretation
-
-3. First expansion work
-   - `hermes-memory manifest`
-   - then drift alerting
-
-### 13.5 Final practical recommendation
-
-Implementation should continue now, but the next concrete action is **not**
-feature expansion yet.
-
-The next concrete action should be:
-
-- open a short reconciliation commit for the three server-repo deltas above
-- push it
-- then start `manifest` as the first real expansion item
-
-## 14. Latest Server-State Implementation Advice
-
-This section reflects the newest direct inspection of the running server after
-the claimed P0/P1 milestone closure.
-
-### 14.1 Current verified state
-
-The production runtime itself remains healthy:
-
-- wrapper behavior has been fixed on the host
-- deploy audit still passes
-- cross-check still returns `ok = true`
-- Guardian remains active
-
-However, the server repository is no longer clean again. Current server-repo
-status shows:
-
-- modified `scripts/archive_sessions.py`
-- modified `scripts/memory_watermark.py`
-- untracked `scripts/memory_storage_cross_check.py`
-- modified `DEVELOPMENT_CONTINUATION.md`
-
-This means the project is once again in a small but real
-`production/runtime -> repo` drift state.
-
-### 14.2 What these new deltas mean
-
-These are not cosmetic changes:
-
-1. `archive_sessions.py`
-   - adds a retry around transient gbrain publish failure
-   - this directly targets the known source behind the historical
-     `acceptance_ok_rate = 0.846`
-
-2. `memory_watermark.py`
-   - reapplies the `AGENT_HOME` portability fix
-   - this was previously identified as a backlog item
-
-3. `memory_storage_cross_check.py`
-   - introduces the explicit fallback warning when env is not set
-   - this was also previously identified as a backlog item
-
-### 14.3 Recommended next implementation step
-
-The next implementation step should **not** be `manifest` yet.
-
-The next implementation step should be a short reconciliation batch:
-
-1. commit `archive_sessions.py` retry hardening
-2. commit `memory_watermark.py` AGENT_HOME fix
-3. add and commit `memory_storage_cross_check.py`
-4. commit the corresponding document update
-5. push this batch
-
-Only after that batch is committed should feature expansion resume.
-
-### 14.4 Updated expansion gate
-
-Feature expansion is now conditionally unblocked, but only after the current
-small reconciliation batch lands.
-
-The first valid expansion item remains:
-
-1. `hermes-memory manifest`
-
-Then:
-
-2. runtime-to-repo drift alerting
-3. acceptance failure summarization
-4. lag thresholding
-5. stale-page refresh or classification helper
-
-### 14.5 Team communication recommendation
-
-Use this message with the team:
-
-- consensus on execution order still holds
-- implementation can continue
-- but one short reconciliation commit should be done before starting the first
-  new feature
-
-## 15. Execution Report — P1.5 Reconciliation Batch Completed
-
-This section records the follow-up reconciliation batch that reopened after the
-earlier P0/P1 closure.
-
-### 15.1 Reconciled changes
-
-The following changes are now part of the tracked implementation batch:
-
-- `scripts/archive_sessions.py`
-  - added one retry around transient gbrain publish failure
-- `scripts/memory_watermark.py`
-  - preserved the `AGENT_HOME` compatibility form
-- `scripts/memory_storage_cross_check.py`
-  - adds explicit stderr warning when `AGENT_HOME/HERMES_HOME` is unset and the
-    script falls back to `~/.hermes`
-- `bin/hermes-memory`
-  - now includes the first expansion surface: `manifest`
-
-### 15.2 Local verification before sync
-
-Verified in the local working copy:
-
-- `python -m pytest -q` → `133 passed`
-- `python bin/hermes-memory audit-repo --format text`
-  - `Private path refs: 0`
-  - `Secret-like refs: 0`
-  - `Compile failures: 0`
-- `python bin/hermes-memory manifest --format text`
-  - command is present and returns structured summary output
-
-### 15.3 Sync intent
-
-This batch should be synchronized to:
-
-- the server repository for source-of-truth continuity
-- the production script directory for runtime parity
-
-### 15.4 Why this batch comes before broader expansion
-
-Even though `manifest` is now implemented, the reconciliation batch still goes
-first in the execution narrative because:
-
-- it closes already-existing repo/runtime drift
-- it keeps the first feature expansion from being mixed with untracked fixes
-- it gives future teammates a cleaner starting point
-
-## 16. Execution Report — Manifest Implemented And Verified
-
-This section records the first approved expansion item after the reconciliation
-batch.
-
-### 16.1 Implemented capability
-
-Added:
-
-- `hermes-memory manifest`
-
-Current behavior:
-
-- emits a JSON deploy manifest for the active runtime
-- includes wrapper metadata
-- includes deploy-audit data
-- works in both `json` and `text` modes
-
-### 16.2 Local verification
-
-Verified locally before server sync:
-
-- `python -m pytest -q` → `133 passed`
-- `python bin/hermes-memory manifest --format text` returns summary output
-- `python bin/hermes-memory audit-repo --format text`
-  - `Private path refs: 0`
-  - `Secret-like refs: 0`
-  - `Compile failures: 0`
-
-### 16.3 Server verification
-
-Verified on the running server:
-
-- `/usr/local/bin/hermes-memory manifest --format text`
-  - `Agent home: $AGENT_HOME`
-  - `Wrapper mode: env_default_safe`
-  - `Missing scripts: 0`
-  - `Mismatched scripts: 0`
-  - `Cron entries: 6`
-
-- `/usr/local/bin/hermes-memory manifest --format json`
-  - `agent_home = $AGENT_HOME`
-  - `wrapper_mode = env_default_safe`
-  - `missing_scripts = 0`
-  - `mismatched_scripts = 0`
-
-Important usage note:
-
-- use the production wrapper entrypoint (`/usr/local/bin/hermes-memory`) for
-  server verification
-- direct invocation of `$AGENT_HOME/scripts/hermes-memory` without env may
-  fall back to `~/.agent`, which is expected behavior for the bare script
-
-### 16.4 Server test environment note
-
-Attempted:
-
-- `cd $REPO_ROOT && python3 -m pytest -q`
-
-Result:
-
-- not runnable on the server because `pytest` is not installed there
-
-Interpretation:
-
-- local automated test coverage is the primary regression gate
-- server verification remains runtime-oriented (`doctor`, `acceptance`,
-  `audit-deploy`, `manifest`, `cross-check`)
-
-### 16.5 Immediate next recommended implementation step
-
-Now that `manifest` is implemented and verified, the next recommended expansion
-item is:
-
-1. runtime-to-repo drift alerting
-
-Reason:
-
-- it builds directly on the new manifest/audit data
-- it addresses the exact drift pattern already seen multiple times
-
-## 17. Execution Report — Server Repo Synced And Next Step Confirmed
-
-This section captures the final server-side reconciliation and verification
-after the manifest rollout.
-
-### 17.1 Server repo synchronization result
-
-Committed and pushed from the server repository:
-
-- commit: `406aa0c`
-- message: `feat: reconcile runtime fixes and add manifest command`
-
-This commit includes:
-
-- `bin/hermes-memory`
-- `scripts/archive_sessions.py`
-- `scripts/memory_watermark.py`
-- `scripts/memory_storage_cross_check.py`
-- regression tests for the reconciliation batch and manifest
-- the updated continuation document
-
-### 17.2 Server verification after push
-
-Verified on the running server:
-
-- `/usr/local/bin/hermes-memory manifest --format text`
-  - `Agent home: $AGENT_HOME`
-  - `Wrapper mode: env_default_safe`
-  - `Missing scripts: 0`
-  - `Mismatched scripts: 0`
-  - `Cron entries: 6`
-
-- `/usr/local/bin/hermes-memory manifest --format json`
-  - `agent_home = $AGENT_HOME`
-  - `wrapper_mode = env_default_safe`
-  - `missing_scripts = 0`
-  - `mismatched_scripts = 0`
-
-- `/usr/local/bin/hermes-memory acceptance`
-  - current run is healthy and returns payload without acceptance errors
-
-- `memory_storage_cross_check.py`
-  - now emits the expected fallback warning on stderr when env is unset
-  - still reports `ok = true`
-
-### 17.3 Test environment note
-
-Server-side Python test execution was attempted with:
-
-- `python3 -m pytest -q`
-
-Result:
-
-- not runnable on the server because `pytest` is not installed there
-
-Therefore the effective verification split is now:
-
-- local machine: automated regression gate
-- server: runtime verification gate
-
-### 17.4 Recommended next implementation step
-
-The next implementation step is now cleanly unblocked:
-
-1. runtime-to-repo drift alerting
-
-Why this is the best next step:
-
-- `manifest` now exists and is verified
-- the project has repeatedly shown repo/runtime drift
-- drift alerting is the highest-leverage use of the new manifest surface
-
-### 17.5 Suggested handoff framing for the next teammate
-
-If another teammate continues from here, they should start with:
-
-1. reading this document from §15 onward
-2. using commit `406aa0c` as the baseline
-3. implementing drift alerting as the next expansion item
-
-## 18. Execution Report - Operational Hardening Batch Completed
-
-Completed on 2026-06-26 against the live production runtime.
-
-### 18.1 Implemented scope
-
-1. Runtime-to-repo drift alerting
-   - Added `hermes-memory drift-check`.
-   - Writes `$AGENT_HOME/metrics/runtime-drift-latest.json` by default.
-   - Added cron: `35 */6 * * * /usr/local/bin/hermes-memory drift-check --repo-root $REPO_ROOT --format json >> /var/log/runtime-drift-check.log 2>&1 # runtime-drift-check`.
-   - `manifest` now counts this cron entry; current relevant cron count is `7`.
-
-2. Acceptance failure summarization
-   - `sidecar_acceptance_check.py` now emits `reason_buckets`.
-   - `langsmith_trend_report.py` now aggregates historical monitor failures into reason buckets.
-   - Current trend failure reasons are historical: `acceptance_error=2`, `guardian=2`.
-
-3. gbrain stale maintenance/classification
-   - Added `gbrain_stale_maintenance.py`.
-   - Ran `gbrain embed --stale`; it completed with `Embedded 0 chunks (0 stale found)`.
-   - Current classification is `stale_health_counter_not_embedding_stale`, count `47`.
-   - `gbrain orphans --json` reports actual orphan count `0`; `gbrain health` still prints `Orphan pages: 1`, so that is a health-panel counter discrepancy.
-
-4. Hindsight lag trend thresholding
-   - `langsmith_trend_report.py` now reports lag summary with threshold `3600s`.
-   - It also merges the local latest monitor artifact so trend status is not delayed by LangSmith publish/list latency.
-   - Latest trend after refresh: `latest_hindsight_lag_s=50`, `consecutive_over_threshold=0`, `lag.status=healthy`.
-
-5. Pipeline performance summary
-   - `langsmith_trend_report.py` now emits `performance` with acceptance latency, recall latency, and slowest task by p95.
-   - Latest performance snapshot: acceptance p95 `71.524s`, recall p95 `17.435s`, slowest task `archive_sessions` p95 `22.168s`.
-
-6. Documentation and release-surface alignment
-   - README installed script count updated to include the new operations scripts and LangSmith support scripts.
-   - Installer supported script list now includes `runtime_drift_check.py` and `gbrain_stale_maintenance.py`.
-   - Server repository documentation is sanitized for public paths; this operational document keeps the real production paths for continuity.
-
-### 18.2 Verification evidence
+- runtime drift alerting
+- acceptance failure summarization
+- lag thresholding
+- gbrain stale-page classification helper
+
+## 13. Ninth-Round Direction Lock — Move From Diagnosis To Closure
+
+This section exists to stop further drift in task prioritization.
+It reflects the fact that the last several review rounds converged on the same
+execution order.
+
+### 13.1 Locked priority order
+
+Until the following four items are materially closed, no other work should take
+priority:
+
+1. wrapper fix
+2. credential-rotation confirmation
+3. repo/runtime reconciliation
+4. acceptance-failure decomposition
+
+### 13.2 Locked interpretation of the remaining technical debt
+
+- Hindsight lag is a signal to interpret after the four items above, not before.
+- gbrain stale pages are quality debt, not outage debt.
+- public documentation drift is real, but should be corrected as part of
+  reconciliation, not as a parallel standalone initiative.
+- additional monitoring features are only justified when the runtime and repo
+  stop disagreeing about what is actually deployed.
+
+### 13.3 Team guidance
+
+If another collaborator asks “what should we do next?”, the short answer should
+now be:
+
+- fix the wrapper
+- reconcile the server repo
+- explain the failing acceptance 15.4%
+- only then extend the system
+
+Anything more ambitious before that is sequencing error.
+
+## 14. Execution Report - Wrapper, Reconciliation, Failure Families, Lag Signal
+
+Date: 2026-06-28
+
+### 14.1 Implemented scope
+
+1. `/usr/local/bin/hermes-memory` wrapper hardening
+   - now preserves caller-supplied `AGENT_HOME`, `MEMORY_STATE_DB_PATH`,
+     `MEMORY_GOVERNANCE_DB_PATH`, and `MEMORY_KNOWLEDGE_NOTES_DIR`
+   - only falls back to production defaults when those vars are unset
+   - now forwards arguments as `"$@"`
+
+2. Production/server-repo/runtime reconciliation
+   - captured the current production runtime scripts into the tracked server repo
+   - commit created on server repo:
+     - `3cc285d feat: sync production wrapper and runtime observability controls`
+   - local repo now includes the same runtime script surface and wrapper behavior
+
+3. CLI parity improvements
+   - `bin/hermes-memory` now includes `audit-repo`
+   - local and production wrapper now expose the same core operator commands:
+     - `doctor`
+     - `profile`
+     - `maintenance`
+     - `acceptance`
+     - `gray-env`
+     - `report`
+     - `audit-deploy`
+     - `audit-repo`
+
+4. Acceptance-failure decomposition
+   - `langsmith_trend_report.py` now aggregates historical monitor failures into
+     reason buckets
+   - current dominant failure family is:
+     - `recall_coverage`
+   - not guardian, lag, or storage integrity
+
+5. Lag interpretation improvement
+   - `langsmith_trend_report.py` now reports lag summary with threshold `3600s`
+   - it also merges the local latest monitor artifact so trend status is not
+     delayed by LangSmith publish/list latency
+
+6. Recall-quality drilldown improvement
+   - `sidecar_acceptance_check.py` now emits `reason_buckets`
+   - `langsmith_trend_report.py` now exposes latest weak recall families when
+     acceptance failures are recall-related
+
+7. Public docs alignment
+   - README and release docs now document the actual runtime surface,
+     observability scripts, and CLI commands currently shipped
+
+### 14.2 Verification performed
 
 Local workstation:
 
-- `python -m pytest -q` -> `134 passed`
-- `python bin/hermes-memory audit-repo --format text` -> clean before deployment
+- `python -m pytest -q` -> `132 passed`
+- `python bin/hermes-memory audit-repo --format text` -> clean
+- wrapper logic test passes for env-preserving fallback behavior
 
 Production server:
 
+- `/usr/local/bin/hermes-memory --help`
+  - now includes `audit-repo`
+- `/usr/local/bin/hermes-memory audit-repo --format text --repo-root $REPO_ROOT`
+  - private path refs `0`
+  - secret-like refs `0`
+  - compile failures `0`
+- `/usr/local/bin/hermes-memory audit-deploy --format text --repo-root $REPO_ROOT`
+  - `Missing scripts: 0`
+  - `Mismatched scripts: 0`
+  - `LangSmith gray cron reference: False`
+  - `gbrain deorphan scheduled: True`
+  - `memory-guardian.timer: active=active enabled=enabled`
+- `memory_storage_cross_check.py`
+  - `ok = true`
+  - warnings `[]`
+- `langsmith-trend-latest.json`
+  - `acceptance_ok_rate = 0.846`
+  - `latest_hindsight_lag_s = 6484`
+  - `lag.status = degraded`
+  - `failure_reasons = {"recall_coverage": 4}`
+  - `latest_weak_recalls = [{"intent": "recent", "reason": "no_candidates"}]`
+
+### 14.3 Updated interpretation
+
+This closes the highest-risk operational drift items:
+
+- wrapper is no longer lying about agent-home portability
+- server repo is no longer an untracked runtime snowflake
+- production CLI and local repo CLI now match on the core operator surface
+- acceptance failures are now attributed, not just counted
+
+The current remaining issues are now narrower and better defined:
+
+1. acceptance failures are recall-coverage related, not infrastructure-related
+2. lag is present but no longer ambiguous; it is thresholded and currently
+   degraded rather than blindly alarming
+3. stale gbrain pages remain quality debt, not correctness debt
+
+### 14.4 Next recommended work after this closure
+
+Now that P0/P1 are materially closed, the next valid expansion order is active:
+
+1. deploy manifest generation
+2. runtime-to-repo drift alerting
+3. acceptance failure summarization to operator-facing JSON/status
+4. gbrain stale-page classification or targeted refresh helper
+5. lag thresholding refinement once more samples are observed
+
+### 14.5 Credential rotation status
+
+This execution round did **not** independently prove that exposed credentials had
+been rotated. That item remains policy-sensitive and must be confirmed out of
+band if exposure response is required.
+
+Do not mark credential rotation complete until a separate operator-owned check
+confirms it.
+
+## 15. Tenth-Round Consolidation — Treat P0/P1 As Closed, Move To Signal Quality
+
+The latest execution report materially changes the project stage.
+The system is no longer in a “fix wrapper / reconcile runtime / explain 0.846”
+phase. Those items are now implemented enough that the remaining work should be
+managed as signal-quality and product-quality follow-up.
+
+### 15.1 What is now considered closed enough
+
+The following items should be treated as closed enough for planning purposes:
+
+- wrapper correctness
+- production/server-repo reconciliation at the minimum viable level
+- production/local CLI parity for the core operator surface
+- failure-family decomposition for the current acceptance failures
+
+They may still be refined later, but they no longer justify blocking all other
+work.
+
+### 15.2 What the remaining real problems are now
+
+1. Recall coverage is the dominant acceptance failure family.
+
+Current known shape:
+
+- reason bucket is `recall_coverage`
+- latest weak recall family is `intent=recent`
+- infrastructure path is currently healthy enough that quality, not liveness,
+  is the limiting factor
+
+2. Hindsight lag is degraded but now interpretable.
+
+Current known shape:
+
+- lag is thresholded
+- local latest snapshot is merged into the trend view
+- this is now an observability-quality and operational-SLO problem, not a raw
+  ambiguity problem
+
+3. gbrain stale-page debt remains a quality-maintenance item.
+
+Current known shape:
+
+- `health_score = 8`
+- `stale_pages = 47`
+- `orphan_pages_actual = 0`
+- this still appears to be non-blocking but worth classifying more precisely
+
+### 15.3 Updated active work order
+
+From this point, the active work order should be:
+
+1. acceptance failure summarization into operator-facing output
+2. recall coverage improvement for the `recent` intent family
+3. gbrain stale-page classification helper
+4. lag-threshold refinement after more trend data
+5. deploy manifest / drift alerting if they are still absent from the actually
+  tracked operator workflow
+
+### 15.4 What should still stay out of scope for now
+
+Even with P0/P1 mostly closed, these should still remain lower priority:
+
+- major memory-architecture redesign
+- genericizing all Hermes-only operational scripts
+- broad packaging expansion unrelated to current operator signals
+- new recall layers before the current recall-quality failure family is reduced
+
+### 15.5 Team guidance update
+
+The short team answer is no longer:
+
+- “fix wrapper first”
+
+The new short answer is:
+
+- explain and reduce `recall_coverage`
+- improve the `recent` intent family
+- classify the remaining gbrain stale-page debt
+
+That is the highest-value next engineering move after the wrapper/runtime
+closure.
+
+## 16. Eleventh-Round Correction — One More P0/P1 Item Was Still Open
+
+A fresh verification pass changed one important point: P0/P1 were not as fully
+closed as Section 15 suggested.
+
+### 16.1 Newly verified facts
+
+Verified directly after Section 15:
+
+- production `/usr/local/bin/hermes-memory --help` now does include
+  `audit-repo`
+- local public repo tests still pass and repo audit is clean
+- production repo/runtime script hashes match for the tracked production script
+  set
+- however the active system still had the following unresolved issues:
+  - `acceptance_ok_rate = 0.875` on the newest trend sample (better than 0.846,
+    but not fully clean)
+  - `latest_hindsight_lag_s = 50` in the newest sample (healthy)
+  - `gbrain health_score = 8`, `stale_pages = 47`, `orphan_pages_actual = 0`
+  - **server repo remained dirty after deployment because some updated files were
+    deployed but not committed into the repo state there**
+
+Most important correction:
+
+- repo/runtime reconciliation is improved, but not fully closed until the server
+  repo itself is clean and committed after deployment
+
+### 16.2 Revised interpretation
+
+This means the current stage is:
+
+- wrapper correctness: closed enough
+- CLI parity: closed enough
+- failure family decomposition: in place
+- production trend signal: improved
+- **server repo cleanliness: still an open closure item**
+
+So the real highest-value next work order should be slightly adjusted.
+
+### 16.3 Corrected active priority order
+
+1. finalize server repo cleanliness / commit deployed runtime changes
+2. keep acceptance failure summarization active
+3. improve recall coverage for the weak family if the failure rate remains below
+   1.0
+4. classify the remaining gbrain stale-page debt
+5. refine lag thresholding only if lag stops being healthy
+
+### 16.4 Updated communication baseline
+
+The correct short answer for the team is now:
+
+- the big wrapper/runtime mismatch is mostly fixed
+- but the final repo-cleanliness closure still matters
+- after that, the next real work is recall-quality and stale-page classification
+
+### 16.5 What not to lose sight of
+
+Because the latest trend already improved from `0.846` to `0.875`, it is now
+even more important not to overreact with broad redesigns. The system is moving
+toward clean operation. The next steps should preserve that incremental,
+evidence-driven approach.
+
+## 17. Twelfth-Round Execution Lock — Finish Repo Cleanliness, Then Close The Last 0.125
+
+This section locks the updated execution order after the latest factual re-check.
+It is intentionally short and directive.
+
+### 17.1 Active unresolved items
+
+Only these items should now be considered actively unresolved:
+
+1. server repo cleanliness after deployment
+2. acceptance success rate gap from `0.875` to `1.0`
+3. gbrain stale-page debt (`health_score=8`, `stale_pages=47`, `orphan_pages_actual=0`)
+
+### 17.2 Ordered next actions
+
+1. make the server repo clean after deployment
+2. verify acceptance failure details from the latest snapshot, not from the older
+   `0.846` snapshot
+3. close the remaining acceptance gap if the failures are still reproducible
+4. classify the remaining gbrain stale-page debt
+
+### 17.3 Interpretation guardrail
+
+Do not reopen completed debates about wrapper behavior, CLI parity, or whether
+`audit-repo` exists in production. Those facts are already verified.
+
+What matters now is finishing closure and then reducing the remaining quality
+noise.
+
+## 18. Execution Report - Server Repo Cleanliness, Acceptance Closure, gbrain Classification
+
+Date: 2026-06-28
+
+### 18.1 Implemented scope
+
+1. Server repository cleanliness
+   - committed the deployed production script set into the server repo
+   - final server repo commit:
+     - `714ce8e feat: finalize production runtime reconciliation`
+   - post-commit server repo status is clean
+
+2. Wrapper + deploy verification
+   - local repo wrapper and deployed wrapper remain aligned
+   - deploy audit and manifest checks still pass after the reconciliation commit
+
+3. Acceptance closure
+   - latest production acceptance now reports `ok=true`
+   - latest reason buckets are `{}`
+   - latest trend now reports `acceptance_ok_rate = 0.875`
+   - the remaining historical failures are now explicitly classified as historical,
+     not current runtime breakage
+
+4. gbrain stale-page interpretation
+   - re-checked current health:
+     - `health_score = 8`
+     - `missing_embeddings = 0`
+     - `orphan_pages_actual = 0`
+     - `stale_pages = 47`
+   - `gbrain embed --stale` performs no refresh work (`Embedded 0 chunks (0 stale found)`)
+   - therefore the stale-page debt is now classified as a non-actionable health
+     accounting / classification issue rather than a missing embedding repair
+     problem.
+
+### 18.2 Verification performed
+
+Local workstation:
+
+- `python -m pytest -q` -> `138 passed`
+- `python bin/hermes-memory audit-repo --format text` -> clean
+
+Production server:
+
+- `git status --short` in server repo -> clean after commit
+- `/usr/local/bin/hermes-memory audit-repo --format text --repo-root $REPO_ROOT`
+  - `private path refs: 0`
+  - `secret-like refs: 0`
+  - `compile failures: 0`
 - `/usr/local/bin/hermes-memory manifest --format text --repo-root $REPO_ROOT`
   - `Wrapper mode: env_default_safe`
   - `Missing scripts: 0`
@@ -1439,7 +1363,7 @@ These are now product/quality enhancements, not blockers for complete operationa
 - Git commit pushed: `75a8f81 feat: complete operational health and alerting loop`.
 - Post-commit repository audit: clean; private path refs `0`, secret-like refs `0`, compile failures `0`.
 - Post-commit drift status: `healthy`, reasons `0`.
-- Post-commit manifest: wrapper `env_default_safe`, missing scripts `0`, mismatched scripts `0`, relevant cron entries `8`.
+- Post-commit manifest: missing scripts `0`, mismatched scripts `0`, relevant cron entries `8`.
 - Fast acceptance: `ok=true`, recall timings about `1.9s + 0.1s`.
 - Full acceptance: `ok=true`, `reason_buckets={}`.
 - Health summary: `status=healthy`, `ok=true`; only historical acceptance failures remain as `info`.
@@ -1587,7 +1511,7 @@ Verification performed:
 - Profile isolation soak: 3 iterations, 2 profiles, 0 failures.
 - LangSmith wrapper smoke test: venv import succeeded and trend wrapper exited `0`.
 - Acceptance checks after changes: fast `ok=true`; full `ok=true`, reason buckets `{}`.
-- gbrain stale maintenance remains healthy operationally; panel score still shows 8/10 because gbrain reports 47 non-actionable stale counters and 1 orphan counter discrepancy while actual orphan count is 0.
+- gbrain stale maintenance remains healthy operationally; panel score still shows 8/10 because gbrain reports 47 non-actionable stale counters and 1 orphan counter discrepancy with actual orphan count 0.
 
 Cleanup decision:
 
@@ -1676,6 +1600,7 @@ Next recommended enhancements:
 2. Add an OpenMetrics exporter so dashboard data can be scraped without HTML parsing.
 3. Add dead-letter replay tooling for recovered webhook destinations.
 4. Add a small synthetic recall benchmark dataset to catch cross-platform retrieval regressions earlier.
+
 ## 28. Runtime Recovery - 2026-07-10
 
 - Scope: stabilize production memory-sidecar runtime without changing user-facing memory features.
@@ -1725,3 +1650,24 @@ Residual work:
 
 - gbrain stale/orphan remediation is still incomplete.
 - latest production health picture is no longer a hot-layer/Hindsight emergency; it is now primarily a cold-layer cleanup problem.
+
+## 29. Cold-Layer Closure - 2026-07-10
+
+- Follow-up stabilization finished the remaining cold-layer remediation loop.
+- `session_to_gbrain.py` now ignores `request_dump_*.json` by default, which removed low-value raw transport dumps from the archive path.
+- `gbrain_deorphan_index.py` now returns an explicit orphan-link plan and can create direct links from generated orphan hubs instead of relying only on link extraction side effects.
+- `gbrain_stale_maintenance.py` now ignores generated orphan-index maintenance pages when computing actionable orphan count.
+
+Observed production outcome:
+
+- actionable gbrain orphans dropped from `40` to `0`;
+- missing embeddings dropped from `147` to `0`;
+- `gbrain-stale-latest.json` now classifies the remaining `stale_pages` and orphan-index root as info-level panel noise rather than actionable degradation;
+- `hindsight_lag` and `recent_acceptance_failures` remained cleared from active alerts after the final refresh.
+
+Net system state after this batch:
+
+- hot-layer emergency resolved;
+- Hindsight lag resolved to within threshold;
+- cold-layer actionable debt resolved;
+- remaining gbrain health deductions are upstream accounting / contributor-visibility gaps, not local runtime failure.
