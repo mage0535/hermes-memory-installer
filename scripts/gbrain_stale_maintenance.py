@@ -71,6 +71,7 @@ def action_summary(actions: list[dict], before: dict, after: dict) -> dict:
         "stale_pages_changed": stale_after != stale_before,
         "stale_pages_delta": stale_after - stale_before,
         "embed_stale_found_chunks": None,
+        "embed_all_found_chunks": None,
         "reindex_code_failures": None,
     }
     for action in actions:
@@ -79,6 +80,10 @@ def action_summary(actions: list[dict], before: dict, after: dict) -> dict:
             match = re.search(r"Embedded\s+(\d+)\s+chunks", stdout)
             if match:
                 summary["embed_stale_found_chunks"] = int(match.group(1))
+        if action.get("name") == "embed_all":
+            match = re.search(r"Embedded\s+(\d+)\s+chunks", stdout)
+            if match:
+                summary["embed_all_found_chunks"] = int(match.group(1))
         if action.get("name") == "reindex_code":
             match = re.search(r"(\d+)\s+failed", stdout)
             if match:
@@ -96,7 +101,14 @@ def classify_health(health: dict, effects: dict | None = None) -> list[dict]:
         code = "stale_embeddings_or_pages"
         severity = "degraded"
         recommendation = "gbrain embed --stale"
-        if effects and effects.get("embed_stale_found_chunks") == 0:
+        if effects and (
+            effects.get("embed_stale_found_chunks") == 0
+            or (
+                int(health.get("missing_embeddings") or 0) == 0
+                and effects.get("stale_pages_changed") is False
+                and effects.get("embed_stale_found_chunks") is not None
+            )
+        ):
             code = "stale_health_counter_not_embedding_stale"
             severity = "info"
             recommendation = "classify stale pages or fix gbrain health accounting"
@@ -160,10 +172,29 @@ def upstream_gap(classifications: list[dict]) -> dict:
     }
 
 
-def actual_orphan_count() -> int | None:
+def filtered_orphan_rows() -> list[dict]:
     result = run(["gbrain", "orphans", "--count"], timeout=60)
-    match = re.search(r"(\d+)", (result.get("stdout") or "") + (result.get("stderr") or ""))
-    return int(match.group(1)) if match else None
+    if result.get("returncode") == 0:
+        rows_result = run(["gbrain", "orphans", "--json"], timeout=120)
+        try:
+            payload = json.loads(rows_result.get("stdout") or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        rows = payload.get("orphans") if isinstance(payload.get("orphans"), list) else []
+        filtered = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            slug = str(row.get("slug") or "")
+            if slug == "hub-orphan-index" or slug.startswith("hub-orphans-"):
+                continue
+            filtered.append(row)
+        return filtered
+    return []
+
+
+def actual_orphan_count() -> int | None:
+    return len(filtered_orphan_rows())
 
 
 def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> dict:
@@ -188,8 +219,7 @@ def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> d
     after_cmd = run(["gbrain", "health"], timeout=60)
     after = parse_health(after_cmd["stdout"] + after_cmd["stderr"])
     actual_orphans = actual_orphan_count()
-    if actual_orphans is not None:
-        after["orphan_pages_actual"] = actual_orphans
+    after["orphan_pages_actual"] = actual_orphans
     effects = action_summary(actions, before, after)
     classifications = classify_health(after, effects)
     actionable = [item for item in classifications if item.get("severity") in {"action-needed", "degraded"}]
