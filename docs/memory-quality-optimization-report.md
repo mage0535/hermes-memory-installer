@@ -150,6 +150,34 @@ Recommended production order:
 4. Run `python3 -m gbrain_edges.hindsight_feeder --db-path "$AGENT_HOME/memory_governance.db" --dry-run` and inspect planned edge counts before any `--apply`.
 5. Run MTM with `MTM_ENABLED=true python3 -m mtm.consolidator --apply`.
 
+## 2026-07-10 Runtime Stabilization
+
+Production runtime issues were traced to three concrete causes:
+
+- `memory_governance_rebuild.py` still defaulted to `$HOME/.agent`, so direct production runs could miss `$AGENT_HOME/state.db` and leave `hindsight_synced_at` stale.
+- `session_to_gbrain.py` depended on `GBRAIN_MCP_TOKEN` but production wrappers did not export it, causing MCP 401 failures before archive work started.
+- `session_to_gbrain.py` also attempted to archive large `request_dump_*.json` raw transport dumps, which are operationally noisy and can stall page writes without improving knowledge quality.
+
+The shipped fixes are:
+
+- default all directly related runtime scripts to `$HOME/.hermes` instead of `$HOME/.agent`;
+- auto-discover gbrain MCP bearer credentials from `$AGENT_HOME/config.yaml` when `GBRAIN_MCP_TOKEN` is unset;
+- skip `request_dump_*.json` by default unless `SESSION_TO_GBRAIN_INCLUDE_REQUEST_DUMPS=true`;
+- downgrade slight Hindsight node budget overflow from `critical` to `action` when the overage stays within a small grace window and consolidation is otherwise healthy;
+- record `execution_ok` vs `business_ok` separately in LangSmith monitor/task payloads and trend summaries;
+- keep the alert queue transition-based, with resolved notifications and stricter wording that says auto-fix was attempted rather than guaranteed successful.
+
+Observed production improvements after deployment:
+
+- `hindsight_sync_lag_seconds`: about `21597` seconds down to under `1000` seconds.
+- guardian level: `critical` down to `action`.
+- gbrain missing embeddings: sharply reduced from `147` to low single digits during auto-fix.
+- active alerts: `hindsight_lag` and `recent_acceptance_failures` cleared from the latest alert set; remaining actionable alert is gbrain stale/orphan remediation.
+
+Known remaining issue:
+
+- gbrain stale/orphan recovery is improved but not yet fully clean; follow-up should focus on the last few missing embeddings and the remaining orphan set.
+
 ## Acceptance Commands
 
 ```bash
