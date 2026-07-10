@@ -178,6 +178,21 @@ Known remaining issue:
 
 - gbrain stale/orphan recovery is improved but not yet fully clean; follow-up should focus on the last few missing embeddings and the remaining orphan set.
 
+## 2026-07-10 Cold-Layer Closure
+
+The remaining cold-layer work was narrowed and mostly closed:
+
+- `request_dump_*.json` raw transport dumps are now excluded from `session_to_gbrain.py` by default because they are operational noise rather than durable memory pages.
+- gbrain orphan handling now treats generated orphan index pages as maintenance artifacts instead of actionable business content.
+- direct orphan-link planning is built into `gbrain_deorphan_index.py`, so deorphan maintenance no longer depends only on implicit link extraction.
+- production gbrain status improved from `missing_embeddings=147, orphans=40` to `missing_embeddings=0, actionable_orphans=0`.
+
+Current production interpretation:
+
+- `gbrain-stale-latest.json` is now `healthy` when only panel-noise stale counters and generated orphan-index pages remain.
+- the remaining stale-page count is treated as an upstream accounting or contributor-visibility gap, not as a local write/read failure.
+- active health alerts should now be limited to repository drift or genuine future regressions, not the previously noisy Hindsight lag or recent acceptance failures.
+
 ## Acceptance Commands
 
 ```bash
