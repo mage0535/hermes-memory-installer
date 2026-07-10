@@ -29,15 +29,37 @@ import json as _json
 
 _GBRAIN_MCP = os.environ.get("GBRAIN_MCP_URL", "http://localhost:8787/mcp")
 _GBRAIN_TOKEN = os.environ.get("GBRAIN_MCP_TOKEN", "")
-_GBRAIN_MCP_TIMEOUT_S = float(os.environ.get("GBRAIN_MCP_TIMEOUT_S", "60"))
-_GBRAIN_CLI_TIMEOUT_S = float(os.environ.get("GBRAIN_CLI_TIMEOUT_S", "60"))
+_GBRAIN_MCP_TIMEOUT_S = float(os.environ.get("GBRAIN_MCP_TIMEOUT_S", "180"))
+_GBRAIN_CLI_TIMEOUT_S = float(os.environ.get("GBRAIN_CLI_TIMEOUT_S", "180"))
 # Configure authentication through GBRAIN_MCP_TOKEN.
+
+
+def _discover_gbrain_token() -> str:
+    if _GBRAIN_TOKEN:
+        return _GBRAIN_TOKEN
+    agent_home = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+    config_path = agent_home / "config.yaml"
+    if not config_path.exists():
+        return ""
+    try:
+        text = config_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    match = re.search(r"Authorization:\s+Bearer\s+([^\s\"']+)", text)
+    return match.group(1).strip() if match else ""
+
+
+def _mcp_headers() -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    token = _discover_gbrain_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 def _mcp_call(method, params, req_id=1):
     """Call gbrain via MCP API directly (bypasses broken CLI)"""
     data = _json.dumps({"jsonrpc":"2.0","id":req_id,"method":"tools/call","params":{"name":method,"arguments":params}}).encode()
-    req = _urllib.Request(_GBRAIN_MCP, data=data,
-        headers={"Content-Type":"application/json","Authorization":f"Bearer {_GBRAIN_TOKEN}"})
+    req = _urllib.Request(_GBRAIN_MCP, data=data, headers=_mcp_headers())
     try:
         resp = _urllib.urlopen(req, timeout=_GBRAIN_MCP_TIMEOUT_S)
         result = _json.loads(resp.read())
@@ -96,12 +118,13 @@ if str(SCRIPT_DIR) not in sys.path:
 from memory_family_registry import active_focus_profiles, focus_profile_archive_tags, focus_profile_ids_for_text
 
 # Config
-AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))).expanduser()
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 SESSIONS_DIR = AGENT_HOME / "sessions"
 STATE_DB = AGENT_HOME / "state.db"
 CHECKPOINT_FILE = AGENT_HOME / ".session_to_gbrain_checkpoint.json"
 CST = timezone(timedelta(hours=8))
 SESSION_FILE_PATTERN = re.compile(r"(?:session|request_dump)_[^\"\\/\s]+\.json")
+INCLUDE_REQUEST_DUMPS = os.environ.get("SESSION_TO_GBRAIN_INCLUDE_REQUEST_DUMPS", "").lower() in {"1", "true", "yes"}
 
 # Topic hubs - these are gbrain pages that group sessions by topic
 TOPIC_HUBS = {
@@ -194,6 +217,8 @@ def get_unprocessed_sessions(processed_set, batch_size=50):
                           key=lambda p: p.stat().st_mtime, reverse=True)
     unprocessed = []
     for sf in session_files:
+        if not INCLUDE_REQUEST_DUMPS and sf.name.startswith("request_dump_"):
+            continue
         if sf.name not in processed_set:
             unprocessed.append(sf)
             if len(unprocessed) >= batch_size:
