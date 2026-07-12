@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a1a"/>
+      <stop offset="100%" style="stop-color:#1a1a3a"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00b4d8;stop-opacity:0.3"/>
+      <stop offset="100%" style="stop-color:#0077b6;stop-opacity:0.1"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- CPU die pattern -->
+  <g transform="translate(80,100)" opacity="0.15">
+    <rect x="0" y="0" width="60" height="60" rx="4" fill="none" stroke="#00b4d8" stroke-width="1.5"/>
+    <rect x="80" y="0" width="60" height="60" rx="4" fill="none" stroke="#00b4d8" stroke-width="1.5"/>
+    <rect x="160" y="0" width="60" height="60" rx="4" fill="none" stroke="#00b4d8" stroke-width="1.5"/>
+    <rect x="0" y="80" width="60" height="60" rx="4" fill="none" stroke="#00b4d8" stroke-width="1.5"/>
+    <rect x="80" y="80" width="60" height="60" rx="4" fill="none" stroke="#00b4d8" stroke-width="1.5"/>
+    <rect x="160" y="80" width="60" height="60" rx="4" fill="none" stroke="#00b4d8" stroke-width="1.5"/>
+  </g>
+
+  <!-- Data flow lines -->
+  <g opacity="0.1">
+    <line x1="50" y1="450" x2="1150" y2="450" stroke="#00b4d8" stroke-width="1"/>
+    <line x1="50" y1="480" x2="1150" y2="480" stroke="#00b4d8" stroke-width="1" stroke-dasharray="8,4"/>
+    <line x1="50" y1="510" x2="1150" y2="510" stroke="#00b4d8" stroke-width="1"/>
+  </g>
+
+  <!-- Circuit board traces -->
+  <g stroke="#00b4d8" stroke-width="1.5" fill="none" opacity="0.25">
+    <path d="M600,350 L600,400 L700,400 L700,450"/>
+    <path d="M500,350 L500,420 L400,420 L400,450"/>
+    <circle cx="600" cy="350" r="4" fill="#00b4d8"/>
+    <circle cx="500" cy="350" r="4" fill="#00b4d8"/>
+    <circle cx="700" cy="450" r="4" fill="#00b4d8"/>
+    <circle cx="400" cy="450" r="4" fill="#00b4d8"/>
+  </g>
+
+  <!-- Central processor glow -->
+  <circle cx="600" cy="315" r="80" fill="none" stroke="#0077b6" stroke-width="0.5" opacity="0.3"/>
+  <circle cx="600" cy="315" r="60" fill="none" stroke="#00b4d8" stroke-width="1" opacity="0.5"/>
+  <circle cx="600" cy="315" r="40" fill="#00b4d8" opacity="0.08"/>
+  <circle cx="600" cy="315" r="20" fill="#00b4d8" opacity="0.15"/>
+  <text x="600" y="320" text-anchor="middle" fill="#48cae4" font-family="monospace" font-size="14" opacity="0.6">LLM</text>
+
+  <!-- Floating code snippets -->
+  <g font-family="monospace" font-size="11" fill="#48cae4" opacity="0.2">
+    <text x="250" y="200">def infer(prompt):</text>
+    <text x="270" y="218">return llama.run(prompt)</text>
+    <text x="800" y="230">./llama-cli -m model.gguf</text>
+    <text x="820" y="248">-ngl 0 -t 4 -c 4096</text>
+  </g>
+
+  <!-- Title area -->
+  <text x="600" y="540" text-anchor="middle" fill="#e0e0e0" font-family="sans-serif" font-size="48" font-weight="700">CPU LLM Inference</text>
+  <text x="600" y="575" text-anchor="middle" fill="#888" font-family="sans-serif" font-size="20">Real Benchmarks from a 4-Core Xeon Server</text>
+
+  <!-- Bottom accent line -->
+  <rect x="480" y="590" width="240" height="3" rx="1.5" fill="#00b4d8" opacity="0.5"/>
+</svg>
