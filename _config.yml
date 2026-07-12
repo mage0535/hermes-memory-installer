@@ -1,0 +1,10 @@
+title: Hermes Blog
+description: >-
+  全自动内容管线 — AI, 科技, 金融即市分析
+baseurl: "/hermes-memory-installer"
+url: "https://mage0535.github.io"
+markdown: kramdown
+theme: jekyll-theme-minimal
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
