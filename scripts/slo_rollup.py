@@ -75,11 +75,20 @@ def recall_latency_from_trend(payload: dict[str, Any]) -> dict[str, float | None
     }
 
 
+def acceptance_rate_from_monitor(monitor: dict[str, Any]) -> tuple[float | None, str | None]:
+    if monitor.get("current_acceptance_ok_rate") is not None:
+        return monitor.get("current_acceptance_ok_rate"), "current"
+    if monitor.get("recent_acceptance_ok_rate") is not None:
+        return monitor.get("recent_acceptance_ok_rate"), "recent"
+    return monitor.get("acceptance_ok_rate"), "historical" if monitor.get("acceptance_ok_rate") is not None else None
+
+
 def build_slo_rollup(metrics_dir: Path, history_path: Path | None = None) -> dict[str, Any]:
     history = history_path or metrics_dir / "slo-rollup-history.jsonl"
     trend = load_json(metrics_dir / "langsmith-trend-latest.json")
     replay = load_json(metrics_dir / "dead-letter-replay-latest.json")
     monitor = trend.get("monitor") if isinstance(trend.get("monitor"), dict) else {}
+    acceptance_ok_rate, acceptance_window = acceptance_rate_from_monitor(monitor)
     queue_lines = count_jsonl_lines(metrics_dir / "inbound-alert-webhook.jsonl")
     previous_queue_lines = latest_history_row(history).get("alert_queue_lines")
     growth = queue_lines - previous_queue_lines if isinstance(previous_queue_lines, int) else 0
@@ -87,7 +96,9 @@ def build_slo_rollup(metrics_dir: Path, history_path: Path | None = None) -> dic
     payload = {
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "status": "healthy",
-        "acceptance_ok_rate": monitor.get("recent_acceptance_ok_rate", monitor.get("acceptance_ok_rate")),
+        "acceptance_ok_rate": acceptance_ok_rate,
+        "acceptance_window": acceptance_window,
+        "current_window": monitor.get("current_window"),
         "alert_queue_lines": queue_lines,
         "alert_queue_growth": growth,
         "dead_letter_replay_success_rate": replay_success_rate(replay),

@@ -122,7 +122,9 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
     lag = trend.get("monitor", {}).get("lag", {})
     if lag.get("status") == "action-needed":
         alerts.append(alert("langsmith-trend", "hindsight_lag", "action-needed", lag))
-    recent_rate = trend.get("monitor", {}).get("recent_acceptance_ok_rate")
+    recent_rate = trend.get("monitor", {}).get("current_acceptance_ok_rate")
+    if recent_rate is None:
+        recent_rate = trend.get("monitor", {}).get("recent_acceptance_ok_rate")
     latest_acceptance_ok = trend.get("monitor", {}).get("latest_acceptance_ok")
     if recent_rate not in (None, 1.0) and latest_acceptance_ok is not True:
         alerts.append(
@@ -132,8 +134,9 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
                 "action-needed",
                 {
                     "recent_acceptance_ok_rate": recent_rate,
-                    "recent_window": trend.get("monitor", {}).get("recent_window"),
+                    "recent_window": trend.get("monitor", {}).get("current_window", trend.get("monitor", {}).get("recent_window")),
                     "recent_failures": trend.get("monitor", {}).get("recent_failures", []),
+                    "current_failure_reasons": trend.get("monitor", {}).get("current_failure_reasons", {}),
                 },
             )
         )

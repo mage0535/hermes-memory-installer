@@ -939,6 +939,30 @@ def test_slo_rollup_summarizes_acceptance_queue_replay_and_recall(tmp_path: Path
     assert payload["recall_latency"]["p95_s"] == 0.45
 
 
+def test_slo_rollup_prefers_current_acceptance_window(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps(
+            {
+                "monitor": {
+                    "acceptance_ok_rate": 0.55,
+                    "recent_acceptance_ok_rate": 0.8,
+                    "current_acceptance_ok_rate": 1.0,
+                    "current_window": 4,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = slo_rollup.build_slo_rollup(metrics)
+
+    assert payload["status"] == "healthy"
+    assert payload["acceptance_ok_rate"] == 1.0
+    assert payload["acceptance_window"] == "current"
+
+
 def test_openmetrics_exporter_includes_slo_rollup(tmp_path: Path):
     metrics = tmp_path / "metrics"
     metrics.mkdir()
@@ -1278,7 +1302,9 @@ def test_gbrain_stale_report_does_not_mark_success_when_actionable_debt_remains(
 
     report = gbrain_stale_maintenance.build_report(refresh_embeddings=True, reindex_code=False, output="")
 
-    assert ["gbrain-embed", "embed", "--all"] in calls
+    assert ["gbrain-embed", "embed", "--all"] not in calls
+    assert ["gbrain-embed", "embed", "--stale", "--limit", "100"] in calls
+    assert report["status"] == "action-needed"
     assert report["auto_fix_attempted"] is True
     assert report["auto_fix_succeeded"] is False
     assert report["auto_fix_failed"] is True
@@ -1289,6 +1315,8 @@ def test_server_cron_enables_gbrain_embedding_refresh():
     line = next(row for row in content.splitlines() if "gbrain-stale-refresh" in row)
 
     assert "--refresh-embeddings" in line
+    assert "--stale-budget" in line
+    assert "--missing-budget 0" in line
 
 
 def test_storage_cross_check_filters_generated_gbrain_orphan_indexes(monkeypatch):

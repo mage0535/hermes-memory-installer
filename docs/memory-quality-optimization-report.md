@@ -232,3 +232,23 @@ Post-fix production result:
 Next recommended optimization:
 
 - tune relationship/people recall separately. The optional relationship sample can still return no candidates and sometimes waits on live Hindsight until timeout. This is a recall-quality improvement, not a production health blocker.
+
+## 2026-07-15 LangSmith And Recall Optimization Pass
+
+The next optimization pass closed the P0-P4 follow-up items without changing Hindsight, gateway, or headroom service code.
+
+Implemented changes:
+
+- P0: live Hindsight L3 recall now uses `MEMORY_LIVE_HINDSIGHT_TIMEOUT_S` with a default 3 second timeout instead of the previous fixed 20 second wait. Slow live recall degrades to existing L2/L3 cache candidates.
+- P0 addendum: foreground recall no longer performs inline governance DB rebuilds by default. Production keeps the governance index fresh with a `flock`-guarded background cron every 15 minutes; `MEMORY_RECALL_INLINE_GOVERNANCE_REBUILD=true` remains available as an explicit override.
+- P1: LangSmith trend reports now separate current acceptance health from historical failures with `current_acceptance_ok_rate`, `current_window`, `current_failure_reasons`, and `historical_acceptance_failure_count`.
+- P2: `gbrain_stale_maintenance.py --refresh-embeddings` is budgeted with `--stale-budget` and `--missing-budget`. Production cron uses `--stale-budget 100 --missing-budget 0` to avoid unbounded `embed --all` on fixed hardware.
+- P3: weak recall rows now classify likely cause as `retrieval_timeout` or `no_seed_data` instead of reporting every zero-result query as a generic no-candidate failure.
+- P4: alerting consumes the current acceptance signal first, while historical acceptance failures remain info-level context.
+- SLO rollup now prefers `current_acceptance_ok_rate` when present, so old historical failures do not keep a recovered system degraded.
+
+Validation:
+
+- local full test suite: `242 passed, 2 skipped`;
+- repository privacy audit: `audit-repo ok=true`.
+- production timing probe found the remaining cold L3 latency was a first-query governance rebuild in the hub layer; after moving rebuild to cron, foreground `get_l3("agent memory architecture")` no longer pays that rebuild cost.

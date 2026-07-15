@@ -188,6 +188,33 @@ def test_gbrain_stale_report_marks_auto_fix_attempt(monkeypatch):
     assert report["auto_fix_failed"] is False
 
 
+def test_gbrain_stale_refresh_uses_budgeted_stale_command(monkeypatch):
+    stale = load_script("gbrain_stale_maintenance")
+    commands = []
+    health_calls = 0
+
+    def fake_run(command, timeout=300):
+        nonlocal health_calls
+        commands.append(command)
+        if command[-1] == "health":
+            health_calls += 1
+            return {
+                "returncode": 0,
+                "stdout": "Health score: 8/10\nMissing embeddings: 0\nStale pages: 918\nOrphan pages: 0\n",
+                "stderr": "",
+            }
+        return {"returncode": 0, "stdout": "Embedded 50 chunks", "stderr": ""}
+
+    monkeypatch.setattr(stale, "run", fake_run)
+    monkeypatch.setattr(stale, "actual_orphan_count", lambda: 0)
+
+    report = stale.build_report(refresh_embeddings=True, reindex_code=False, output="", stale_budget=50)
+
+    assert ["gbrain-embed", "embed", "--stale", "--limit", "50"] in commands
+    assert ["gbrain-embed", "embed", "--all"] not in commands
+    assert report["refresh_budget"] == {"stale": 50, "missing": 0}
+
+
 def test_gbrain_deorphan_index_returns_explicit_link_plan(tmp_path):
     script = load_script("gbrain_deorphan_index")
     out_dir = tmp_path / "out"

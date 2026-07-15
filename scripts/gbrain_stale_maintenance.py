@@ -24,6 +24,8 @@ GBRAIN_DEORPHAN_BIN = os.environ.get(
     "GBRAIN_DEORPHAN_BIN",
     str((Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser() / "scripts" / "gbrain-bulk-deorphan-wrapper.sh")),
 )
+DEFAULT_STALE_BUDGET = max(0, int(os.environ.get("GBRAIN_STALE_REFRESH_BUDGET", "100")))
+DEFAULT_MISSING_BUDGET = max(0, int(os.environ.get("GBRAIN_MISSING_REFRESH_BUDGET", "0")))
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -197,17 +199,37 @@ def filtered_orphan_rows() -> list[dict]:
     return []
 
 
-def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> dict:
+def embed_command(mode: str, budget: int) -> list[str]:
+    command = [GBRAIN_EMBED_BIN, "embed", mode]
+    if budget > 0:
+        command.extend(["--limit", str(budget)])
+    return command
+
+
+def public_embed_command(mode: str, budget: int) -> list[str]:
+    command = ["gbrain", "embed", mode]
+    if budget > 0:
+        command.extend(["--limit", str(budget)])
+    return command
+
+
+def build_report(
+    refresh_embeddings: bool,
+    reindex_code: bool,
+    output: str,
+    stale_budget: int = DEFAULT_STALE_BUDGET,
+    missing_budget: int = DEFAULT_MISSING_BUDGET,
+) -> dict:
     before_cmd = run(["gbrain", "health"], timeout=60)
     before = parse_health(before_cmd["stdout"] + before_cmd["stderr"])
     actions = []
 
-    if refresh_embeddings and int(before.get("stale_pages") or 0) > 0:
-        action = run([GBRAIN_EMBED_BIN, "embed", "--stale"], timeout=900)
-        actions.append({"name": "embed_stale", "command": ["gbrain", "embed", "--stale"], **action})
-    if refresh_embeddings and int(before.get("missing_embeddings") or 0) > 0:
-        action = run([GBRAIN_EMBED_BIN, "embed", "--all"], timeout=1800)
-        actions.append({"name": "embed_all", "command": ["gbrain", "embed", "--all"], **action})
+    if refresh_embeddings and int(before.get("stale_pages") or 0) > 0 and stale_budget != 0:
+        action = run(embed_command("--stale", stale_budget), timeout=900)
+        actions.append({"name": "embed_stale", "command": public_embed_command("--stale", stale_budget), **action})
+    if refresh_embeddings and int(before.get("missing_embeddings") or 0) > 0 and missing_budget != 0:
+        action = run(embed_command("--all", missing_budget), timeout=1800)
+        actions.append({"name": "embed_all", "command": public_embed_command("--all", missing_budget), **action})
 
     if reindex_code:
         action = run(["gbrain", "reindex-code", "--yes"], timeout=900)
@@ -238,6 +260,7 @@ def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> d
         "classifications": classifications,
         "upstream_gap": upstream_gap(classifications),
         "action_effects": effects,
+        "refresh_budget": {"stale": stale_budget, "missing": missing_budget},
         "actions": actions,
         "auto_fix_attempted": bool(actions),
         "auto_fix_succeeded": auto_fix_succeeded,
@@ -254,10 +277,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--refresh-embeddings", action="store_true")
     parser.add_argument("--reindex-code", action="store_true")
+    parser.add_argument("--stale-budget", type=int, default=DEFAULT_STALE_BUDGET)
+    parser.add_argument("--missing-budget", type=int, default=DEFAULT_MISSING_BUDGET)
     parser.add_argument("--output", default="")
     args = parser.parse_args()
 
-    report = build_report(args.refresh_embeddings, args.reindex_code, args.output)
+    report = build_report(args.refresh_embeddings, args.reindex_code, args.output, args.stale_budget, args.missing_budget)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["status"] in {"healthy", "degraded"} else 1
 

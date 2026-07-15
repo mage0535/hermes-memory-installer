@@ -214,3 +214,95 @@ def test_langsmith_trend_local_monitor_loader_unwraps_wrapper_snapshot(tmp_path)
 
     assert report["monitor"]["recent_acceptance_ok_rate"] == 1.0
     assert report["monitor"]["latest_guardian_level"] == "ok"
+
+
+def test_langsmith_trend_separates_current_acceptance_from_historical_failures():
+    trend = load_script("langsmith_trend_report")
+    runs = [
+        FakeRun(
+            "memory-sidecar-monitor",
+            "success",
+            {
+                "acceptance": {
+                    "returncode": 0,
+                    "business_ok": True,
+                    "payload": {"ok": True, "guardian": {"level": "ok", "hindsight_sync_lag_seconds": 120}},
+                },
+                "recalls": [],
+            },
+        ),
+        FakeRun(
+            "memory-sidecar-monitor",
+            "success",
+            {
+                "acceptance": {
+                    "returncode": 1,
+                    "business_ok": False,
+                    "payload": {"ok": False, "errors": ["guardian level is critical"]},
+                },
+                "recalls": [],
+            },
+        ),
+        FakeRun(
+            "memory-sidecar-monitor",
+            "success",
+            {
+                "acceptance": {
+                    "returncode": 1,
+                    "business_ok": False,
+                    "payload": {"ok": False, "errors": ["guardian level is critical"]},
+                },
+                "recalls": [],
+            },
+        ),
+    ]
+
+    report = trend.build_trend_report(runs)
+
+    assert report["monitor"]["latest_acceptance_ok"] is True
+    assert report["monitor"]["current_acceptance_ok_rate"] == 1.0
+    assert report["monitor"]["historical_acceptance_failure_count"] == 2
+    assert report["monitor"]["current_failure_reasons"] == {}
+
+
+def test_langsmith_trend_classifies_weak_recalls_by_cause():
+    trend = load_script("langsmith_trend_report")
+    report = trend.build_trend_report(
+        [
+            FakeRun(
+                "memory-sidecar-monitor",
+                "success",
+                {
+                    "acceptance": {
+                        "returncode": 0,
+                        "payload": {
+                            "ok": True,
+                            "recalls": [
+                                {
+                                    "intent": "relationship",
+                                    "l2_count": 0,
+                                    "l3_count": 0,
+                                    "live_hindsight_used": True,
+                                    "live_hindsight_results": 0,
+                                    "timings": {"l3_s": 21.0},
+                                },
+                                {
+                                    "intent": "knowledge",
+                                    "l2_count": 0,
+                                    "l3_count": 0,
+                                    "live_hindsight_used": False,
+                                    "live_hindsight_results": 0,
+                                    "timings": {"l3_s": 0.2},
+                                },
+                            ],
+                        },
+                    },
+                    "recalls": [],
+                },
+            )
+        ]
+    )
+
+    weak = report["monitor"]["latest_weak_recalls"]
+    assert weak[0]["reason"] == "retrieval_timeout"
+    assert weak[1]["reason"] == "no_seed_data"

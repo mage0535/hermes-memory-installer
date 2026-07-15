@@ -130,6 +130,39 @@ def lag_summary(values: list[int], threshold_s: int = DEFAULT_LAG_THRESHOLD_S) -
     }
 
 
+def leading_success_rate(values: list[bool], window: int = RECENT_MONITOR_WINDOW) -> tuple[float | None, int]:
+    if not values:
+        return None, 0
+    leading = []
+    for value in values[:window]:
+        if value is not True:
+            break
+        leading.append(value)
+    if leading:
+        return 1.0, len(leading)
+    return 0.0, min(len(values), window)
+
+
+def current_failure_reasons(acceptance_ok: list[bool], failure_rows: list[dict]) -> dict[str, int]:
+    if acceptance_ok and acceptance_ok[0] is True:
+        return {}
+    reasons: dict[str, int] = {}
+    for row in failure_rows[:RECENT_MONITOR_WINDOW]:
+        for code in row.get("reasons", []):
+            reasons[code] = reasons.get(code, 0) + 1
+    return dict(sorted(reasons.items()))
+
+
+def weak_recall_reason(row: dict) -> str:
+    timings = row.get("timings") if isinstance(row.get("timings"), dict) else {}
+    l3_s = timings.get("l3_s")
+    if isinstance(l3_s, (int, float)) and float(l3_s) >= float(os.environ.get("MEMORY_WEAK_RECALL_TIMEOUT_S", "5.0")):
+        return "retrieval_timeout"
+    if row.get("live_hindsight_used") and int(row.get("live_hindsight_results") or 0) <= 0:
+        return "no_seed_data"
+    return "no_seed_data"
+
+
 def monitor_metrics(runs: list[Any]) -> dict:
     monitor_runs = [run for run in runs if getattr(run, "name", None) == "memory-sidecar-monitor"]
     acceptance_ok = []
@@ -191,13 +224,14 @@ def monitor_metrics(runs: list[Any]) -> dict:
 
     recent_acceptance = acceptance_ok[:RECENT_MONITOR_WINDOW]
     recent_execution = execution_ok[:RECENT_MONITOR_WINDOW]
+    current_rate, current_window = leading_success_rate(acceptance_ok)
     weak_recalls = []
     latest_acceptance = acceptance_payload_from_monitor(output_payload(monitor_runs[0])) if monitor_runs else {}
     for row in latest_acceptance.get("recalls", []) if isinstance(latest_acceptance.get("recalls"), list) else []:
         if not isinstance(row, dict):
             continue
         if int(row.get("l2_count") or 0) <= 0 and int(row.get("l3_count") or 0) <= 0:
-            weak_recalls.append({"intent": row.get("intent"), "reason": "no_candidates"})
+            weak_recalls.append({"intent": row.get("intent"), "reason": weak_recall_reason(row)})
 
     return {
         "count": len(monitor_runs),
@@ -205,6 +239,8 @@ def monitor_metrics(runs: list[Any]) -> dict:
         "acceptance_ok_rate": round(sum(acceptance_ok) / len(acceptance_ok), 3) if acceptance_ok else None,
         "recent_execution_ok_rate": round(sum(recent_execution) / len(recent_execution), 3) if recent_execution else None,
         "recent_acceptance_ok_rate": round(sum(recent_acceptance) / len(recent_acceptance), 3) if recent_acceptance else None,
+        "current_acceptance_ok_rate": current_rate,
+        "current_window": current_window,
         "latest_acceptance_ok": acceptance_ok[0] if acceptance_ok else None,
         "latest_execution_ok": execution_ok[0] if execution_ok else None,
         "recent_window": len(recent_acceptance),
@@ -218,6 +254,8 @@ def monitor_metrics(runs: list[Any]) -> dict:
         "latest_gbrain_missing_embeddings": latest_gbrain.get("missing_embeddings"),
         "latest_gbrain_orphans": latest_gbrain.get("orphan_pages_actual", latest_gbrain.get("orphan_pages")),
         "failure_reasons": dict(sorted(failure_reasons.items())),
+        "current_failure_reasons": current_failure_reasons(acceptance_ok, recent_failures),
+        "historical_acceptance_failure_count": sum(1 for value in acceptance_ok if value is not True),
         "recent_failures": recent_failures[:5],
         "latest_weak_recalls": weak_recalls[:10],
         "lag": lag_summary(lag_values_from_monitor_runs(monitor_runs)),
