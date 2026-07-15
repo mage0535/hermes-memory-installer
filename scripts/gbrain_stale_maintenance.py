@@ -19,6 +19,7 @@ HEALTH_PATTERNS = {
     "orphan_pages": r"Orphan pages:\s*(\d+)",
 }
 DEFAULT_GBRAIN_ENV_FILE = Path(os.environ.get("GBRAIN_ENV_FILE", str(Path.home() / ".gbrain.env"))).expanduser()
+DEFAULT_GBRAIN_CONFIG_FILE = Path(os.environ.get("GBRAIN_CONFIG_FILE", str(Path.home() / ".gbrain" / "config.json"))).expanduser()
 GBRAIN_EMBED_BIN = os.environ.get("GBRAIN_EMBED_BIN") or "gbrain-embed"
 GBRAIN_DEORPHAN_BIN = os.environ.get(
     "GBRAIN_DEORPHAN_BIN",
@@ -47,6 +48,22 @@ def gbrain_env() -> dict[str, str]:
     return env
 
 
+def gbrain_database_url() -> str | None:
+    env = gbrain_env()
+    if env.get("GBRAIN_DATABASE_URL"):
+        return env["GBRAIN_DATABASE_URL"]
+    if env.get("DATABASE_URL"):
+        return env["DATABASE_URL"]
+    if DEFAULT_GBRAIN_CONFIG_FILE.exists():
+        try:
+            payload = json.loads(DEFAULT_GBRAIN_CONFIG_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+        if payload.get("engine") == "postgres" and payload.get("database_url"):
+            return str(payload["database_url"])
+    return None
+
+
 def run(command: list[str], timeout: int = 300) -> dict:
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=gbrain_env())
@@ -55,6 +72,24 @@ def run(command: list[str], timeout: int = 300) -> dict:
     except subprocess.TimeoutExpired:
         return {"returncode": 124, "stdout": "", "stderr": "timeout"}
     return {"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+
+
+def find_missing_embedding_slugs(limit: int = 10) -> list[str]:
+    db_url = gbrain_database_url()
+    if not db_url:
+        return []
+    query = (
+        "SELECT DISTINCT p.slug "
+        "FROM content_chunks c "
+        "JOIN pages p ON p.id = c.page_id "
+        "WHERE c.embedding IS NULL "
+        "ORDER BY p.updated_at DESC "
+        f"LIMIT {max(1, int(limit))};"
+    )
+    result = run(["psql", db_url, "-At", "-c", query], timeout=120)
+    if result.get("returncode") != 0:
+        return []
+    return [line.strip() for line in (result.get("stdout") or "").splitlines() if line.strip()]
 
 
 def parse_health(text: str) -> dict:
@@ -213,6 +248,10 @@ def public_embed_command(mode: str, budget: int) -> list[str]:
     return command
 
 
+def public_slug_embed_command(slugs: list[str]) -> list[str]:
+    return ["gbrain", "embed", "--slugs", *slugs]
+
+
 def build_report(
     refresh_embeddings: bool,
     reindex_code: bool,
@@ -227,6 +266,11 @@ def build_report(
     if refresh_embeddings and int(before.get("stale_pages") or 0) > 0 and stale_budget != 0:
         action = run(embed_command("--stale", stale_budget), timeout=900)
         actions.append({"name": "embed_stale", "command": public_embed_command("--stale", stale_budget), **action})
+    if refresh_embeddings and int(before.get("missing_embeddings") or 0) > 0:
+        missing_slugs = find_missing_embedding_slugs(limit=max(1, int(before.get("missing_embeddings") or 0)))
+        if missing_slugs:
+            action = run(["gbrain", "embed", "--slugs", *missing_slugs], timeout=900)
+            actions.append({"name": "embed_missing_slugs", "command": public_slug_embed_command(missing_slugs), **action})
     if refresh_embeddings and int(before.get("missing_embeddings") or 0) > 0 and missing_budget != 0:
         action = run(embed_command("--all", missing_budget), timeout=1800)
         actions.append({"name": "embed_all", "command": public_embed_command("--all", missing_budget), **action})
