@@ -21,7 +21,8 @@
 */5 * * * * /usr/local/bin/hermes-memory prometheus-alert-sync >> /var/log/prometheus-alert-sync.log 2>&1 # prometheus-alert-sync
 */15 * * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/cron_freshness.py >> /var/log/cron-freshness.log 2>&1 # cron-freshness
 10 * * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/system_metrics_collector.py >> /var/log/system-metrics.log 2>&1 # system-metrics
-12 * * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/gbrain_stale_maintenance.py --refresh-embeddings --output /root/.hermes/metrics/gbrain-stale-latest.json >> /var/log/gbrain-stale.log 2>&1 # gbrain-stale-refresh
+12 */6 * * * AGENT_HOME=/root/.hermes flock -n /tmp/gbrain-stale-refresh.lock /usr/bin/python3 /root/.hermes/scripts/gbrain_stale_maintenance.py --refresh-embeddings --output /root/.hermes/metrics/gbrain-stale-latest.json >> /var/log/gbrain-stale.log 2>&1 # gbrain-stale-refresh
+*/5 * * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/hermes_load_shedder.py # hermes-load-shedder
 
 0 */4 * * * sqlite3 /root/.hermes/state.db "PRAGMA wal_checkpoint(TRUNCATE);" >> /var/log/wal-checkpoint.log 2>&1
 

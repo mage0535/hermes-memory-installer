@@ -132,6 +132,7 @@ SUPPORTED_SCRIPT_NAMES = [
     "profile_isolation_check.py",
     "rotate_dashboard_token.py",
     "system_metrics_collector.py",
+    "hermes_load_shedder.py",
     "snapshot_retention.py",
     "cron_freshness.py",
     "snapshot_compress.py",
