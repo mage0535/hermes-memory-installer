@@ -16,8 +16,8 @@ Recommended systemd resource boundaries:
 ```text
 hindsight.service:      CPUQuota=100%, CPUWeight=100, keep MemoryHigh=1.5G and MemoryMax=2G
 hermes-gateway.service: CPUQuota=150%, CPUWeight=250
-gbrain-embed.service:   CPUQuota=75%, CPUWeight=40, IOWeight=50, MemoryHigh=1200M, MemoryMax=1600M
-gbrain-worker.service:  CPUQuota=75%, CPUWeight=50, IOWeight=80
+gbrain-embed.service:   CPUQuota=50%, CPUWeight=30, IOWeight=30, MemoryHigh=1200M, MemoryMax=1600M
+gbrain-worker.service:  CPUQuota=50%, CPUWeight=40, IOWeight=60
 ```
 
 Do not set `hindsight.service` to `MemoryMax=800M`. Production RSS can exceed that during normal warmup or index rebuilds, and a low ceiling can create a restart loop.
