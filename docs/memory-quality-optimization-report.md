@@ -272,3 +272,17 @@ Validation:
 
 - Unit tests cover temporary browser cleanup, critical persistent-browser termination, and absence of core-service restart commands.
 - Production cron keeps only `hermes_load_shedder.py` for pressure response.
+
+## 2026-07-15 Three-Way Consistency Note
+
+At handoff time, the three environments were aligned at the content level:
+
+- local worktree and GitHub `main` / `codex/v3.5.2` point to the same public commit `e213384`;
+- the production server repository carries the same swap-storm fix content but a different local commit id because the server repository has no Git remote configured and is committed independently for drift closure;
+- production runtime drift is `healthy`, the server repository is clean, and the deployed runtime scripts match the server repository hashes.
+
+Operational state at handoff:
+
+- `runtime-drift-latest.json`: `healthy`;
+- `health-summary-latest.json`: `healthy`, with only `historical_acceptance_failures` remaining as info-level context;
+- `hindsight.service` and `hermes-gateway` stayed on their `10:45` start timestamps across the post-fix pressure window, confirming that the restart storm path was removed rather than merely delayed.
