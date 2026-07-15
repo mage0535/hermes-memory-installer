@@ -58,6 +58,7 @@ CORE_DEPLOY_SCRIPTS = [
     "profile_isolation_check.py",
     "rotate_dashboard_token.py",
     "system_metrics_collector.py",
+    "hermes_load_shedder.py",
     "snapshot_retention.py",
     "cron_freshness.py",
     "snapshot_compress.py",
@@ -589,6 +590,8 @@ def cmd_prometheus_alert_sync(args: argparse.Namespace) -> int:
     extra_args = ["--prometheus-url", args.prometheus_url, "--webhook-url", args.webhook_url, "--lang", args.lang]
     if args.status_output:
         extra_args.extend(["--status-output", args.status_output])
+    if args.include_all:
+        extra_args.append("--include-all")
     if args.dry_run:
         extra_args.append("--dry-run")
     return run_script("prometheus_alert_bridge.py", extra_args)
@@ -677,6 +680,7 @@ def main() -> int:
     prom_sync.add_argument("--webhook-url", default=os.environ.get("MEMORY_ALERT_LOCAL_WEBHOOK_URL", "http://127.0.0.1:9499/alerts"))
     prom_sync.add_argument("--lang", default=os.environ.get("MEMORY_ALERT_LANG", "zh"))
     prom_sync.add_argument("--status-output", default=str(AGENT_HOME / "metrics" / "prometheus-alert-bridge-latest.json"))
+    prom_sync.add_argument("--include-all", action="store_true", help="Forward every firing Prometheus alert instead of memory-related alerts only")
     prom_sync.add_argument("--dry-run", action="store_true")
     synthetic = sub.add_parser("synthetic-recall", help="Run public synthetic recall regression benchmark")
     synthetic.add_argument("--output", help="Write JSON result to this path")

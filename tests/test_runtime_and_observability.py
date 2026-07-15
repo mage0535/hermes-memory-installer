@@ -35,6 +35,7 @@ import gbrain_stale_maintenance
 import profile_isolation_soak
 import synthetic_recall_benchmark
 import system_metrics_collector
+import hermes_load_shedder
 import telegram_language_sync
 import prometheus_alert_bridge
 import sync_embeddings
@@ -1090,6 +1091,78 @@ def test_prometheus_alert_bridge_builds_local_webhook_payload():
     assert payload["alert_count"] == 1
     assert payload["alerts"][0]["code"] == "HermesMemoryRecallLatencyHigh"
     assert payload["alerts"][0]["detail"]["summary"] == "Recall latency high"
+
+
+def test_prometheus_alert_bridge_filters_non_memory_alerts_by_default():
+    payload = prometheus_alert_bridge.build_bridge_payload(
+        [
+            {
+                "labels": {
+                    "alertname": "HermesContentDeliveryFailures",
+                    "severity": "warning",
+                    "service": "hermes-content-platform",
+                },
+                "annotations": {"summary": "Content delivery failures remain"},
+                "state": "firing",
+                "activeAt": "2026-07-15T01:40:00Z",
+                "value": "2",
+            },
+            {
+                "labels": {"alertname": "HermesMemoryRecallLatencyHigh", "severity": "warning", "service": "hermes-memory"},
+                "annotations": {"summary": "Recall latency high"},
+                "state": "firing",
+                "activeAt": "2026-07-15T01:41:00Z",
+                "value": "21.4",
+            },
+        ],
+        lang="zh",
+    )
+
+    assert payload["status"] == "action-needed"
+    assert payload["alert_count"] == 1
+    assert payload["filtered_count"] == 1
+    assert payload["alerts"][0]["code"] == "HermesMemoryRecallLatencyHigh"
+
+
+def test_prometheus_alert_bridge_can_include_all_alerts_for_debugging():
+    payload = prometheus_alert_bridge.build_bridge_payload(
+        [
+            {
+                "labels": {
+                    "alertname": "HermesContentDeliveryFailures",
+                    "severity": "warning",
+                    "service": "hermes-content-platform",
+                },
+                "annotations": {"summary": "Content delivery failures remain"},
+                "state": "firing",
+                "activeAt": "2026-07-15T01:40:00Z",
+                "value": "2",
+            }
+        ],
+        lang="zh",
+        include_all=True,
+    )
+
+    assert payload["alert_count"] == 1
+    assert payload["filtered_count"] == 0
+    assert payload["alerts"][0]["code"] == "HermesContentDeliveryFailures"
+
+
+def test_load_shedder_targets_only_stale_temp_browser_trees():
+    processes = {
+        100: (1, 1200, "/usr/bin/node /tmp/patchright/driver/package/cli.js run-driver"),
+        101: (100, 1190, "/browser/chrome --user-data-dir=/tmp/playwright_profile"),
+        200: (1, 1200, "/usr/bin/node /usr/local/lib/playwright/driver/package/cli.js run-driver"),
+        201: (200, 1190, "/browser/chrome --user-data-dir=/root/social-auto-upload/cookies/profile/persistent_profile"),
+        300: (1, 60, "/usr/bin/node /tmp/playwright/driver/package/cli.js run-driver"),
+    }
+    children = {1: [100, 200, 300], 100: [101], 200: [201]}
+
+    killed = hermes_load_shedder.terminate_stale_temp_trees(processes, children, min_age_s=900, dry_run=True)
+    reniced = hermes_load_shedder.renice_persistent(processes, dry_run=True)
+
+    assert killed == [100, 101]
+    assert reniced == [201]
 
 
 def test_metrics_dashboard_includes_explanations_and_actions(tmp_path: Path):

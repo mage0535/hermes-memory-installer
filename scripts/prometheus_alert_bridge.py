@@ -17,6 +17,25 @@ AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", 
 DEFAULT_PROMETHEUS_URL = os.environ.get("MEMORY_PROMETHEUS_URL", "http://127.0.0.1:9090")
 DEFAULT_WEBHOOK_URL = os.environ.get("MEMORY_ALERT_LOCAL_WEBHOOK_URL", "http://127.0.0.1:9499/alerts")
 DEFAULT_STATUS = AGENT_HOME / "metrics" / "prometheus-alert-bridge-latest.json"
+MEMORY_SERVICE_ALLOWLIST = {
+    "hermes-memory",
+    "hindsight",
+    "gbrain",
+    "memory-sidecar",
+    "memory",
+}
+MEMORY_ALERT_PREFIXES = (
+    "HermesMemory",
+    "Hindsight",
+    "Gbrain",
+    "Memory",
+)
+MEMORY_ALERT_NAMES = {
+    "HermesMemoryRecallLatencyHigh",
+    "HermesMemoryAcceptanceLow",
+    "HermesMemoryQueueGrowth",
+    "HermesMemoryComponentDown",
+}
 
 
 def fetch_alerts(prometheus_url: str) -> list[dict[str, Any]]:
@@ -28,7 +47,28 @@ def fetch_alerts(prometheus_url: str) -> list[dict[str, Any]]:
     return [row for row in alerts if isinstance(row, dict) and row.get("state") == "firing"]
 
 
-def build_bridge_payload(alerts: list[dict[str, Any]], lang: str = "zh") -> dict[str, Any]:
+def is_memory_alert(row: dict[str, Any]) -> bool:
+    labels = row.get("labels") if isinstance(row.get("labels"), dict) else {}
+    alertname = str(labels.get("alertname") or "")
+    service = str(labels.get("service") or labels.get("job") or "").lower()
+    if service in MEMORY_SERVICE_ALLOWLIST:
+        return True
+    if any(token in service for token in ("memory", "hindsight", "gbrain")):
+        return True
+    if alertname in MEMORY_ALERT_NAMES:
+        return True
+    return alertname.startswith(MEMORY_ALERT_PREFIXES)
+
+
+def filter_alerts(alerts: list[dict[str, Any]], include_all: bool = False) -> tuple[list[dict[str, Any]], int]:
+    if include_all:
+        return alerts, 0
+    selected = [row for row in alerts if is_memory_alert(row)]
+    return selected, len(alerts) - len(selected)
+
+
+def build_bridge_payload(alerts: list[dict[str, Any]], lang: str = "zh", include_all: bool = False) -> dict[str, Any]:
+    alerts, filtered_count = filter_alerts(alerts, include_all=include_all)
     rows = []
     for row in alerts:
         labels = row.get("labels") if isinstance(row.get("labels"), dict) else {}
@@ -57,6 +97,7 @@ def build_bridge_payload(alerts: list[dict[str, Any]], lang: str = "zh") -> dict
         "status": "action-needed" if rows else "healthy",
         "ok": not rows,
         "alert_count": len(rows),
+        "filtered_count": filtered_count,
         "alerts": rows,
     }
 
@@ -74,11 +115,12 @@ def main() -> int:
     parser.add_argument("--webhook-url", default=DEFAULT_WEBHOOK_URL)
     parser.add_argument("--lang", default=os.environ.get("MEMORY_ALERT_LANG", "zh"))
     parser.add_argument("--status-output", default=str(DEFAULT_STATUS))
+    parser.add_argument("--include-all", action="store_true", default=os.environ.get("MEMORY_ALERT_INCLUDE_ALL_PROMETHEUS", "").lower() in {"1", "true", "yes"})
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     alerts = fetch_alerts(args.prometheus_url)
-    payload = build_bridge_payload(alerts, lang=args.lang)
+    payload = build_bridge_payload(alerts, lang=args.lang, include_all=args.include_all)
     forwarded = None
     if payload["alerts"] and not args.dry_run:
         forwarded = post_local_webhook(args.webhook_url, payload)
