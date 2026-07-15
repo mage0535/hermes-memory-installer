@@ -273,6 +273,25 @@ Validation:
 - Unit tests cover temporary browser cleanup, critical persistent-browser termination, and absence of core-service restart commands.
 - Production cron keeps only `hermes_load_shedder.py` for pressure response.
 
+## 2026-07-15 gbrain Missing-Embedding Repair
+
+Root cause:
+
+- `gbrain_stale_maintenance.py` previously treated any residual `missing_embeddings > 0` as an `embed --all` problem.
+- On this host, `embed --all` is not an operator-safe recovery path: even with a low limit it still scans the full corpus and can be terminated under pressure.
+- The actionable defect was only a single null `content_chunks.embedding` row for the generated page `hub-orphans-sessions`, plus temporary real orphans that were cleared by the deorphan wrapper.
+
+Permanent fix:
+
+- `gbrain_stale_maintenance.py` now discovers missing-embedding slugs from the configured gbrain Postgres database and runs targeted `gbrain embed --slugs ...` before considering any full-corpus repair path.
+- The targeted repair path reuses the existing gbrain environment file, so it can talk to the local embedding server without requiring a separate manual shell setup.
+- After targeted embed and deorphan, the remaining stale/orphan panel counters are downgraded to info-only upstream-gap debt when no actionable missing embeddings or real orphans remain.
+
+Validation:
+
+- Production repair cleared the last real missing embedding (`hub-orphans-sessions`) and reduced real orphan count to zero.
+- Fresh `gbrain-stale-latest.json` now reports `status=healthy`, `auto_fix_succeeded=true`, and only info-level `stale_health_counter_not_embedding_stale` / `reported_orphans_counter_discrepancy`.
+
 ## 2026-07-15 Three-Way Consistency Note
 
 At handoff time, the three environments were aligned at the content level:
