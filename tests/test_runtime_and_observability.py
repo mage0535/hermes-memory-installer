@@ -1189,6 +1189,62 @@ def test_load_shedder_targets_only_stale_temp_browser_trees():
     assert reniced == [201]
 
 
+def test_load_shedder_terminates_stale_persistent_browsers_only_under_critical_pressure():
+    processes = {
+        100: (1, 1200, "/usr/bin/node /tmp/playwright/driver/package/cli.js run-driver"),
+        101: (100, 1190, "/browser/chrome --user-data-dir=/root/social-auto-upload/cookies/profile/persistent_profile"),
+        200: (1, 1200, "/root/.hermes/hermes-agent/.venv/bin/python -m hermes_cli.main gateway run"),
+        300: (1, 1200, "/root/.hermes/hermes-agent/.venv/bin/python3 /root/.hermes/scripts/hindsight-service.py"),
+        400: (1, 60, "/usr/bin/node /tmp/playwright/driver/package/cli.js run-driver"),
+        401: (400, 55, "/browser/chrome --user-data-dir=/root/social-auto-upload/cookies/profile/persistent_profile"),
+    }
+    children = {1: [100, 200, 300, 400], 100: [101], 400: [401]}
+
+    normal = hermes_load_shedder.terminate_stale_persistent_trees(
+        processes,
+        children,
+        min_age_s=900,
+        critical=False,
+        dry_run=True,
+    )
+    critical = hermes_load_shedder.terminate_stale_persistent_trees(
+        processes,
+        children,
+        min_age_s=900,
+        critical=True,
+        dry_run=True,
+    )
+
+    assert normal == []
+    assert critical == [100, 101]
+
+
+def test_load_shedder_terminates_publish_runners_under_critical_pressure():
+    processes = {
+        100: (
+            1,
+            5,
+            "python3 /agent/scripts/baijiahao_article_scheduled_runner.py /tmp/manifest.json /tmp/evidence",
+        ),
+        200: (1, 5, "/root/.hermes/hermes-agent/.venv/bin/python -m hermes_cli.main gateway run"),
+        300: (1, 5, "/root/.hermes/hermes-agent/.venv/bin/python3 /root/.hermes/scripts/hindsight-service.py"),
+    }
+
+    normal = hermes_load_shedder.terminate_publish_runners(processes, min_age_s=0, critical=False, dry_run=True)
+    critical = hermes_load_shedder.terminate_publish_runners(processes, min_age_s=0, critical=True, dry_run=True)
+
+    assert normal == []
+    assert critical == [100]
+
+
+def test_load_shedder_does_not_restart_core_services():
+    source = (REPO / "scripts" / "hermes_load_shedder.py").read_text(encoding="utf-8")
+
+    assert "systemctl restart" not in source
+    assert "hindsight.service" not in source
+    assert "hermes-gateway.service" not in source
+
+
 def test_metrics_dashboard_includes_explanations_and_actions(tmp_path: Path):
     metrics = tmp_path / "metrics"
     metrics.mkdir()

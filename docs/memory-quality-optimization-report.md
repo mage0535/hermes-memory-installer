@@ -252,3 +252,23 @@ Validation:
 - local full test suite: `242 passed, 2 skipped`;
 - repository privacy audit: `audit-repo ok=true`.
 - production timing probe found the remaining cold L3 latency was a first-query governance rebuild in the hub layer; after moving rebuild to cron, foreground `get_l3("agent memory architecture")` no longer pays that rebuild cost.
+
+## 2026-07-15 Swap Restart Storm Fix
+
+Root cause:
+
+- The legacy `$AGENT_HOME/scripts/swap-pressure-responder.sh` restarted `hindsight` and `hermes-gateway` whenever swap exceeded 75%.
+- Swap is a lagging pressure signal. Once swap reached 99-100%, the responder restarted core services every 15 minutes even when the services were otherwise healthy.
+- Each Hindsight restart loaded and indexed the long-term memory bank again, which recreated CPU and memory pressure and kept the host in a restart loop.
+
+Permanent fix:
+
+- Removed the legacy swap responder from production cron.
+- Extended `hermes_load_shedder.py` so normal pressure only deprioritizes browser publishing and clears stale temporary browser trees.
+- Added critical-pressure handling: stale persistent browser publishing trees and their publishing parent runners are terminated before any memory core service is touched. Production sets the persistent-browser age gate to 180 seconds under critical pressure.
+- The load shedder intentionally contains no `systemctl restart` path for `hindsight` or `hermes-gateway`; core restarts must be health-check driven, not swap-percentage driven.
+
+Validation:
+
+- Unit tests cover temporary browser cleanup, critical persistent-browser termination, and absence of core-service restart commands.
+- Production cron keeps only `hermes_load_shedder.py` for pressure response.

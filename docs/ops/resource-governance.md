@@ -40,6 +40,10 @@ Foreground recall should stay read-only. `memory_governance.db` freshness is han
 
 `hermes_load_shedder.py` runs every 5 minutes on production. It only terminates stale temporary browser driver trees under real pressure. Persistent browser profiles are deprioritized with `renice`/`ionice`, not killed.
 
+Under critical pressure (`load1 >= 32` or `swap >= 95%` by default), persistent browser publishing trees older than the configured age gate are also terminated. Production uses `HERMES_LOAD_SHEDDER_PERSISTENT_MIN_AGE_S=180` so browser publishing yields quickly when the memory host is already critical. Publishing parent runners such as scheduled browser upload jobs are also terminated under critical pressure so they cannot immediately respawn a new browser tree. This is intentional: browser publishing is non-core and must not starve `hindsight.service` or `hermes-gateway.service`.
+
+Do not re-enable the legacy `swap-pressure-responder.sh` pattern that restarts `hindsight` or `hermes-gateway` based only on swap usage. Swap is a lagging signal; using it as a direct restart trigger caused repeated Hindsight re-indexing and gateway restart storms on 2026-07-15.
+
 ## Prometheus Alert Scope
 
 `prometheus_alert_bridge.py` forwards memory-related alerts by default. Alerts from unrelated services, such as content delivery platforms, are filtered out of the memory webhook pipeline. Use `--include-all` only for debugging shared Prometheus state.
