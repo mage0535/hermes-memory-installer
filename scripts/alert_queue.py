@@ -123,7 +123,8 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
     if lag.get("status") == "action-needed":
         alerts.append(alert("langsmith-trend", "hindsight_lag", "action-needed", lag))
     recent_rate = trend.get("monitor", {}).get("recent_acceptance_ok_rate")
-    if recent_rate not in (None, 1.0):
+    latest_acceptance_ok = trend.get("monitor", {}).get("latest_acceptance_ok")
+    if recent_rate not in (None, 1.0) and latest_acceptance_ok is not True:
         alerts.append(
             alert(
                 "langsmith-trend",

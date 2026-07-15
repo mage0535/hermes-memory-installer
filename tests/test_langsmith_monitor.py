@@ -1,5 +1,6 @@
 from pathlib import Path
 import importlib.util
+import json
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -30,6 +31,17 @@ def test_langsmith_monitor_exists_and_targets_acceptance_and_recall():
     assert "tiered_context_injector.py" in content
     assert "LANGSMITH_PROJECT" in content
     assert "traceable" in content
+
+
+def test_langsmith_monitor_defaults_to_full_acceptance_and_production_guardian_limit(monkeypatch):
+    monkeypatch.delenv("MEMORY_MONITOR_ACCEPTANCE_MODE", raising=False)
+    monkeypatch.delenv("MEMORY_GUARDIAN_NODE_LIMIT", raising=False)
+    monitor = load_script("langsmith_monitor")
+
+    env = monitor.child_env()
+
+    assert monitor.MONITOR_ACCEPTANCE_MODE == "full"
+    assert env["MEMORY_GUARDIAN_NODE_LIMIT"] == "30000"
 
 
 def test_langsmith_task_wrapper_exists_and_uses_traceable():
@@ -166,6 +178,7 @@ def test_langsmith_trend_report_extracts_structured_metrics_only():
     assert report["monitor"]["count"] == 3
     assert report["monitor"]["acceptance_ok_rate"] == 0.667
     assert report["monitor"]["recent_acceptance_ok_rate"] == 0.667
+    assert report["monitor"]["latest_acceptance_ok"] is True
     assert report["monitor"]["latest_gbrain_health_score"] == 8
     assert report["monitor"]["latest_guardian_usage_pct"] == 63
     assert report["monitor"]["failure_reasons"] == {"recall_coverage": 1}
@@ -175,3 +188,29 @@ def test_langsmith_trend_report_extracts_structured_metrics_only():
     assert report["tasks"]["session_to_gbrain"]["count"] == 1
     assert "private title" not in rendered
     assert "private text" not in rendered
+
+
+def test_langsmith_trend_local_monitor_loader_unwraps_wrapper_snapshot(tmp_path):
+    trend = load_script("langsmith_trend_report")
+    path = tmp_path / "monitor.json"
+    path.write_text(
+        json.dumps(
+            {
+                "snapshot": {
+                    "acceptance": {
+                        "returncode": 0,
+                        "payload": {"ok": True, "guardian": {"level": "ok", "usage_pct": 72}},
+                    },
+                    "recalls": [],
+                },
+                "langsmith": {"published": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    run = trend.load_local_monitor_run(str(path))
+    report = trend.build_trend_report([run])
+
+    assert report["monitor"]["recent_acceptance_ok_rate"] == 1.0
+    assert report["monitor"]["latest_guardian_level"] == "ok"

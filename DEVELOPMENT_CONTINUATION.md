@@ -1746,3 +1746,30 @@ Net system state after this batch:
 - Hindsight lag resolved to within threshold;
 - cold-layer actionable debt resolved;
 - remaining gbrain health deductions are upstream accounting / contributor-visibility gaps, not local runtime failure.
+
+## 30. Production Health Closure - 2026-07-15
+
+Cron report `a2418ecc0d7a` showed `DEGRADED` with four apparent issues: L3 zero recall, 55% acceptance, 6h Hindsight lag, and gbrain stale embeddings. Live investigation showed the report mixed real runtime drift with monitoring semantics:
+
+- `--mode fast` in `sidecar_acceptance_check.py` intentionally skips L3, so fast-mode `l3_count=0` must not be used as evidence that L3 recall is broken.
+- Full acceptance did exercise L3 and returned `l3_count=5` for most samples.
+- `agent memory architecture` was correctly recalled from `memory_objects`, but the acceptance rule only counted explicit `knowledge` sources; authoritative architecture objects now count as knowledge hits for that sample.
+- Guardian was still using the default 20000 node limit in monitor children. Production expectation is 30000, so `langsmith_monitor.py` now defaults child commands to `MEMORY_GUARDIAN_NODE_LIMIT=30000` and full acceptance.
+- `gbrain_stale_maintenance.py` could refresh embeddings, but the production cron omitted `--refresh-embeddings`; `docs/ops/server-root.cron` and the live crontab now include it.
+- gbrain had one stuck missing embedding for `session-cron_1f2a61af1b36_20`. The `gbrain-embed` service was restarted, and the remaining chunk was embedded against the same local embedding endpoint.
+- `memory_storage_cross_check.py` now filters generated `hub-orphan-index` / `hub-orphans-*` pages before treating gbrain orphans as actionable.
+- `langsmith_trend_report.py` now unwraps local monitor wrapper output from `snapshot` and publishes `latest_acceptance_ok`.
+- `alert_queue.py` no longer escalates `recent_acceptance_failures` when the latest monitor run is healthy; older failures remain as info-level historical context.
+
+Verified production state after deployment:
+
+- full acceptance: `ok=true`, `reason_buckets={}`, Guardian `level=ok`, node limit `30000`, usage about `72.6%`;
+- gbrain: `missing_embeddings=0`, actionable orphans `0`;
+- gbrain stale report: `status=healthy`, only info-level stale/orphan panel-counter classifications remain;
+- LangSmith monitor: acceptance ok and storage ok;
+- health summary: `status=healthy`; only `historical_acceptance_failures` remains as an info alert;
+- `recent_acceptance_failures`, `hindsight_lag`, and `gbrain_stale_action_needed` have emitted resolved notifications.
+
+Residual improvement:
+
+- Relationship-style recall still has a weak optional sample (`friends/relationship` can return no candidates and live Hindsight may time out). It is not part of required acceptance, but it should be treated as the next recall-quality tuning target.

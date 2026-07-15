@@ -155,8 +155,18 @@ def test_memory_guardian_overflow_grace_avoids_false_critical(monkeypatch):
 
 def test_gbrain_stale_report_marks_auto_fix_attempt(monkeypatch):
     stale = load_script("gbrain_stale_maintenance")
+    health_calls = 0
+
     def fake_run(command, timeout=300):
+        nonlocal health_calls
         if command[-1] == "health":
+            health_calls += 1
+            if health_calls > 1:
+                return {
+                    "returncode": 0,
+                    "stdout": "Health score: 10/10\nMissing embeddings: 0\nStale pages: 0\nOrphan pages: 0\n",
+                    "stderr": "",
+                }
             return {
                 "returncode": 0,
                 "stdout": "Health score: 6/10\nMissing embeddings: 147\nStale pages: 296\nOrphan pages: 31\n",

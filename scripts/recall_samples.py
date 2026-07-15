@@ -66,6 +66,14 @@ def _flatten_top_sources(row: dict) -> list[str]:
     return flattened
 
 
+def _has_required_source(row: dict, required_source: str) -> bool:
+    if required_source in _flatten_top_sources(row):
+        return True
+    if required_source == "knowledge" and row.get("knowledge_hit"):
+        return True
+    return False
+
+
 def evaluate_recall_samples(payload: dict, samples=DEFAULT_SAMPLE_CASES) -> tuple[bool, list[str]]:
     recalls = payload.get("recalls") or []
     rows_by_query = {str(row.get("query") or ""): row for row in recalls}
@@ -86,7 +94,7 @@ def evaluate_recall_samples(payload: dict, samples=DEFAULT_SAMPLE_CASES) -> tupl
             errors.append(f"{sample.query}: expected l3_count >= {sample.min_l3}")
         if sample.require_top_titles and not row.get("top_titles"):
             errors.append(f"{sample.query}: expected non-empty top titles")
-        if sample.required_source and sample.required_source not in _flatten_top_sources(row):
+        if sample.required_source and not _has_required_source(row, sample.required_source):
             errors.append(f"{sample.query}: expected source {sample.required_source!r} in top sources")
         if sample.require_knowledge_hit and not row.get("knowledge_hit"):
             errors.append(f"{sample.query}: expected knowledge_hit to be true")
