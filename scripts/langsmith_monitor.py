@@ -22,7 +22,8 @@ DEFAULT_QUERIES = (
 )
 CHILD_PYTHON = os.environ.get("MONITOR_CHILD_PYTHON", sys.executable)
 INCLUDE_QUERY_TEXT = os.environ.get("LANGSMITH_INCLUDE_QUERY_TEXT", "").lower() in {"1", "true", "yes"}
-MONITOR_ACCEPTANCE_MODE = os.environ.get("MEMORY_MONITOR_ACCEPTANCE_MODE", "fast")
+MONITOR_ACCEPTANCE_MODE = os.environ.get("MEMORY_MONITOR_ACCEPTANCE_MODE", "full")
+MONITOR_GUARDIAN_NODE_LIMIT = os.environ.get("MEMORY_GUARDIAN_NODE_LIMIT", "30000")
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 
 
@@ -39,6 +40,7 @@ def query_identity(query: str) -> dict:
 def child_env() -> dict[str, str]:
     env = os.environ.copy()
     env.setdefault("AGENT_HOME", str(AGENT_HOME))
+    env.setdefault("MEMORY_GUARDIAN_NODE_LIMIT", MONITOR_GUARDIAN_NODE_LIMIT)
     return env
 
 

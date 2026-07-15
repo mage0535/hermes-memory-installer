@@ -205,6 +205,8 @@ def monitor_metrics(runs: list[Any]) -> dict:
         "acceptance_ok_rate": round(sum(acceptance_ok) / len(acceptance_ok), 3) if acceptance_ok else None,
         "recent_execution_ok_rate": round(sum(recent_execution) / len(recent_execution), 3) if recent_execution else None,
         "recent_acceptance_ok_rate": round(sum(recent_acceptance) / len(recent_acceptance), 3) if recent_acceptance else None,
+        "latest_acceptance_ok": acceptance_ok[0] if acceptance_ok else None,
+        "latest_execution_ok": execution_ok[0] if execution_ok else None,
         "recent_window": len(recent_acceptance),
         "acceptance_latency": summarize_values(acceptance_elapsed),
         "recall_latency": summarize_values(recall_elapsed),
@@ -300,6 +302,8 @@ def load_local_monitor_run(path: str) -> LocalRun | None:
         payload = json.loads(monitor_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+    if isinstance(payload.get("snapshot"), dict):
+        payload = payload["snapshot"]
     return LocalRun("memory-sidecar-monitor", payload)
 
 

@@ -28,6 +28,7 @@ import alert_webhook_receiver
 import cron_freshness
 import metrics_dashboard
 import metrics_dashboard_server
+import memory_storage_cross_check
 import openmetrics_exporter
 import slo_rollup
 import gbrain_stale_maintenance
@@ -248,6 +249,70 @@ def test_acceptance_check_fails_when_required_knowledge_query_misses():
     assert any("agent memory architecture" in error for error in errors)
 
 
+def test_acceptance_check_treats_authoritative_architecture_object_as_knowledge_hit():
+    sample_by_intent = {
+        case.expected_intent: case.query
+        for case in recall_samples.DEFAULT_SAMPLE_CASES
+        if case.required_for_acceptance
+    }
+    payload = {
+        "guardian": {"level": "ok"},
+        "recalls": [
+            {
+                "query": "agent memory architecture",
+                "intent": "knowledge",
+                "l2_count": 2,
+                "l3_count": 2,
+                "live_hindsight_used": False,
+                "live_hindsight_results": 0,
+                "knowledge_hit": True,
+                "knowledge_top_title": "Hermes Agent memory architecture",
+                "top_titles": [
+                    "Hermes Agent's persistent memory system is a four-layer memory architecture"
+                ],
+                "top_sources": [["object"]],
+            },
+            {
+                "query": sample_by_intent["system"],
+                "intent": "system",
+                "l2_count": 1,
+                "l3_count": 1,
+                "top_titles": ["Provider Config"],
+                "top_sources": [["object"]],
+            },
+            {
+                "query": sample_by_intent["project"],
+                "intent": "project",
+                "l2_count": 1,
+                "l3_count": 1,
+                "top_titles": ["Deployment Playbook"],
+                "top_sources": [["hub"]],
+            },
+            {
+                "query": sample_by_intent["recent"],
+                "intent": "recent",
+                "l2_count": 1,
+                "l3_count": 1,
+                "top_titles": ["Recent session summary"],
+                "top_sources": [["governance"]],
+            },
+            {
+                "query": sample_by_intent["general"],
+                "intent": "general",
+                "l2_count": 1,
+                "l3_count": 0,
+                "top_titles": ["Breakfast preferences"],
+                "top_sources": [["hub"]],
+            },
+        ],
+    }
+
+    ok, errors = acceptance_check.evaluate_payload(payload)
+
+    assert ok is True
+    assert errors == []
+
+
 def test_acceptance_check_allows_historical_failed_consolidation_when_guardian_is_ok():
     payload = {
         "guardian": {
@@ -446,6 +511,35 @@ def test_alert_queue_treats_historical_failures_as_info(tmp_path: Path):
             "detail": {"acceptance_ok_rate": 0.5, "failure_reasons": {"guardian": 1}, "recent_failures": []},
         }
     ]
+
+
+def test_alert_queue_does_not_escalate_recent_window_when_latest_acceptance_is_ok(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps(
+            {
+                "monitor": {
+                    "latest_acceptance_ok": True,
+                    "acceptance_ok_rate": 0.6,
+                    "recent_acceptance_ok_rate": 0.6,
+                    "failure_reasons": {"acceptance_not_ok": 2},
+                    "recent_failures": [{"reasons": ["acceptance_not_ok"]}],
+                    "lag": {"status": "healthy"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "hindsight-security-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+
+    status, alerts = alert_queue.build_alerts(metrics)
+
+    assert status == "healthy"
+    assert [row["code"] for row in alerts] == ["historical_acceptance_failures"]
+
 
 def test_alert_queue_resolves_language_from_locale(monkeypatch):
     monkeypatch.setenv("LANG", "en_US.UTF-8")
@@ -1091,6 +1185,71 @@ def test_gbrain_stale_maintenance_loads_env_file(monkeypatch, tmp_path: Path):
 
     assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:8766/v1"
     assert env["OPENAI_API_KEY"] == "sk-local-dummy"
+
+
+def test_gbrain_stale_report_does_not_mark_success_when_actionable_debt_remains(monkeypatch):
+    calls = []
+
+    def fake_run(command, timeout=300):
+        calls.append(command)
+        if command[-1] == "health":
+            return {
+                "returncode": 0,
+                "stdout": "Health score: 6/10\nMissing embeddings: 149\nStale pages: 918\nOrphan pages: 0\n",
+                "stderr": "",
+            }
+        return {"returncode": 0, "stdout": "No chunks found", "stderr": ""}
+
+    monkeypatch.setattr(gbrain_stale_maintenance, "run", fake_run)
+    monkeypatch.setattr(gbrain_stale_maintenance, "actual_orphan_count", lambda: 0)
+
+    report = gbrain_stale_maintenance.build_report(refresh_embeddings=True, reindex_code=False, output="")
+
+    assert ["gbrain-embed", "embed", "--all"] in calls
+    assert report["auto_fix_attempted"] is True
+    assert report["auto_fix_succeeded"] is False
+    assert report["auto_fix_failed"] is True
+
+
+def test_server_cron_enables_gbrain_embedding_refresh():
+    content = (REPO / "docs" / "ops" / "server-root.cron").read_text(encoding="utf-8")
+    line = next(row for row in content.splitlines() if "gbrain-stale-refresh" in row)
+
+    assert "--refresh-embeddings" in line
+
+
+def test_storage_cross_check_filters_generated_gbrain_orphan_indexes(monkeypatch):
+    def fake_run(command, capture_output=True, text=True, timeout=30):
+        if command == ["gbrain", "health"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                "Health score: 8/10\nMissing embeddings: 0\nStale pages: 918\nOrphan pages: 1\n",
+                "",
+            )
+        if command == ["gbrain", "orphans", "--json"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                json.dumps({"orphans": [{"slug": "hub-orphans-sessions"}]}),
+                "",
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    payload = memory_storage_cross_check.gbrain_health()
+    warnings = memory_storage_cross_check.evaluate(
+        {
+            "state_db": {"exists": True},
+            "governance_db": {"exists": True},
+            "hindsight": {"ok": True, "failed_consolidation": 0},
+            "gbrain": payload,
+        }
+    )
+
+    assert payload["orphan_pages_actual"] == 0
+    assert "gbrain_orphans" not in warnings
 
 
 def test_cron_freshness_reports_stale_jobs(tmp_path: Path, monkeypatch):

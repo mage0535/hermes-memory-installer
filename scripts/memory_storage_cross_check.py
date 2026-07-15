@@ -93,10 +93,19 @@ def gbrain_health() -> dict:
         if match:
             out[key] = int(match.group(1))
     try:
-        orphan_proc = subprocess.run(["gbrain", "orphans", "--count"], capture_output=True, text=True, timeout=30)
-        match = re.search(r"(\d+)", orphan_proc.stdout + orphan_proc.stderr)
-        if match:
-            out["orphan_pages_actual"] = int(match.group(1))
+        orphan_proc = subprocess.run(["gbrain", "orphans", "--json"], capture_output=True, text=True, timeout=30)
+        payload = json.loads(orphan_proc.stdout or "{}")
+        rows = payload.get("orphans") if isinstance(payload.get("orphans"), list) else []
+        out["orphan_pages_actual"] = len(
+            [
+                row
+                for row in rows
+                if isinstance(row, dict)
+                and (slug := str(row.get("slug") or ""))
+                and slug != "hub-orphan-index"
+                and not slug.startswith("hub-orphans-")
+            ]
+        )
     except Exception as exc:
         out["orphan_count_error"] = str(exc)
     return out

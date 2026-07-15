@@ -202,3 +202,33 @@ python3 bin/hermes-memory audit-repo --format json
 python3 -m memory_eval.runner --mode full --registry default --backend synthetic --output build/memory-benchmark-default.json
 python3 -m memory_ops.report --agent-home "$AGENT_HOME"
 ```
+
+## 2026-07-15 Production Evaluation Follow-up
+
+The 2026-07-15 scheduled evaluation reported `DEGRADED`, but live root-cause analysis split the symptoms into two categories.
+
+True runtime issues:
+
+- production monitor children were not inheriting the intended `MEMORY_GUARDIAN_NODE_LIMIT=30000`, so Guardian was incorrectly reported as critical at the old 20000 budget;
+- the hourly gbrain stale cron did not pass `--refresh-embeddings`, so missing embeddings were reported without the advertised auto-fix actually running;
+- one stale cron-session chunk was left without a text embedding and required an embedding-service restart plus targeted repair.
+
+Monitoring and scoring issues:
+
+- fast acceptance intentionally skips L3, so `l3_count=0` in fast mode is not an L3 failure;
+- the architecture knowledge sample was retrieved from authoritative `object` memory rather than the `knowledge` source, so acceptance now counts that specific object match as a valid knowledge hit;
+- local LangSmith monitor output is wrapped under `snapshot`, and trend reporting now unwraps it before computing latest health;
+- alerting now distinguishes current latest acceptance from historical failed monitor runs, preventing old failures from keeping `recent_acceptance_failures` active after the latest run is healthy;
+- storage cross-check filters generated orphan-index pages before flagging gbrain orphan debt.
+
+Post-fix production result:
+
+- full acceptance is green (`ok=true`, no reason buckets);
+- Guardian is green at the 30000 node budget, around 72.6% usage;
+- Hindsight lag is below threshold;
+- gbrain has 0 missing embeddings and 0 actionable orphans;
+- health summary is `healthy`; only historical acceptance failures remain as info-level context.
+
+Next recommended optimization:
+
+- tune relationship/people recall separately. The optional relationship sample can still return no candidates and sometimes waits on live Hindsight until timeout. This is a recall-quality improvement, not a production health blocker.

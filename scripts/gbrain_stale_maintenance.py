@@ -226,6 +226,8 @@ def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> d
     status = "healthy" if not actionable else "degraded"
     if any(item["severity"] == "action-needed" for item in classifications):
         status = "action-needed"
+    actions_ok = bool(actions) and all((action.get("returncode") or 0) == 0 for action in actions)
+    auto_fix_succeeded = actions_ok and not actionable
 
     report = {
         "captured_at": datetime.now(timezone.utc).isoformat(),
@@ -238,8 +240,8 @@ def build_report(refresh_embeddings: bool, reindex_code: bool, output: str) -> d
         "action_effects": effects,
         "actions": actions,
         "auto_fix_attempted": bool(actions),
-        "auto_fix_succeeded": bool(actions) and all((action.get("returncode") or 0) == 0 for action in actions),
-        "auto_fix_failed": any((action.get("returncode") or 0) != 0 for action in actions),
+        "auto_fix_succeeded": auto_fix_succeeded,
+        "auto_fix_failed": bool(actions) and not auto_fix_succeeded,
     }
     if output:
         path = Path(output).expanduser()
