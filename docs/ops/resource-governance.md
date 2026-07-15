@@ -24,10 +24,16 @@ Do not set `hindsight.service` to `MemoryMax=800M`. Production RSS can exceed th
 
 ## Scheduled Work
 
-`gbrain_stale_maintenance.py --refresh-embeddings` is intentionally scheduled every 6 hours with `flock`. Hourly embedding refreshes are too expensive once missing embeddings are healthy.
+`gbrain_stale_maintenance.py --refresh-embeddings` is intentionally scheduled every 6 hours with `flock` and a stale-page budget. Hourly or unbounded embedding refreshes are too expensive once missing embeddings are healthy.
 
 ```cron
-12 */6 * * * AGENT_HOME=/path/to/agent/home flock -n /tmp/gbrain-stale-refresh.lock /usr/bin/python3 /path/to/agent/home/scripts/gbrain_stale_maintenance.py --refresh-embeddings --output /path/to/agent/home/metrics/gbrain-stale-latest.json >> /var/log/gbrain-stale.log 2>&1 # gbrain-stale-refresh
+12 */6 * * * AGENT_HOME=/path/to/agent/home flock -n /tmp/gbrain-stale-refresh.lock /usr/bin/python3 /path/to/agent/home/scripts/gbrain_stale_maintenance.py --refresh-embeddings --stale-budget 100 --missing-budget 0 --output /path/to/agent/home/metrics/gbrain-stale-latest.json >> /var/log/gbrain-stale.log 2>&1 # gbrain-stale-refresh
+```
+
+Foreground recall should stay read-only. `memory_governance.db` freshness is handled by a separate `flock`-guarded cron so user queries do not pay the rebuild cost.
+
+```cron
+*/15 * * * * AGENT_HOME=/path/to/agent/home flock -n /tmp/memory-governance-rebuild.lock /usr/bin/python3 /path/to/agent/home/scripts/memory_governance_rebuild.py --quiet >> /var/log/memory-governance-rebuild.log 2>&1 # memory-governance-rebuild
 ```
 
 ## Load Shedding

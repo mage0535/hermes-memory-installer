@@ -69,6 +69,12 @@ RRF_K = 60
 METRICS_STORE_RAW_QUERY = os.environ.get("MEMORY_METRICS_STORE_RAW_QUERY", "").lower() in {"1", "true", "yes"}
 METRICS_MAX_ROWS = max(100, int(os.environ.get("MEMORY_METRICS_MAX_ROWS", "5000")))
 QUERY_CACHE_MAX_ENTRIES = max(1, int(os.environ.get("MEMORY_QUERY_CACHE_MAX_ENTRIES", "256")))
+LIVE_HINDSIGHT_TIMEOUT_S = max(0.5, float(os.environ.get("MEMORY_LIVE_HINDSIGHT_TIMEOUT_S", "3.0")))
+RECALL_INLINE_GOVERNANCE_REBUILD = os.environ.get("MEMORY_RECALL_INLINE_GOVERNANCE_REBUILD", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
 _ORIGINAL_ENSURE_GOVERNANCE_DB = governance_rebuild.ensure_governance_db
 _GOVERNANCE_READY = False
 _GOVERNANCE_CACHE_TOKEN: tuple[bool, int, int] | None = None
@@ -441,9 +447,11 @@ def ensure_governance_ready() -> None:
     if not governance_rebuild.STATE_DB.exists() and not governance_rebuild.GOVERNANCE_DB.exists():
         return
     governance_rebuild.ensure_governance_db = _ORIGINAL_ENSURE_GOVERNANCE_DB
-    _ORIGINAL_ENSURE_GOVERNANCE_DB(force=False, max_age_seconds=governance_rebuild.DEFAULT_MAX_AGE_SECONDS)
+    if RECALL_INLINE_GOVERNANCE_REBUILD:
+        _ORIGINAL_ENSURE_GOVERNANCE_DB(force=False, max_age_seconds=governance_rebuild.DEFAULT_MAX_AGE_SECONDS)
     governance_rebuild.ensure_governance_db = lambda force=False, max_age_seconds=governance_rebuild.DEFAULT_MAX_AGE_SECONDS: {
         "cached": True,
+        "inline_rebuild": False,
         "force": force,
         "max_age_seconds": max_age_seconds,
     }
@@ -1373,7 +1381,7 @@ def get_l3(query: str, top: int = TOP_K_L3):
                 method="POST",
                 headers=hindsight_headers(content_type=True),
             )
-            with urllib.request.urlopen(request, timeout=20) as response:
+            with urllib.request.urlopen(request, timeout=LIVE_HINDSIGHT_TIMEOUT_S) as response:
                 payload = json.loads(response.read().decode("utf-8"))
             for item in payload.get("results", []):
                 text = item.get("text") or ""

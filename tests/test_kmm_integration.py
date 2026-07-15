@@ -169,6 +169,31 @@ def test_get_l3_returns_empty_when_no_state_or_governance(monkeypatch, tmp_path:
     assert live_count == 0
 
 
+def test_get_l3_uses_configurable_live_hindsight_timeout(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    gov_db.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setattr(injector, "STATE_DB", tmp_path / "missing-state.db")
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "cached_governance_query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(injector, "should_use_live_hindsight", lambda query, candidates, top: True)
+    monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_TIMEOUT_S", 2.0, raising=False)
+    observed = {}
+
+    def fake_urlopen(request, timeout=0):
+        observed["timeout"] = timeout
+        raise TimeoutError("slow hindsight")
+
+    monkeypatch.setattr(injector.urllib.request, "urlopen", fake_urlopen)
+
+    rows, live_used, live_count = injector.get_l3("朋友关系", top=5)
+
+    assert rows == []
+    assert live_used is True
+    assert live_count == 0
+    assert observed["timeout"] == 2.0
+
+
 def test_cached_governance_query_invalidates_when_governance_db_changes(monkeypatch, tmp_path: Path):
     gov_db = tmp_path / "memory_governance.db"
     gov_db.write_text("v1", encoding="utf-8")
@@ -194,6 +219,51 @@ def test_cached_governance_query_invalidates_when_governance_db_changes(monkeypa
     second = injector.cached_governance_query("knowledge", "agent memory architecture", 3, fetcher)
     assert second[0]["title"] == "result-2"
     assert fetch_count["value"] == 2
+
+
+def test_cached_governance_query_does_not_rebuild_inline_by_default(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    gov_db.write_text("v1", encoding="utf-8")
+    monkeypatch.setattr(injector.governance_rebuild, "STATE_DB", tmp_path / "state.db")
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "_GOVERNANCE_READY", False)
+    monkeypatch.setattr(injector, "_QUERY_CACHE", {})
+    monkeypatch.setattr(injector, "RECALL_INLINE_GOVERNANCE_REBUILD", False, raising=False)
+
+    def fail_rebuild(force=False, max_age_seconds=0):
+        raise AssertionError("recall should not rebuild governance inline")
+
+    monkeypatch.setattr(injector, "_ORIGINAL_ENSURE_GOVERNANCE_DB", fail_rebuild)
+
+    rows = injector.cached_governance_query(
+        "knowledge",
+        "agent memory architecture",
+        3,
+        lambda query, top=0: [{"layer": "knowledge", "title": query, "snippet": str(top)}],
+    )
+
+    assert rows[0]["title"] == "agent memory architecture"
+
+
+def test_cached_governance_query_can_rebuild_inline_when_enabled(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    gov_db.write_text("v1", encoding="utf-8")
+    monkeypatch.setattr(injector.governance_rebuild, "STATE_DB", tmp_path / "state.db")
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "_GOVERNANCE_READY", False)
+    monkeypatch.setattr(injector, "_QUERY_CACHE", {})
+    monkeypatch.setattr(injector, "RECALL_INLINE_GOVERNANCE_REBUILD", True, raising=False)
+    calls = {"value": 0}
+
+    def count_rebuild(force=False, max_age_seconds=0):
+        calls["value"] += 1
+        return {"rebuilt": False}
+
+    monkeypatch.setattr(injector, "_ORIGINAL_ENSURE_GOVERNANCE_DB", count_rebuild)
+
+    injector.cached_governance_query("knowledge", "agent memory architecture", 3, lambda query, top=0: [])
+
+    assert calls["value"] == 1
 
 
 def test_cached_governance_query_evicts_oldest_entries_when_cache_is_bounded(monkeypatch, tmp_path: Path):
