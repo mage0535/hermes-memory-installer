@@ -28,7 +28,7 @@ HINDSIGHT_AUTH_TOKEN = (
     or os.environ.get("HINDSIGHT_AUTH_TOKEN")
     or ""
 )
-DEFAULT_MEMORY_LIMIT = 20000  # Default Hindsight node budget for multi-agent installs
+DEFAULT_MEMORY_LIMIT = 30000  # Shared production node budget unless explicitly overridden.
 WARN = 0.75       # 75% — 开始分类预备
 ACTION = 0.85     # 85% — 执行转移+压缩
 CRITICAL = 0.95   # 95% — 强制紧急处理

@@ -2078,7 +2078,7 @@ def test_acceptance_check_rejects_implicit_missing_agent_home(monkeypatch):
     ]
 
 
-def test_memory_guardian_uses_multi_agent_friendly_default_node_limit(monkeypatch):
+def test_memory_guardian_uses_production_default_node_limit(monkeypatch):
     monkeypatch.setattr(
         guardian,
         "hs",
@@ -2101,8 +2101,8 @@ def test_memory_guardian_uses_multi_agent_friendly_default_node_limit(monkeypatc
 
     _, cap = guardian.monitor(verbose=False)
 
-    assert cap["node_limit"] == 20000
-    assert cap["usage_pct"] == 55.4
+    assert cap["node_limit"] == 30000
+    assert cap["usage_pct"] == 36.9
     assert cap["level"] == "ok"
 
 
