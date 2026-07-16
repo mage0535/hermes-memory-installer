@@ -259,6 +259,19 @@ Operational acceptance after deployment:
 - a full acceptance check must return `ok=true`;
 - the regenerated evaluation report must expose `current_acceptance_ok_rate` and must not degrade solely because historical samples were failed or critical.
 
+Final production verification:
+
+- direct Guardian reported `node_limit=30000`, `usage_pct=73.3`, and `level=ok`;
+- full acceptance reported `ok=true` with no error buckets and a 42-second sync lag;
+- the regenerated LangSmith evaluation reported `100/100 healthy` from the newest five runs. Its historical acceptance rate was retained as trend context only;
+- targeted gbrain maintenance returned `missing_embeddings=0`, zero actionable orphans, and `status=healthy`.
+
+Deployment hardening:
+
+- a tracked source checkout is now the drift-audit reference; the unrelated same-named server directory is no longer used as the memory deployment baseline;
+- deployed Python and shell scripts are normalized to LF by the installer before atomic replacement. This prevents Windows checkout line endings from breaking Linux shebang execution or creating false script-hash drift;
+- a previously immutable webhook receiver retained its immutable protection after its verified line-ending-only normalization; all affected pre-normalization files were backed up before the change.
+
 ## 2026-07-15 LangSmith And Recall Optimization Pass
 
 The next optimization pass closed the P0-P4 follow-up items without changing Hindsight, gateway, or headroom service code.

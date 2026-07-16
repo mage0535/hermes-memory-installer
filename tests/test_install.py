@@ -263,6 +263,18 @@ def test_deployed_scripts_have_complete_local_dependency_closure(tmp_path: Path)
     assert result.returncode == 0, result.stderr
 
 
+def test_deploy_scripts_normalizes_windows_line_endings(monkeypatch, tmp_path: Path):
+    src_dir = tmp_path / "src"
+    dest_dir = tmp_path / "dest"
+    src_dir.mkdir()
+    (src_dir / "a.py").write_bytes(b"#!/usr/bin/env python3\r\nprint('ok')\r\n")
+    monkeypatch.setattr(install, "SUPPORTED_SCRIPT_NAMES", ["a.py"])
+
+    install.deploy_scripts(src_dir, dest_dir)
+
+    assert (dest_dir / "a.py").read_bytes() == b"#!/usr/bin/env python3\nprint('ok')\n"
+
+
 def test_deploy_scripts_rejects_incomplete_source_before_writing(monkeypatch, tmp_path: Path):
     src_dir = tmp_path / "src"
     dest_dir = tmp_path / "dest"

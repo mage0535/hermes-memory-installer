@@ -720,6 +720,9 @@ def deploy_scripts(src_dir: Path, dest_dir: Path) -> list[str]:
             staged = staging_root / name
             try:
                 shutil.copy2(src, staged)
+                # Keep executable shebangs valid when a Windows checkout deploys to Linux.
+                if src.suffix in {".py", ".sh"}:
+                    staged.write_bytes(staged.read_bytes().replace(b"\r\n", b"\n"))
                 if src.suffix == ".py":
                     staged.chmod(0o755)
                 installed.append(name)
