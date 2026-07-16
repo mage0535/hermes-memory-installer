@@ -27,6 +27,16 @@ GBRAIN_DEORPHAN_BIN = os.environ.get(
 )
 DEFAULT_STALE_BUDGET = max(0, int(os.environ.get("GBRAIN_STALE_REFRESH_BUDGET", "100")))
 DEFAULT_MISSING_BUDGET = max(0, int(os.environ.get("GBRAIN_MISSING_REFRESH_BUDGET", "0")))
+DEFAULT_PREVIOUS_REPORT = Path(
+    os.environ.get(
+        "GBRAIN_STALE_PREVIOUS_REPORT",
+        str(
+            Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+            / "metrics"
+            / "gbrain-stale-latest.json"
+        ),
+    )
+).expanduser()
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -209,6 +219,31 @@ def upstream_gap(classifications: list[dict]) -> dict:
     }
 
 
+def load_previous_report(path: Path | None) -> dict:
+    if not path or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def previous_panel_only_evidence(previous: dict, health: dict) -> bool:
+    classifications = previous.get("classifications") if isinstance(previous.get("classifications"), list) else []
+    codes = {item.get("code") for item in classifications if isinstance(item, dict)}
+    if "stale_health_counter_not_embedding_stale" not in codes:
+        return False
+    if int(health.get("missing_embeddings") or 0) != 0:
+        return False
+    if int(health.get("orphan_pages_actual") or 0) != 0:
+        return False
+    previous_after = previous.get("after") if isinstance(previous.get("after"), dict) else {}
+    previous_stale = previous_after.get("stale_pages")
+    current_stale = health.get("stale_pages")
+    return previous_stale is None or int(previous_stale or 0) == int(current_stale or 0)
+
+
 def actual_orphan_count() -> int | None:
     return len(filtered_orphan_rows())
 
@@ -258,6 +293,7 @@ def build_report(
     output: str,
     stale_budget: int = DEFAULT_STALE_BUDGET,
     missing_budget: int = DEFAULT_MISSING_BUDGET,
+    previous_report_path: Path | None = DEFAULT_PREVIOUS_REPORT,
 ) -> dict:
     before_cmd = run(["gbrain", "health"], timeout=60)
     before = parse_health(before_cmd["stdout"] + before_cmd["stderr"])
@@ -287,6 +323,10 @@ def build_report(
     actual_orphans = actual_orphan_count()
     after["orphan_pages_actual"] = actual_orphans
     effects = action_summary(actions, before, after)
+    previous = load_previous_report(previous_report_path)
+    if not refresh_embeddings and not reindex_code and previous_panel_only_evidence(previous, after):
+        effects["stale_pages_changed"] = False
+        effects["embed_stale_found_chunks"] = 0
     classifications = classify_health(after, effects)
     actionable = [item for item in classifications if item.get("severity") in {"action-needed", "degraded"}]
     status = "healthy" if not actionable else "degraded"

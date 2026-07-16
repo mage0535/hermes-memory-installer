@@ -27,6 +27,15 @@ MONITOR_GUARDIAN_NODE_LIMIT = os.environ.get("MEMORY_GUARDIAN_NODE_LIMIT", "3000
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 
 
+def should_publish_langsmith(no_langsmith: bool = False) -> bool:
+    if no_langsmith:
+        return False
+    if not os.environ.get("LANGSMITH_API_KEY"):
+        return False
+    flag = os.environ.get("LANGSMITH_PUBLISH", "true").strip().lower()
+    return flag not in {"0", "false", "no", "off"}
+
+
 def query_identity(query: str) -> dict:
     identity = {
         "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest()[:16],
@@ -223,7 +232,7 @@ def main() -> int:
         Path(args.output).write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
 
     published = None
-    if not args.no_langsmith and os.environ.get("LANGSMITH_API_KEY"):
+    if should_publish_langsmith(args.no_langsmith):
         published = publish_langsmith(snapshot)
 
     final = {"snapshot": snapshot, "langsmith": published}

@@ -1305,6 +1305,41 @@ def test_status_command_prints_one_line_summary(tmp_path: Path):
     assert "acceptance=100.0%" in line
 
 
+def test_status_command_does_not_count_info_alerts_as_actionable(tmp_path: Path):
+    home = tmp_path / "home"
+    metrics = home / "metrics"
+    metrics.mkdir(parents=True)
+    (metrics / "health-summary-latest.json").write_text(
+        json.dumps(
+            {
+                "status": "healthy",
+                "alert_count": 1,
+                "alerts": [{"code": "historical_acceptance_failures", "severity": "info"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps({"monitor": {"current_acceptance_ok_rate": 1.0}}),
+        encoding="utf-8",
+    )
+    (metrics / "slo-rollup-latest.json").write_text(
+        json.dumps({"acceptance_ok_rate": 1.0, "alert_queue_growth": 0}),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(REPO / "bin" / "hermes-memory"), "status"],
+        env={**os.environ, "AGENT_HOME": str(home)},
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=True,
+    )
+
+    assert "alerts=0" in result.stdout.strip()
+
+
 def test_synthetic_recall_benchmark_passes_public_dataset():
     payload = synthetic_recall_benchmark.run_benchmark()
 

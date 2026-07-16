@@ -51,6 +51,19 @@ def test_langsmith_task_wrapper_exists_and_uses_traceable():
     assert "subprocess.run" in content
 
 
+def test_langsmith_publish_can_be_disabled_by_env(monkeypatch):
+    monitor = load_script("langsmith_monitor")
+    wrapper = load_script("langsmith_task_wrapper")
+    trend = load_script("langsmith_trend_report")
+
+    monkeypatch.setenv("LANGSMITH_PUBLISH", "false")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+
+    assert monitor.should_publish_langsmith(no_langsmith=False) is False
+    assert wrapper.should_publish_langsmith() is False
+    assert trend.should_publish_langsmith(publish_requested=True) is False
+
+
 def test_langsmith_monitor_sanitizes_recall_text_before_publish():
     monitor = load_script("langsmith_monitor")
     snapshot = {

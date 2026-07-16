@@ -344,3 +344,35 @@ Operational state at handoff:
 - `runtime-drift-latest.json`: `healthy`;
 - `health-summary-latest.json`: `healthy`, with only `historical_acceptance_failures` remaining as info-level context;
 - `hindsight.service` and `hermes-gateway` stayed on their `10:45` start timestamps across the post-fix pressure window, confirming that the restart storm path was removed rather than merely delayed.
+
+## 2026-07-17 Final Recheck And Observability Closure
+
+Follow-up recheck found the core memory pipeline healthy, but two observability details still needed closure.
+
+Findings:
+
+- The deployed source checkout, GitHub `main`, and local release worktree all pointed to the same public commit before this pass. Runtime drift was healthy and deployed script hashes matched the tracked source checkout.
+- Live Guardian status was healthy at the shared 30000 node budget, with about 73.3% usage and no pending or failed operations.
+- Full production acceptance returned `ok=true`, with L2 and L3 both active in the recall rows and no reason buckets.
+- LangSmith ingestion logs showed `429 Too Many Requests` because the tenant had exceeded the monthly unique traces quota. Local monitor, trend, SLO, and alert artifacts still worked, but the online LangSmith project could no longer be treated as the only fresh source until quota resets or is upgraded.
+- A manual `gbrain_stale_maintenance.py` status-only run could still report `degraded` from stale panel counters, even though the scheduled repair run had already proven `missing_embeddings=0` and real actionable orphans were zero.
+- `hermes-memory status` displayed `alerts=1` when the only remaining alert was info-level historical context, which was technically accurate as a raw count but misleading for operator triage.
+
+Changes:
+
+- Added `LANGSMITH_PUBLISH=false` support to the LangSmith monitor, trend publisher, and generic task wrapper. This lets production keep generating local health artifacts while suppressing remote trace writes during quota exhaustion.
+- `gbrain_stale_maintenance.py` now reads the previous maintenance artifact during status-only checks. If the previous run already proved the remaining stale/orphan values are panel-only upstream debt and current missing embeddings plus real orphans are still zero, the status-only report remains `healthy` with info classifications.
+- `hermes-memory status` now counts only `action-needed` and `degraded` alerts in the one-line operator summary. Info-level historical context remains present in `health-summary-latest.json`.
+
+Operational guidance:
+
+- During LangSmith quota exhaustion, set `LANGSMITH_PUBLISH=false` for scheduled monitor, trend, and wrapper jobs. Keep writing local outputs under the agent metrics directory.
+- After quota resets or a higher plan is available, remove the override and run one monitor plus one trend publish to restore online freshness.
+- Do not treat `historical_acceptance_failures` as a live incident when `current_acceptance_ok_rate=1.0`, latest Guardian is non-critical, and the SLO rollup says `acceptance_window=current`.
+- Treat remaining gbrain stale/orphan counters as upstream reporting debt when `missing_embeddings=0`, `orphan_pages_actual=0`, and the latest repair artifact only contains info classifications.
+
+Validation targets for future handoff:
+
+- local tests include the LangSmith publish-disable gate, gbrain status-only panel-debt check, and info-alert status count regression;
+- production should show `hermes-memory status` as `healthy alerts=0 ...` when only historical info remains;
+- production gbrain status-only and scheduled refresh artifacts should agree on healthy/actionable state, not just on raw panel counters.

@@ -307,3 +307,40 @@ def test_gbrain_stale_classifies_non_actionable_stale_pages_as_info():
 
     assert rows[0]["code"] == "stale_health_counter_not_embedding_stale"
     assert rows[0]["severity"] == "info"
+
+
+def test_gbrain_stale_status_only_uses_previous_panel_only_evidence(monkeypatch, tmp_path):
+    stale = load_script("gbrain_stale_maintenance")
+    previous = tmp_path / "gbrain-stale-latest.json"
+    previous.write_text(
+        json.dumps(
+            {
+                "classifications": [
+                    {"code": "stale_health_counter_not_embedding_stale", "severity": "info", "count": 1108},
+                    {"code": "reported_orphans_counter_discrepancy", "severity": "info", "count": 1},
+                ],
+                "after": {"missing_embeddings": 0, "orphan_pages_actual": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run(command, timeout=300):
+        if command[-1] == "health":
+            return {
+                "returncode": 0,
+                "stdout": "Health score: 8/10\nMissing embeddings: 0\nStale pages: 1108\nOrphan pages: 1\n",
+                "stderr": "",
+            }
+        if command == [stale.GBRAIN_DEORPHAN_BIN]:
+            return {"returncode": 0, "stdout": "Orphans reported: 1\nOrphans to index: 0\n", "stderr": ""}
+        raise AssertionError(command)
+
+    monkeypatch.setattr(stale, "run", fake_run)
+    monkeypatch.setattr(stale, "actual_orphan_count", lambda: 0)
+
+    report = stale.build_report(refresh_embeddings=False, reindex_code=False, output="", previous_report_path=previous)
+
+    assert report["status"] == "healthy"
+    assert report["ok"] is True
+    assert {row["severity"] for row in report["classifications"]} == {"info"}
