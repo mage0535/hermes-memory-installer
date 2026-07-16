@@ -126,6 +126,7 @@ def test_alert_queue_emits_only_transition_and_resolved_notifications():
 
 
 def test_memory_guardian_overflow_grace_avoids_false_critical(monkeypatch):
+    monkeypatch.setenv("MEMORY_GUARDIAN_NODE_LIMIT", "20000")
     guardian = load_script("memory_guardian")
     monkeypatch.setattr(
         guardian,

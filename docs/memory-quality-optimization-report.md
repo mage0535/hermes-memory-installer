@@ -233,6 +233,32 @@ Next recommended optimization:
 
 - tune relationship/people recall separately. The optional relationship sample can still return no candidates and sometimes waits on live Hindsight until timeout. This is a recall-quality improvement, not a production health blocker.
 
+## 2026-07-17 Guardian And Evaluation Report Consistency
+
+Root cause of a later `DEGRADED` evaluation was configuration and scoring drift, not an active Hindsight ingestion failure:
+
+- direct Guardian invocations used the old implicit `20000` node budget, while the LangSmith monitor correctly used the production `30000` budget;
+- the same live node count was therefore reported as `critical` by the timer path and `ok` by the monitor path;
+- the standalone evaluation script only used the full historical run set, so resolved Guardian and acceptance failures continued to reduce the live score.
+
+The corrective changes are intentionally narrow:
+
+- `memory_guardian.py` now has `30000` as its shared default, with `MEMORY_GUARDIAN_NODE_LIMIT` still taking precedence for installations that need another budget;
+- `memory_eval_report.py` is now a tracked, deployed script rather than a server-only artifact;
+- evaluation health uses the newest five monitor runs and the newest Guardian level. Historical acceptance failures and critical samples remain visible as trend context only;
+- installer and deployment audit manifests include `memory_eval_report.py`.
+
+Validation completed before deployment:
+
+- `python -m pytest -q`: `250 passed, 2 skipped`;
+- `python bin/hermes-memory audit-repo --format json`: `ok=true`.
+
+Operational acceptance after deployment:
+
+- direct Guardian status must show `node_limit=30000` and a non-critical level at the current node count;
+- a full acceptance check must return `ok=true`;
+- the regenerated evaluation report must expose `current_acceptance_ok_rate` and must not degrade solely because historical samples were failed or critical.
+
 ## 2026-07-15 LangSmith And Recall Optimization Pass
 
 The next optimization pass closed the P0-P4 follow-up items without changing Hindsight, gateway, or headroom service code.

@@ -108,6 +108,7 @@ SUPPORTED_SCRIPT_NAMES = [
     "auto_session_summary.py",
     "gbrain_deorphan_index.py",
     "memory_observability_report.py",
+    "memory_eval_report.py",
     "memory_storage_cross_check.py",
     "state_db_schema.py",
     "knowledge_notes.py",
