@@ -543,8 +543,14 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     status = str(health.get("status") or slo.get("status") or "unknown")
     alerts = health.get("alert_count")
-    if alerts is None and isinstance(health.get("alerts"), list):
-        alerts = len(health["alerts"])
+    if isinstance(health.get("alerts"), list):
+        alerts = sum(
+            1
+            for row in health["alerts"]
+            if isinstance(row, dict) and row.get("severity") in {"action-needed", "degraded"}
+        )
+    elif alerts is None:
+        alerts = 0 if status == "healthy" else None
     acceptance = slo.get("acceptance_ok_rate", monitor.get("recent_acceptance_ok_rate"))
     queue_growth = slo.get("alert_queue_growth", "unknown")
     replay_rate = slo.get("dead_letter_replay_success_rate")

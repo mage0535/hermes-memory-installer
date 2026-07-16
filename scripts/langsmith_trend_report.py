@@ -355,6 +355,13 @@ def publish_report(report: dict) -> dict:
     return {"published": True, "project": PROJECT_NAME, "result": _emit()}
 
 
+def should_publish_langsmith(publish_requested: bool) -> bool:
+    if not publish_requested or not os.environ.get("LANGSMITH_API_KEY"):
+        return False
+    flag = os.environ.get("LANGSMITH_PUBLISH", "true").strip().lower()
+    return flag not in {"0", "false", "no", "off"}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=100)
@@ -372,7 +379,7 @@ def main() -> int:
     report = build_trend_report(runs)
     if args.output:
         Path(args.output).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    published = publish_report(report) if args.publish and os.environ.get("LANGSMITH_API_KEY") else None
+    published = publish_report(report) if should_publish_langsmith(args.publish) else None
     print(json.dumps({"report": report, "langsmith": published}, ensure_ascii=False, indent=2))
     return 0 if report.get("success_rate") is not None else 1
 

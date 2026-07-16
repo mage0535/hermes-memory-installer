@@ -17,6 +17,13 @@ import time
 INCLUDE_RAW_OUTPUT = os.environ.get("LANGSMITH_INCLUDE_RAW_OUTPUT", "").lower() in {"1", "true", "yes"}
 
 
+def should_publish_langsmith() -> bool:
+    if not os.environ.get("LANGSMITH_API_KEY"):
+        return False
+    flag = os.environ.get("LANGSMITH_PUBLISH", "true").strip().lower()
+    return flag not in {"0", "false", "no", "off"}
+
+
 def run_task(command: list[str], timeout: int) -> dict:
     started = time.time()
     result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
@@ -132,7 +139,7 @@ def main() -> int:
 
     payload = run_task(command, args.timeout)
     published = None
-    if os.environ.get("LANGSMITH_API_KEY"):
+    if should_publish_langsmith():
         published = publish_langsmith(args.task_name, payload)
     print(json.dumps({"task": payload, "langsmith": published}, ensure_ascii=False, indent=2))
     return payload["returncode"]
