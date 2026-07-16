@@ -380,7 +380,7 @@ Validation targets for future handoff:
 
 Final verification on the live server after deployment:
 
-- source checkout commit: `2eb9048`;
+- source checkout: fast-forwarded to the latest GitHub `main` during final sync;
 - wrapper smoke: monitor and trend both returned `langsmith=null` with no 429 quota errors;
 - full acceptance: `ok=true`, ten recall rows, empty `reason_buckets`;
 - Guardian: `node_limit=30000`, `usage_pct=73.3`, `level=ok`;
