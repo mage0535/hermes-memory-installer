@@ -6,13 +6,13 @@
 20 3 * * * /root/.hermes/scripts/gbrain-bulk-deorphan-wrapper.sh >> /var/log/gbrain-deorphan.log 2>&1 # gbrain-deorphan
 45 1 * * * /root/.hermes/scripts/state-db-checkpoint.sh >> /var/log/hermes-state-db-checkpoint.cron.log 2>&1 # state-db-checkpoint
 # Archive pipeline
-15 */6 * * * /root/.hermes/scripts/run_langsmith_monitor.sh >> /var/log/langsmith-monitor.log 2>&1 # langsmith-monitor
-25 */6 * * * /root/.hermes/scripts/run_langsmith_trend_report.sh >> /var/log/langsmith-trend.log 2>&1 # langsmith-trend
-0 */6 * * * /root/.hermes/scripts/run_auto_with_langsmith.sh >> /var/log/auto-summary.log 2>&1
+15 */6 * * * LANGSMITH_PUBLISH=false /root/.hermes/scripts/run_langsmith_monitor.sh >> /var/log/langsmith-monitor.log 2>&1 # langsmith-monitor
+25 */6 * * * LANGSMITH_PUBLISH=false /root/.hermes/scripts/run_langsmith_trend_report.sh >> /var/log/langsmith-trend.log 2>&1 # langsmith-trend
+0 */6 * * * LANGSMITH_PUBLISH=false /root/.hermes/scripts/run_auto_with_langsmith.sh >> /var/log/auto-summary.log 2>&1
 */15 * * * * AGENT_HOME=/root/.hermes flock -n /tmp/memory-governance-rebuild.lock /usr/bin/python3 /root/.hermes/scripts/memory_governance_rebuild.py --quiet >> /var/log/memory-governance-rebuild.log 2>&1 # memory-governance-rebuild
-30 */6 * * * /root/.hermes/scripts/run_session_with_langsmith.sh >> /var/log/session-gbrain.log 2>&1
-0 2 * * * /root/.hermes/scripts/run_archive_with_langsmith.sh >> /var/log/archive-sessions.log 2>&1
-35 */6 * * * /usr/local/bin/hermes-memory drift-check --repo-root /root/hermes-memory-installer --format json && /usr/local/bin/cron-heartbeat drift-check $? >> /var/log/runtime-drift-check.log 2>&1 # runtime-drift-check
+30 */6 * * * LANGSMITH_PUBLISH=false /root/.hermes/scripts/run_session_with_langsmith.sh >> /var/log/session-gbrain.log 2>&1
+0 2 * * * LANGSMITH_PUBLISH=false /root/.hermes/scripts/run_archive_with_langsmith.sh >> /var/log/archive-sessions.log 2>&1
+35 */6 * * * /usr/local/bin/hermes-memory drift-check --repo-root /root/hermes-memory-sidecar-source --format json && /usr/local/bin/cron-heartbeat drift-check $? >> /var/log/runtime-drift-check.log 2>&1 # runtime-drift-check
 40 */6 * * * AGENT_HOME=/root/.hermes /root/.hermes/scripts/hindsight_security_audit.py --public-host 207.57.129.132 >> /var/log/hindsight-security-audit.log 2>&1 # hindsight-security-audit
 45 */6 * * * AGENT_HOME=/root/.hermes MEMORY_ALERT_WEBHOOK_URL=http://127.0.0.1:9499/alerts /usr/bin/python3 /root/.hermes/scripts/alert_queue.py && /usr/local/bin/cron-heartbeat alert-queue $? >> /var/log/alert-queue.log 2>&1 # alert-queue
 50 */6 * * * AGENT_HOME=/root/.hermes /usr/bin/python3 /root/.hermes/scripts/metrics_dashboard.py >> /var/log/metrics-dashboard.log 2>&1 # metrics-dashboard
