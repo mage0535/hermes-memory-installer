@@ -361,6 +361,7 @@ Findings:
 Changes:
 
 - Added `LANGSMITH_PUBLISH=false` support to the LangSmith monitor, trend publisher, and generic task wrapper. This lets production keep generating local health artifacts while suppressing remote trace writes during quota exhaustion.
+- Production LangSmith wrapper scripts now call the deployed runtime scripts under the agent script directory instead of the retired same-named repository path. This closes a hidden runtime-source split that was not visible in script hash drift.
 - `gbrain_stale_maintenance.py` now reads the previous maintenance artifact during status-only checks. If the previous run already proved the remaining stale/orphan values are panel-only upstream debt and current missing embeddings plus real orphans are still zero, the status-only report remains `healthy` with info classifications.
 - `hermes-memory status` now counts only `action-needed` and `degraded` alerts in the one-line operator summary. Info-level historical context remains present in `health-summary-latest.json`.
 
@@ -376,3 +377,13 @@ Validation targets for future handoff:
 - local tests include the LangSmith publish-disable gate, gbrain status-only panel-debt check, and info-alert status count regression;
 - production should show `hermes-memory status` as `healthy alerts=0 ...` when only historical info remains;
 - production gbrain status-only and scheduled refresh artifacts should agree on healthy/actionable state, not just on raw panel counters.
+
+Final verification on the live server after deployment:
+
+- source checkout commit: `0b148d2`;
+- wrapper smoke: monitor and trend both returned `langsmith=null` with no 429 quota errors;
+- full acceptance: `ok=true`, ten recall rows, empty `reason_buckets`;
+- Guardian: `node_limit=30000`, `usage_pct=73.3`, `level=ok`;
+- gbrain status-only: `status=healthy`, `missing_embeddings=0`, `orphan_pages_actual=0`, classifications are info-only;
+- drift check: `healthy`, deployed scripts match the tracked source checkout;
+- operator status: `healthy alerts=0 acceptance=100.0%`.
