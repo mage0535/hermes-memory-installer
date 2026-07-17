@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
+import sys
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +19,12 @@ METRICS_DIR = AGENT_HOME / "metrics"
 DEFAULT_ALERTS = METRICS_DIR / "alerts.jsonl"
 DEFAULT_STATUS = METRICS_DIR / "health-summary-latest.json"
 DEFAULT_STATE = METRICS_DIR / "alert-state-latest.json"
+GBRAIN_REPAIR_STATUSES = {"action-needed", "degraded"}
+
+
+def env_enabled(name: str, default: str = "true") -> bool:
+    value = str(os.environ.get(name, default)).strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -26,6 +34,40 @@ def load_json(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"status": "action-needed", "error": f"unreadable artifact: {path.name}"}
+
+
+def repair_gbrain_stale_if_needed(metrics_dir: Path, stale_payload: dict[str, Any]) -> dict[str, Any]:
+    if stale_payload.get("status") not in GBRAIN_REPAIR_STATUSES:
+        return stale_payload
+    if not env_enabled("MEMORY_ALERT_AUTO_REPAIR_GBRAIN", "true"):
+        return stale_payload
+    output = metrics_dir / "gbrain-stale-latest.json"
+    script = Path(
+        os.environ.get(
+            "GBRAIN_STALE_MAINTENANCE_SCRIPT",
+            str(AGENT_HOME / "scripts" / "gbrain_stale_maintenance.py"),
+        )
+    ).expanduser()
+    command = [
+        "flock",
+        "-n",
+        os.environ.get("GBRAIN_STALE_REPAIR_LOCK", "/tmp/gbrain-stale-refresh.lock"),
+        os.environ.get("PYTHON", sys.executable or "/usr/bin/python3"),
+        str(script),
+        "--refresh-embeddings",
+        "--stale-budget",
+        os.environ.get("GBRAIN_STALE_REFRESH_BUDGET", "100"),
+        "--missing-budget",
+        os.environ.get("GBRAIN_MISSING_REFRESH_BUDGET", "0"),
+        "--output",
+        str(output),
+    ]
+    try:
+        subprocess.run(command, capture_output=True, text=True, timeout=int(os.environ.get("GBRAIN_STALE_REPAIR_TIMEOUT", "1200")))
+    except (OSError, subprocess.TimeoutExpired):
+        return stale_payload
+    repaired = load_json(output)
+    return repaired or stale_payload
 
 
 def alert(source: str, code: str, severity: str, detail: dict | None = None) -> dict:
@@ -110,6 +152,7 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
     drift = load_json(metrics_dir / "runtime-drift-latest.json")
     trend = load_json(metrics_dir / "langsmith-trend-latest.json")
     stale = load_json(metrics_dir / "gbrain-stale-latest.json")
+    stale = repair_gbrain_stale_if_needed(metrics_dir, stale)
     security = load_json(metrics_dir / "hindsight-security-latest.json")
 
     if drift.get("status") == "action-needed":
