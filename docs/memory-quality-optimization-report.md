@@ -474,3 +474,37 @@ Operational guidance:
 - Future gbrain embedding/orphan alerts should be treated as auto-remediated first: the alert queue will retry the bounded repair before notifying Hermes.
 - If a future gbrain alert still reaches the user, it means the repair command ran or was blocked by lock/timeout and the latest artifact still contains actionable debt.
 - Continue avoiding full-corpus embedding refresh on this host unless there is a verified database-wide embedding gap.
+
+## 2026-07-17 Deep Runtime Recheck And Observability Tightening
+
+Fresh deep runtime analysis found no current memory-system action/degraded incident, but it did find two observability gaps that could mislead future operators.
+
+Evidence:
+
+- `hermes-memory status` returned `healthy alerts=0 acceptance=100.0%`.
+- `gbrain-stale-latest.json` was healthy with `missing_embeddings=0`, `orphan_pages_actual=0`, and `auto_fix_succeeded=true`.
+- `langsmith-trend-latest.json` still carried the pre-repair gbrain value `latest_gbrain_missing_embeddings=1`.
+- `cron-freshness-latest.json` had not been refreshed since June because the `cron-freshness` job was missing from the live root crontab.
+- `cron_freshness.py` also checked silent task logs for runtime drift and alert queue even though their real freshness signal is the metrics artifact they write.
+
+Fix:
+
+- `langsmith_trend_report.py` now overlays the latest local `gbrain-stale-latest.json` artifact onto the trend report's `latest_gbrain_*` fields. This prevents repaired gbrain state from being hidden by older LangSmith/local monitor runs.
+- `cron_freshness.py` now checks artifact files for silent jobs: runtime drift, alert queue, metrics dashboard, OpenMetrics, SLO rollup, system metrics, gbrain stale refresh, and LangSmith monitor/trend.
+- `alert_queue.py` now reads `cron-freshness-latest.json` and raises `cron-freshness:cron_jobs_stale` if any freshness job is degraded or action-needed.
+- Production root crontab now includes the idempotent `cron-freshness` schedule:
+  `*/15 * * * * AGENT_HOME=$AGENT_HOME /usr/bin/python3 $AGENT_HOME/scripts/cron_freshness.py >> /var/log/cron-freshness.log 2>&1 # cron-freshness`
+
+Validation:
+
+- Regression tests cover cron freshness alert propagation, artifact-backed silent-job checks, and trend gbrain artifact overlay.
+- Production trend refresh showed `latest_gbrain_health_score=8`, `latest_gbrain_missing_embeddings=0`, `latest_gbrain_orphans=0`, and `current_acceptance_ok_rate=1.0`.
+- Production cron freshness returned `status=healthy` with no stale jobs.
+- Production alert queue returned `status=healthy`; only info-level historical acceptance context remained.
+- Operator status remained `healthy alerts=0 acceptance=100.0%`.
+
+Operational guidance:
+
+- Treat stale `cron-freshness-latest.json` as an observability incident even when memory recall is otherwise healthy.
+- For tasks that are intentionally quiet on success, add or prefer a metrics artifact in `cron_freshness.py`; do not rely on empty log files.
+- After any manual gbrain repair, refresh the trend report before reading `latest_gbrain_*` values from LangSmith trend artifacts.
