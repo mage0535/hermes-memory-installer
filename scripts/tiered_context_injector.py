@@ -70,6 +70,15 @@ METRICS_STORE_RAW_QUERY = os.environ.get("MEMORY_METRICS_STORE_RAW_QUERY", "").l
 METRICS_MAX_ROWS = max(100, int(os.environ.get("MEMORY_METRICS_MAX_ROWS", "5000")))
 QUERY_CACHE_MAX_ENTRIES = max(1, int(os.environ.get("MEMORY_QUERY_CACHE_MAX_ENTRIES", "256")))
 LIVE_HINDSIGHT_TIMEOUT_S = max(0.5, float(os.environ.get("MEMORY_LIVE_HINDSIGHT_TIMEOUT_S", "3.0")))
+LIVE_HINDSIGHT_CIRCUIT_COOLDOWN_S = max(
+    0, int(os.environ.get("MEMORY_LIVE_HINDSIGHT_CIRCUIT_COOLDOWN_S", "600"))
+)
+LIVE_HINDSIGHT_CIRCUIT_PATH = Path(
+    os.environ.get(
+        "MEMORY_LIVE_HINDSIGHT_CIRCUIT_PATH",
+        str(AGENT_HOME / "metrics" / "live-hindsight-circuit.json"),
+    )
+).expanduser()
 RECALL_INLINE_GOVERNANCE_REBUILD = os.environ.get("MEMORY_RECALL_INLINE_GOVERNANCE_REBUILD", "").lower() in {
     "1",
     "true",
@@ -419,6 +428,44 @@ def live_hindsight_item_allowed(query: str, item: dict) -> bool:
     if intent == "system":
         return query_hits_text(query, text, entity_text) or is_system_query(f"{text} {entity_text}")
     return query_hits_text(query, text, entity_text)
+
+
+def live_hindsight_circuit_open(now: float | None = None) -> bool:
+    if LIVE_HINDSIGHT_CIRCUIT_COOLDOWN_S <= 0:
+        return False
+    if not LIVE_HINDSIGHT_CIRCUIT_PATH.exists():
+        return False
+    try:
+        payload = json.loads(LIVE_HINDSIGHT_CIRCUIT_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    open_until = float(payload.get("open_until") or 0)
+    return str(payload.get("state")) == "open" and open_until > (now or time.time())
+
+
+def open_live_hindsight_circuit(reason: str) -> None:
+    if LIVE_HINDSIGHT_CIRCUIT_COOLDOWN_S <= 0:
+        return
+    payload = {
+        "state": "open",
+        "reason": reason[:200],
+        "opened_at": time.time(),
+        "open_until": time.time() + LIVE_HINDSIGHT_CIRCUIT_COOLDOWN_S,
+        "timeout_s": LIVE_HINDSIGHT_TIMEOUT_S,
+    }
+    try:
+        LIVE_HINDSIGHT_CIRCUIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        LIVE_HINDSIGHT_CIRCUIT_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def close_live_hindsight_circuit() -> None:
+    try:
+        if LIVE_HINDSIGHT_CIRCUIT_PATH.exists():
+            LIVE_HINDSIGHT_CIRCUIT_PATH.unlink()
+    except OSError:
+        pass
 
 
 def governance_cache_token() -> tuple[bool, int, int]:
@@ -1363,7 +1410,7 @@ def get_l3(query: str, top: int = TOP_K_L3):
             }
         )
 
-    if should_use_live_hindsight(query, candidates, top):
+    if should_use_live_hindsight(query, candidates, top) and not live_hindsight_circuit_open():
         live_hindsight_used = True
         hindsight_payload = json.dumps(
             {
@@ -1383,6 +1430,7 @@ def get_l3(query: str, top: int = TOP_K_L3):
             )
             with urllib.request.urlopen(request, timeout=LIVE_HINDSIGHT_TIMEOUT_S) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+            close_live_hindsight_circuit()
             for item in payload.get("results", []):
                 text = item.get("text") or ""
                 if not text or should_skip_hindsight_result(query, item) or not live_hindsight_item_allowed(query, item):
@@ -1415,6 +1463,7 @@ def get_l3(query: str, top: int = TOP_K_L3):
                 if len(candidates) >= top * 4:
                     break
         except Exception as exc:
+            open_live_hindsight_circuit(str(exc))
             print(f"[tiered_context] live hindsight recall failed: {exc}", file=sys.stderr)
 
     use_expensive_fallbacks = should_use_expensive_fallbacks(query, candidates, top)
