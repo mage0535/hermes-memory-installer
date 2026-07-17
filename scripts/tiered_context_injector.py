@@ -69,6 +69,7 @@ RRF_K = 60
 METRICS_STORE_RAW_QUERY = os.environ.get("MEMORY_METRICS_STORE_RAW_QUERY", "").lower() in {"1", "true", "yes"}
 METRICS_MAX_ROWS = max(100, int(os.environ.get("MEMORY_METRICS_MAX_ROWS", "5000")))
 QUERY_CACHE_MAX_ENTRIES = max(1, int(os.environ.get("MEMORY_QUERY_CACHE_MAX_ENTRIES", "256")))
+LIVE_HINDSIGHT_ENABLED = os.environ.get("MEMORY_LIVE_HINDSIGHT_ENABLED", "").lower() in {"1", "true", "yes"}
 LIVE_HINDSIGHT_TIMEOUT_S = max(0.5, float(os.environ.get("MEMORY_LIVE_HINDSIGHT_TIMEOUT_S", "3.0")))
 LIVE_HINDSIGHT_CIRCUIT_COOLDOWN_S = max(
     0, int(os.environ.get("MEMORY_LIVE_HINDSIGHT_CIRCUIT_COOLDOWN_S", "600"))
@@ -1410,7 +1411,7 @@ def get_l3(query: str, top: int = TOP_K_L3):
             }
         )
 
-    if should_use_live_hindsight(query, candidates, top) and not live_hindsight_circuit_open():
+    if LIVE_HINDSIGHT_ENABLED and should_use_live_hindsight(query, candidates, top) and not live_hindsight_circuit_open():
         live_hindsight_used = True
         hindsight_payload = json.dumps(
             {

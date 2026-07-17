@@ -401,13 +401,14 @@ Root cause:
 Fix:
 
 - `tiered_context_injector.py` now has a persistent live-Hindsight circuit breaker.
-- On live recall failure or timeout, the circuit writes `$AGENT_HOME/metrics/live-hindsight-circuit.json` and skips new foreground live recall attempts for `MEMORY_LIVE_HINDSIGHT_CIRCUIT_COOLDOWN_S` seconds, default `600`.
+- Foreground live Hindsight is now explicit opt-in via `MEMORY_LIVE_HINDSIGHT_ENABLED=true`. Production defaults to cache-backed L3 because the live recall endpoint is not currently bounded enough for user-facing requests.
+- When live recall is explicitly enabled and then fails or times out, the circuit writes `$AGENT_HOME/metrics/live-hindsight-circuit.json` and skips new foreground live recall attempts for `MEMORY_LIVE_HINDSIGHT_CIRCUIT_COOLDOWN_S` seconds, default `600`.
 - While the circuit is open, foreground recall continues to use governance, object, hub, knowledge, and `hindsight_cache` candidates. This prevents repeated user-facing requests or acceptance checks from adding more stuck live recall work.
 - A successful future live recall clears the circuit automatically.
 
 Operational guidance:
 
-- If the circuit file exists and `open_until` is still in the future, do not treat skipped live recall as data loss. It is protecting the host while cached Hindsight remains available.
+- If foreground live Hindsight is disabled or the circuit file exists and `open_until` is still in the future, do not treat skipped live recall as data loss. It is protecting the host while cached Hindsight remains available.
 - If `/memories/recall` remains slow after the cooldown, investigate Hindsight service internals separately: reranker latency, request cancellation behavior, and recall endpoint concurrency. Do not increase foreground timeout as the primary fix.
 - If `hindsight_http_requests_in_progress_requests{endpoint="/v1/default/banks/hermes/memories/recall"}` stays high for multiple minutes, a controlled Hindsight restart can clear abandoned work, but it should remain health-check driven and not tied to swap percentage.
 
@@ -418,3 +419,4 @@ Validation:
 - Production deployment found `19` abandoned live recall requests in progress. A controlled `hindsight.service` restart cleared that backlog.
 - The first post-deploy acceptance run opened the live recall circuit after one timeout. The second acceptance run had no live recall attempts, no timeout stderr, `ok=true`, and `/memories/recall` in-progress returned to `0`.
 - Operator status remained `healthy alerts=0 acceptance=100.0%` after the circuit opened.
+- Recheck after the initial circuit expired proved the passive circuit alone was insufficient: the first post-expiry acceptance triggered another live timeout and left one in-progress recall. Foreground live Hindsight was therefore made opt-in by default, and the local regression suite increased to `258 passed, 2 skipped`.

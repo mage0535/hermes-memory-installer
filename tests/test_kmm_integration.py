@@ -180,6 +180,7 @@ def test_get_l3_uses_configurable_live_hindsight_timeout(monkeypatch, tmp_path: 
     monkeypatch.setattr(injector, "should_use_live_hindsight", lambda query, candidates, top: True)
     monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
     monkeypatch.setattr(injector, "LIVE_HINDSIGHT_TIMEOUT_S", 2.0, raising=False)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_ENABLED", True, raising=False)
     observed = {}
 
     def fake_urlopen(request, timeout=0):
@@ -206,6 +207,7 @@ def test_get_l3_opens_live_hindsight_circuit_after_timeout(monkeypatch, tmp_path
     monkeypatch.setattr(injector, "cached_governance_query", lambda *args, **kwargs: [])
     monkeypatch.setattr(injector, "should_use_live_hindsight", lambda query, candidates, top: True)
     monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_ENABLED", True, raising=False)
 
     def fake_urlopen(request, timeout=0):
         raise TimeoutError("slow hindsight")
@@ -231,9 +233,33 @@ def test_get_l3_skips_live_hindsight_when_circuit_is_open(monkeypatch, tmp_path:
     monkeypatch.setattr(injector, "cached_governance_query", lambda *args, **kwargs: [])
     monkeypatch.setattr(injector, "should_use_live_hindsight", lambda query, candidates, top: True)
     monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_ENABLED", True, raising=False)
 
     def fail_urlopen(request, timeout=0):
         raise AssertionError("live Hindsight should be skipped while the circuit is open")
+
+    monkeypatch.setattr(injector.urllib.request, "urlopen", fail_urlopen)
+
+    rows, live_used, live_count = injector.get_l3("agent memory architecture", top=5)
+
+    assert rows == []
+    assert live_used is False
+    assert live_count == 0
+
+
+def test_get_l3_skips_live_hindsight_by_default(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    gov_db.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setattr(injector, "STATE_DB", tmp_path / "missing-state.db")
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_CIRCUIT_PATH", tmp_path / "live-hindsight-circuit.json", raising=False)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_ENABLED", False, raising=False)
+    monkeypatch.setattr(injector, "cached_governance_query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(injector, "should_use_live_hindsight", lambda query, candidates, top: True)
+    monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
+
+    def fail_urlopen(request, timeout=0):
+        raise AssertionError("foreground live Hindsight must be opt-in")
 
     monkeypatch.setattr(injector.urllib.request, "urlopen", fail_urlopen)
 
