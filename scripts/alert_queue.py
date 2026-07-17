@@ -154,6 +154,7 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
     stale = load_json(metrics_dir / "gbrain-stale-latest.json")
     stale = repair_gbrain_stale_if_needed(metrics_dir, stale)
     security = load_json(metrics_dir / "hindsight-security-latest.json")
+    cron_freshness = load_json(metrics_dir / "cron-freshness-latest.json")
 
     if drift.get("status") == "action-needed":
         for reason in drift.get("reasons", []):
@@ -218,6 +219,15 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
         alerts.append(alert("hindsight-security", "hindsight_security_action_needed", "action-needed", security))
     elif security.get("status") == "degraded":
         alerts.append(alert("hindsight-security", "hindsight_security_degraded", "degraded", security))
+
+    if cron_freshness.get("status") in {"action-needed", "degraded"}:
+        stale_jobs = [
+            job for job in cron_freshness.get("jobs", [])
+            if isinstance(job, dict) and job.get("status") in {"action-needed", "degraded"}
+        ]
+        if stale_jobs:
+            severity = "action-needed" if cron_freshness.get("status") == "action-needed" else "degraded"
+            alerts.append(alert("cron-freshness", "cron_jobs_stale", severity, {"jobs": stale_jobs}))
 
     status = "healthy"
     if any(row["severity"] == "action-needed" for row in alerts):

@@ -17,6 +17,7 @@ DEFAULT_LAG_THRESHOLD_S = int(os.environ.get("MEMORY_LAG_WARN_THRESHOLD_S", "360
 RECENT_MONITOR_WINDOW = max(1, int(os.environ.get("MEMORY_TREND_RECENT_MONITOR_WINDOW", "5")))
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 DEFAULT_LOCAL_MONITOR = AGENT_HOME / "metrics" / "langsmith-monitor-latest.json"
+DEFAULT_GBRAIN_STALE = AGENT_HOME / "metrics" / "gbrain-stale-latest.json"
 
 
 class LocalRun:
@@ -163,6 +164,16 @@ def weak_recall_reason(row: dict) -> str:
     return "no_seed_data"
 
 
+def load_latest_gbrain_artifact(path: Path | None = None) -> dict:
+    path = path or DEFAULT_GBRAIN_STALE
+    try:
+        payload = json.loads(path.expanduser().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    after = payload.get("after") if isinstance(payload.get("after"), dict) else {}
+    return after if after else {}
+
+
 def monitor_metrics(runs: list[Any]) -> dict:
     monitor_runs = [run for run in runs if getattr(run, "name", None) == "memory-sidecar-monitor"]
     acceptance_ok = []
@@ -221,6 +232,9 @@ def monitor_metrics(runs: list[Any]) -> dict:
             for key in recall_stage_timings:
                 if isinstance(timings.get(key), (int, float)):
                     recall_stage_timings[key].append(float(timings[key]))
+    latest_artifact_gbrain = load_latest_gbrain_artifact()
+    if latest_artifact_gbrain:
+        latest_gbrain = latest_artifact_gbrain
 
     recent_acceptance = acceptance_ok[:RECENT_MONITOR_WINDOW]
     recent_execution = execution_ok[:RECENT_MONITOR_WINDOW]

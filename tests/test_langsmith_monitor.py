@@ -229,6 +229,47 @@ def test_langsmith_trend_local_monitor_loader_unwraps_wrapper_snapshot(tmp_path)
     assert report["monitor"]["latest_guardian_level"] == "ok"
 
 
+def test_langsmith_trend_overlays_latest_local_gbrain_artifact(monkeypatch, tmp_path):
+    trend = load_script("langsmith_trend_report")
+    gbrain = tmp_path / "gbrain-stale-latest.json"
+    gbrain.write_text(
+        json.dumps(
+            {
+                "status": "healthy",
+                "after": {
+                    "health_score": 8,
+                    "missing_embeddings": 0,
+                    "orphan_pages_actual": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(trend, "DEFAULT_GBRAIN_STALE", gbrain)
+
+    report = trend.build_trend_report(
+        [
+            FakeRun(
+                "memory-sidecar-monitor",
+                "success",
+                {
+                    "acceptance": {"ok": True},
+                    "storage_cross_check": {
+                        "payload": {
+                            "ok": False,
+                            "gbrain": {"health_score": 6, "missing_embeddings": 1, "orphan_pages_actual": 0},
+                        }
+                    },
+                },
+            )
+        ]
+    )
+
+    assert report["monitor"]["latest_gbrain_health_score"] == 8
+    assert report["monitor"]["latest_gbrain_missing_embeddings"] == 0
+    assert report["monitor"]["latest_gbrain_orphans"] == 0
+
+
 def test_langsmith_trend_separates_current_acceptance_from_historical_failures():
     trend = load_script("langsmith_trend_report")
     runs = [

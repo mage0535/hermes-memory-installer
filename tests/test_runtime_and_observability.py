@@ -570,6 +570,38 @@ def test_alert_queue_repairs_gbrain_stale_before_alerting(monkeypatch, tmp_path:
     assert alerts == []
 
 
+def test_alert_queue_reports_cron_freshness_action_needed(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps({"monitor": {"latest_acceptance_ok": True, "acceptance_ok_rate": 1.0, "lag": {"status": "healthy"}}}),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "hindsight-security-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "cron-freshness-latest.json").write_text(
+        json.dumps(
+            {
+                "status": "action-needed",
+                "jobs": [
+                    {"name": "cron_freshness", "status": "action-needed", "age_s": 99999},
+                    {"name": "slo_rollup", "status": "healthy", "age_s": 10},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status, alerts = alert_queue.build_alerts(metrics)
+
+    assert status == "action-needed"
+    assert [(row["source"], row["code"], row["severity"]) for row in alerts] == [
+        ("cron-freshness", "cron_jobs_stale", "action-needed")
+    ]
+    assert alerts[0]["detail"]["jobs"] == [{"name": "cron_freshness", "status": "action-needed", "age_s": 99999}]
+
+
 def test_alert_queue_resolves_language_from_locale(monkeypatch):
     monkeypatch.setenv("LANG", "en_US.UTF-8")
 
@@ -1497,6 +1529,14 @@ def test_cron_freshness_reports_stale_jobs(tmp_path: Path, monkeypatch):
         "fresh_job": "healthy",
         "stale_job": "action-needed",
     }
+
+
+def test_cron_freshness_uses_artifacts_for_silent_jobs():
+    checks = {row["name"]: row["path"].name for row in cron_freshness.CHECKS}
+
+    assert checks["runtime_drift_check"] == "runtime-drift-latest.json"
+    assert checks["alert_queue"] == "health-summary-latest.json"
+    assert checks["gbrain_stale_refresh"] == "gbrain-stale-latest.json"
 
 
 def test_sync_embeddings_stats_handles_missing_legacy_state_table(tmp_path: Path, monkeypatch, capsys):
