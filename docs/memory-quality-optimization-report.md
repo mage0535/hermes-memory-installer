@@ -420,3 +420,25 @@ Validation:
 - The first post-deploy acceptance run opened the live recall circuit after one timeout. The second acceptance run had no live recall attempts, no timeout stderr, `ok=true`, and `/memories/recall` in-progress returned to `0`.
 - Operator status remained `healthy alerts=0 acceptance=100.0%` after the circuit opened.
 - Recheck after the initial circuit expired proved the passive circuit alone was insufficient: the first post-expiry acceptance triggered another live timeout and left one in-progress recall. Foreground live Hindsight was therefore made opt-in by default, and the local regression suite increased to `258 passed, 2 skipped`.
+
+## 2026-07-17 Post-Fix Recheck And gbrain Refresh
+
+Fresh production recheck after making foreground live Hindsight opt-in found no further live-recall regression:
+
+- source checkout, GitHub `main`, and deployed runtime script hashes were aligned at commit `c97e377`;
+- `MEMORY_LIVE_HINDSIGHT_ENABLED` was unset in production, so foreground recall stayed on the cache-backed L3 path;
+- two consecutive full acceptance runs returned `ok=true`, empty `reason_buckets`, and no timeout stderr;
+- `live_hindsight_used` was false for every acceptance row, and Hindsight `/memories/recall` in-progress stayed at `0`;
+- `hermes-memory status` remained `healthy alerts=0 acceptance=100.0%`;
+- runtime drift remained `healthy`.
+
+The same recheck found a new gbrain maintenance item:
+
+- `gbrain_stale_maintenance.py` reported `missing_embeddings=1`, which is actionable even when the rest of the memory stack is healthy.
+- A budgeted refresh with `--refresh-embeddings --stale-budget 100 --missing-budget 0` embedded one stale chunk and ran deorphan cleanup.
+- After repair, `missing_embeddings=0`, `orphan_pages_actual=0`, `status=healthy`, and remaining gbrain classifications were info-only upstream panel-counter debt.
+
+Operational note:
+
+- Continue using the budgeted gbrain refresh job rather than `embed --all` on this fixed-size host.
+- If foreground live Hindsight is ever re-enabled for experiments, keep it behind `MEMORY_LIVE_HINDSIGHT_ENABLED=true` and monitor `/memories/recall` in-progress before exposing it to user-facing paths.
