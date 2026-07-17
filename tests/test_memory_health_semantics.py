@@ -229,6 +229,23 @@ def test_gbrain_stale_targets_missing_embedding_slugs_before_embed_all(monkeypat
     assert report["auto_fix_succeeded"] is True
 
 
+def test_gbrain_stale_missing_slug_query_avoids_invalid_distinct_order(monkeypatch):
+    stale = load_script("gbrain_stale_maintenance")
+    queries = []
+
+    def fake_run(command, timeout=300):
+        queries.append(command[-1])
+        if "WHERE EXISTS" in command[-1] and "DISTINCT" not in command[-1]:
+            return {"returncode": 0, "stdout": "hub-orphans-sessions\n", "stderr": ""}
+        return {"returncode": 1, "stdout": "", "stderr": "invalid query"}
+
+    monkeypatch.setattr(stale, "gbrain_database_url", lambda: "postgresql://example/gbrain")
+    monkeypatch.setattr(stale, "run", fake_run)
+
+    assert stale.find_missing_embedding_slugs(10) == ["hub-orphans-sessions"]
+    assert queries
+
+
 def test_gbrain_stale_embeds_missing_slugs_created_by_deorphan(monkeypatch):
     stale = load_script("gbrain_stale_maintenance")
     health_calls = 0
