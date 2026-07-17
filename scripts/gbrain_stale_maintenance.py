@@ -287,6 +287,16 @@ def public_slug_embed_command(slugs: list[str]) -> list[str]:
     return ["gbrain", "embed", "--slugs", *slugs]
 
 
+def embed_missing_slugs(actions: list[dict], missing_count: int, name: str) -> None:
+    if missing_count <= 0:
+        return
+    missing_slugs = find_missing_embedding_slugs(limit=max(1, int(missing_count)))
+    if not missing_slugs:
+        return
+    action = run(["gbrain", "embed", "--slugs", *missing_slugs], timeout=900)
+    actions.append({"name": name, "command": public_slug_embed_command(missing_slugs), **action})
+
+
 def build_report(
     refresh_embeddings: bool,
     reindex_code: bool,
@@ -303,10 +313,7 @@ def build_report(
         action = run(embed_command("--stale", stale_budget), timeout=900)
         actions.append({"name": "embed_stale", "command": public_embed_command("--stale", stale_budget), **action})
     if refresh_embeddings and int(before.get("missing_embeddings") or 0) > 0:
-        missing_slugs = find_missing_embedding_slugs(limit=max(1, int(before.get("missing_embeddings") or 0)))
-        if missing_slugs:
-            action = run(["gbrain", "embed", "--slugs", *missing_slugs], timeout=900)
-            actions.append({"name": "embed_missing_slugs", "command": public_slug_embed_command(missing_slugs), **action})
+        embed_missing_slugs(actions, int(before.get("missing_embeddings") or 0), "embed_missing_slugs")
     if refresh_embeddings and int(before.get("missing_embeddings") or 0) > 0 and missing_budget != 0:
         action = run(embed_command("--all", missing_budget), timeout=1800)
         actions.append({"name": "embed_all", "command": public_embed_command("--all", missing_budget), **action})
@@ -317,6 +324,14 @@ def build_report(
     if int(before.get("orphan_pages") or 0) > 0:
         action = run([GBRAIN_DEORPHAN_BIN], timeout=900)
         actions.append({"name": "deorphan", "command": [GBRAIN_DEORPHAN_BIN], **action})
+        if refresh_embeddings:
+            post_deorphan_cmd = run(["gbrain", "health"], timeout=60)
+            post_deorphan = parse_health(post_deorphan_cmd["stdout"] + post_deorphan_cmd["stderr"])
+            embed_missing_slugs(
+                actions,
+                int(post_deorphan.get("missing_embeddings") or 0),
+                "embed_post_deorphan_missing_slugs",
+            )
 
     after_cmd = run(["gbrain", "health"], timeout=60)
     after = parse_health(after_cmd["stdout"] + after_cmd["stderr"])

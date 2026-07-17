@@ -229,6 +229,50 @@ def test_gbrain_stale_targets_missing_embedding_slugs_before_embed_all(monkeypat
     assert report["auto_fix_succeeded"] is True
 
 
+def test_gbrain_stale_embeds_missing_slugs_created_by_deorphan(monkeypatch):
+    stale = load_script("gbrain_stale_maintenance")
+    health_calls = 0
+    commands = []
+
+    def fake_run(command, timeout=300):
+        nonlocal health_calls
+        commands.append(command)
+        if command[-1] == "health":
+            health_calls += 1
+            if health_calls == 1:
+                return {
+                    "returncode": 0,
+                    "stdout": "Health score: 8/10\nMissing embeddings: 0\nStale pages: 0\nOrphan pages: 1\n",
+                    "stderr": "",
+                }
+            if health_calls == 2:
+                return {
+                    "returncode": 0,
+                    "stdout": "Health score: 6/10\nMissing embeddings: 1\nStale pages: 0\nOrphan pages: 1\n",
+                    "stderr": "",
+                }
+            return {
+                "returncode": 0,
+                "stdout": "Health score: 8/10\nMissing embeddings: 0\nStale pages: 0\nOrphan pages: 1\n",
+                "stderr": "",
+            }
+        if command == [stale.GBRAIN_DEORPHAN_BIN]:
+            return {"returncode": 0, "stdout": "Orphans reported: 1\nOrphans to index: 1\n", "stderr": ""}
+        if command[:3] == ["gbrain", "embed", "--slugs"]:
+            return {"returncode": 0, "stdout": "hub-orphans-sessions: embedded 1 chunks\n", "stderr": ""}
+        raise AssertionError(command)
+
+    monkeypatch.setattr(stale, "run", fake_run)
+    monkeypatch.setattr(stale, "actual_orphan_count", lambda: 0)
+    monkeypatch.setattr(stale, "find_missing_embedding_slugs", lambda limit=10: ["hub-orphans-sessions"])
+
+    report = stale.build_report(refresh_embeddings=True, reindex_code=False, output="", stale_budget=100, missing_budget=0)
+
+    assert ["gbrain", "embed", "--slugs", "hub-orphans-sessions"] in commands
+    assert report["status"] == "healthy"
+    assert report["auto_fix_succeeded"] is True
+
+
 def test_gbrain_stale_refresh_uses_budgeted_stale_command(monkeypatch):
     stale = load_script("gbrain_stale_maintenance")
     commands = []

@@ -542,6 +542,34 @@ def test_alert_queue_does_not_escalate_recent_window_when_latest_acceptance_is_o
     assert [row["code"] for row in alerts] == ["historical_acceptance_failures"]
 
 
+def test_alert_queue_repairs_gbrain_stale_before_alerting(monkeypatch, tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps({"monitor": {"latest_acceptance_ok": True, "acceptance_ok_rate": 1.0, "lag": {"status": "healthy"}}}),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(
+        json.dumps({"status": "action-needed", "auto_fix_attempted": True, "auto_fix_succeeded": False}),
+        encoding="utf-8",
+    )
+    (metrics / "hindsight-security-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    calls = []
+
+    def fake_repair(metrics_dir: Path, stale_payload: dict) -> dict:
+        calls.append((metrics_dir, stale_payload["status"]))
+        return {"status": "healthy", "auto_fix_attempted": True, "auto_fix_succeeded": True}
+
+    monkeypatch.setattr(alert_queue, "repair_gbrain_stale_if_needed", fake_repair)
+
+    status, alerts = alert_queue.build_alerts(metrics)
+
+    assert calls == [(metrics, "action-needed")]
+    assert status == "healthy"
+    assert alerts == []
+
+
 def test_alert_queue_resolves_language_from_locale(monkeypatch):
     monkeypatch.setenv("LANG", "en_US.UTF-8")
 

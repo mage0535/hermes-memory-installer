@@ -442,3 +442,35 @@ Operational note:
 
 - Continue using the budgeted gbrain refresh job rather than `embed --all` on this fixed-size host.
 - If foreground live Hindsight is ever re-enabled for experiments, keep it behind `MEMORY_LIVE_HINDSIGHT_ENABLED=true` and monitor `/memories/recall` in-progress before exposing it to user-facing paths.
+
+## 2026-07-17 gbrain Alert Auto-Remediation Closure
+
+The 04:45 UTC `gbrain_stale_action_needed` alert was a real actionable state, not a stale alert artifact.
+
+Root cause:
+
+- The scheduled gbrain refresh ran `embed --stale` before `deorphan`.
+- `deorphan` can create or expose a new hub/orphan page chunk after the first embedding pass.
+- The script did not re-check missing embeddings after `deorphan`, so the report stayed at `missing_embeddings=1`, `auto_fix_failed=true`.
+- `alert_queue.py` only consumed `gbrain-stale-latest.json`; it did not retry a safe repair before sending the user-facing action-needed notification.
+
+Fix:
+
+- `gbrain_stale_maintenance.py` now re-runs `gbrain health` after `deorphan` and embeds any newly missing slugs with `gbrain embed --slugs ...`.
+- The repair remains budgeted and targeted. It still avoids unbounded `embed --all` when `--missing-budget 0` is configured for this fixed-size host.
+- `alert_queue.py` now performs one guarded gbrain stale repair attempt before building a gbrain action-needed/degraded alert. This is enabled by default with `MEMORY_ALERT_AUTO_REPAIR_GBRAIN=true` and can be disabled with `false/0/no/off`.
+- The alert queue uses the same `flock` lock as the scheduled refresh, so it does not start concurrent embedding repair jobs.
+
+Validation:
+
+- Regression tests cover post-deorphan missing embedding repair and alert-queue pre-notification repair.
+- Local validation after the fix: `260 passed, 2 skipped`.
+- Privacy audit after the fix: `python bin/hermes-memory audit-repo --format json` returned `ok=true`.
+- Production repair changed gbrain from `missing_embeddings=1`, `status=action-needed` to `missing_embeddings=0`, `orphan_pages_actual=0`, `status=healthy`.
+- Production `alert_queue.py` then emitted a resolved transition and `hermes-memory status` returned `healthy alerts=0 acceptance=100.0%`.
+
+Operational guidance:
+
+- Future gbrain embedding/orphan alerts should be treated as auto-remediated first: the alert queue will retry the bounded repair before notifying Hermes.
+- If a future gbrain alert still reaches the user, it means the repair command ran or was blocked by lock/timeout and the latest artifact still contains actionable debt.
+- Continue avoiding full-corpus embedding refresh on this host unless there is a verified database-wide embedding gap.
