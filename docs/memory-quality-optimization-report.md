@@ -561,3 +561,35 @@ Operational guidance:
 
 - A future stale `storage_cross_check` freshness failure should be treated as an observability problem first. It does not necessarily mean memory recall is broken, but it does mean trend storage fields may be stale.
 - The current known non-action item is `langsmith-trend:historical_acceptance_failures` at `info` severity. It is retained for history and should not page the operator while current acceptance remains 100%.
+
+## 2026-07-17 Stale Pages Severity Decision
+
+Hermes reported a remaining gbrain risk: `Stale pages: 1138`, with a recommendation to run a full embedding job or `sync_brain()`.
+
+Decision:
+
+- Do not run full-corpus embedding refresh or full `sync_brain()` for this signal alone.
+- Keep the current bounded maintenance path: `gbrain_stale_maintenance.py --refresh-embeddings --stale-budget 100 --missing-budget 0`.
+- Treat `stale_health_counter_not_embedding_stale` as info-level upstream health-panel debt unless a discriminating probe finds actionable stale chunks.
+
+Evidence:
+
+- `gbrain health` reported `Embed coverage: 100.0%` and `Missing embeddings: 0`.
+- `gbrain_stale_maintenance.py` returned `status=healthy` with only info-level classifications.
+- A bounded discriminating probe using `embed --stale --limit 25` returned `Embedded 0 chunks (0 stale found)`.
+- Storage cross-check returned `ok=true` and empty `warnings`.
+- Trend reported `latest_storage_ok=true`, `latest_gbrain_missing_embeddings=0`, and `current_acceptance_ok_rate=1.0`.
+- Operator status returned `healthy alerts=0 acceptance=100.0%`.
+
+Reasoning:
+
+- The raw `Stale pages` counter is not enough to justify heavy production work on the current fixed-size host.
+- The actionable condition is `missing_embeddings > 0`, real orphan pages, or a bounded `embed --stale` run that finds chunks to refresh.
+- When `embed --stale` finds zero chunks and embedding coverage is 100%, the remaining stale count should be treated as gbrain health accounting/reporting debt, not as a recall-breaking incident.
+
+Operational guidance:
+
+- Do not escalate `Stale pages` to critical by count alone.
+- If `embed --stale` returns nonzero chunks, let the bounded maintenance job process them.
+- If `missing_embeddings > 0`, use targeted slug repair first.
+- Avoid unbounded `embed --all` or full `sync_brain()` unless direct evidence shows a database-wide embedding gap.
