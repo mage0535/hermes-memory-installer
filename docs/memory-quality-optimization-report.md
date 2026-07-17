@@ -415,3 +415,6 @@ Validation:
 
 - Regression tests cover timeout-triggered circuit opening and circuit-open live recall skipping.
 - Full local suite after the fix: `257 passed, 2 skipped`.
+- Production deployment found `19` abandoned live recall requests in progress. A controlled `hindsight.service` restart cleared that backlog.
+- The first post-deploy acceptance run opened the live recall circuit after one timeout. The second acceptance run had no live recall attempts, no timeout stderr, `ok=true`, and `/memories/recall` in-progress returned to `0`.
+- Operator status remained `healthy alerts=0 acceptance=100.0%` after the circuit opened.
