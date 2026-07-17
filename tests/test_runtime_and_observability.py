@@ -1504,6 +1504,26 @@ def test_storage_cross_check_filters_generated_gbrain_orphan_indexes(monkeypatch
     assert "gbrain_orphans" not in warnings
 
 
+def test_storage_cross_check_writes_output(monkeypatch, tmp_path: Path, capsys):
+    output = tmp_path / "storage.json"
+    monkeypatch.setattr(memory_storage_cross_check, "STATE_DB", tmp_path / "missing-state.db")
+    monkeypatch.setattr(memory_storage_cross_check, "GOVERNANCE_DB", tmp_path / "missing-governance.db")
+    monkeypatch.setattr(memory_storage_cross_check, "hindsight_stats", lambda: {"ok": True, "failed_consolidation": 0})
+    monkeypatch.setattr(
+        memory_storage_cross_check,
+        "gbrain_health",
+        lambda: {"ok": True, "missing_embeddings": 0, "orphan_pages_actual": 0},
+    )
+    monkeypatch.setattr(sys, "argv", ["memory_storage_cross_check.py", "--output", str(output)])
+
+    rc = memory_storage_cross_check.main()
+
+    assert rc == 1
+    assert output.exists()
+    assert json.loads(output.read_text(encoding="utf-8"))["warnings"] == ["state_db_missing", "governance_db_missing"]
+    assert "state_db_missing" in capsys.readouterr().out
+
+
 def test_cron_freshness_reports_stale_jobs(tmp_path: Path, monkeypatch):
     fresh = tmp_path / "fresh.log"
     stale = tmp_path / "stale.log"

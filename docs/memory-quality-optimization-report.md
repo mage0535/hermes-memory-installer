@@ -508,3 +508,33 @@ Operational guidance:
 - Treat stale `cron-freshness-latest.json` as an observability incident even when memory recall is otherwise healthy.
 - For tasks that are intentionally quiet on success, add or prefer a metrics artifact in `cron_freshness.py`; do not rely on empty log files.
 - After any manual gbrain repair, refresh the trend report before reading `latest_gbrain_*` values from LangSmith trend artifacts.
+
+## 2026-07-17 Storage Cross-Check And Missing-Slug Repair Closure
+
+The follow-up deep recheck found one additional real data-quality defect behind the trend-layer `latest_storage_ok=false` signal.
+
+Evidence:
+
+- Live `memory_storage_cross_check.py` returned `ok=false` with `gbrain_orphans`.
+- A gbrain repair run reduced actionable orphans to zero, but then reported `missing_embeddings=1`.
+- Direct database inspection showed the missing chunk belonged to `hub-orphans-sessions`.
+- The helper query in `find_missing_embedding_slugs()` returned no slugs because PostgreSQL rejected `SELECT DISTINCT p.slug ... ORDER BY p.updated_at`.
+
+Fix:
+
+- `gbrain_stale_maintenance.py` now uses a `WHERE EXISTS` page query for missing-embedding slug discovery, avoiding the PostgreSQL `DISTINCT`/`ORDER BY` restriction.
+- `memory_storage_cross_check.py` now writes a latest artifact to `$AGENT_HOME/metrics/storage-cross-check-latest.json` every time it runs.
+- `langsmith_trend_report.py` now overlays `storage-cross-check-latest.json` before reporting `latest_storage_ok` and gbrain summary fields.
+
+Validation:
+
+- Production gbrain repair found `hub-orphans-sessions`, embedded the missing chunk, and returned `status=healthy`.
+- Production storage cross-check returned `ok=true`, empty `warnings`, `missing_embeddings=0`, and `orphan_pages_actual=0`.
+- Production trend refresh returned `latest_storage_ok=true`, `latest_gbrain_missing_embeddings=0`, and `current_acceptance_ok_rate=1.0`.
+- Production alert queue remained `healthy`; only info-level historical acceptance context remained.
+- Operator status remained `healthy alerts=0 acceptance=100.0%`.
+
+Operational guidance:
+
+- If `latest_storage_ok=false` appears again while gbrain stale is healthy, run storage cross-check first and inspect `$AGENT_HOME/metrics/storage-cross-check-latest.json`; do not rely on older LangSmith monitor snapshots.
+- Keep missing-embedding repair targeted by slug. Do not fall back to full-corpus embedding unless the slug query returns no actionable rows and direct database inspection confirms a wider gap.

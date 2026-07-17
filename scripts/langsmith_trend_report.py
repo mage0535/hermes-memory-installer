@@ -18,6 +18,7 @@ RECENT_MONITOR_WINDOW = max(1, int(os.environ.get("MEMORY_TREND_RECENT_MONITOR_W
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 DEFAULT_LOCAL_MONITOR = AGENT_HOME / "metrics" / "langsmith-monitor-latest.json"
 DEFAULT_GBRAIN_STALE = AGENT_HOME / "metrics" / "gbrain-stale-latest.json"
+DEFAULT_STORAGE_CROSS_CHECK = AGENT_HOME / "metrics" / "storage-cross-check-latest.json"
 
 
 class LocalRun:
@@ -174,6 +175,15 @@ def load_latest_gbrain_artifact(path: Path | None = None) -> dict:
     return after if after else {}
 
 
+def load_latest_storage_artifact(path: Path | None = None) -> dict:
+    path = path or DEFAULT_STORAGE_CROSS_CHECK
+    try:
+        payload = json.loads(path.expanduser().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def monitor_metrics(runs: list[Any]) -> dict:
     monitor_runs = [run for run in runs if getattr(run, "name", None) == "memory-sidecar-monitor"]
     acceptance_ok = []
@@ -232,6 +242,12 @@ def monitor_metrics(runs: list[Any]) -> dict:
             for key in recall_stage_timings:
                 if isinstance(timings.get(key), (int, float)):
                     recall_stage_timings[key].append(float(timings[key]))
+    latest_storage = load_latest_storage_artifact()
+    if latest_storage:
+        latest_storage_ok = bool(latest_storage.get("ok"))
+        storage_gbrain = latest_storage.get("gbrain")
+        if isinstance(storage_gbrain, dict):
+            latest_gbrain = storage_gbrain
     latest_artifact_gbrain = load_latest_gbrain_artifact()
     if latest_artifact_gbrain:
         latest_gbrain = latest_artifact_gbrain

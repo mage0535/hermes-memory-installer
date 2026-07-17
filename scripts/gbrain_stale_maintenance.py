@@ -89,10 +89,12 @@ def find_missing_embedding_slugs(limit: int = 10) -> list[str]:
     if not db_url:
         return []
     query = (
-        "SELECT DISTINCT p.slug "
-        "FROM content_chunks c "
-        "JOIN pages p ON p.id = c.page_id "
-        "WHERE c.embedding IS NULL "
+        "SELECT p.slug "
+        "FROM pages p "
+        "WHERE EXISTS ("
+        "  SELECT 1 FROM content_chunks c "
+        "  WHERE c.page_id = p.id AND c.embedding IS NULL"
+        ") "
         "ORDER BY p.updated_at DESC "
         f"LIMIT {max(1, int(limit))};"
     )

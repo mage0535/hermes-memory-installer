@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import argparse
 from pathlib import Path
 import re
 import sqlite3
@@ -24,6 +25,7 @@ if not _AGENT_HOME_RAW:
 AGENT_HOME = Path(_AGENT_HOME_RAW or str(Path.home() / ".hermes")).expanduser()
 STATE_DB = Path(os.environ.get("MEMORY_STATE_DB_PATH", str(AGENT_HOME / "state.db"))).expanduser()
 GOVERNANCE_DB = Path(os.environ.get("MEMORY_GOVERNANCE_DB_PATH", str(AGENT_HOME / "memory_governance.db"))).expanduser()
+DEFAULT_OUTPUT = AGENT_HOME / "metrics" / "storage-cross-check-latest.json"
 HINDSIGHT_BASE_URL = os.environ.get("HINDSIGHT_BASE_URL", "http://127.0.0.1:8890")
 HINDSIGHT_BANK = os.environ.get("HINDSIGHT_BANK", "hermes")
 HINDSIGHT_AUTH_TOKEN = os.environ.get("MEMORY_HINDSIGHT_TOKEN") or os.environ.get("HINDSIGHT_AUTH_TOKEN") or ""
@@ -131,6 +133,9 @@ def evaluate(payload: dict) -> list[str]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    args = parser.parse_args()
     payload = {
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "state_db": sqlite_table_counts(STATE_DB, ("sessions", "messages", "conversation_history")),
@@ -144,6 +149,9 @@ def main() -> int:
     warnings = evaluate(payload)
     payload["ok"] = not warnings
     payload["warnings"] = warnings
+    output = Path(args.output).expanduser()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if payload["ok"] else 1
 
