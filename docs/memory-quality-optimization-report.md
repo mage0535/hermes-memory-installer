@@ -425,7 +425,7 @@ Validation:
 
 Fresh production recheck after making foreground live Hindsight opt-in found no further live-recall regression:
 
-- source checkout, GitHub `main`, and deployed runtime script hashes were aligned at commit `c97e377`;
+- source checkout, GitHub `main`, and deployed runtime script hashes were aligned at the then-current runtime commit before this documentation-only update;
 - `MEMORY_LIVE_HINDSIGHT_ENABLED` was unset in production, so foreground recall stayed on the cache-backed L3 path;
 - two consecutive full acceptance runs returned `ok=true`, empty `reason_buckets`, and no timeout stderr;
 - `live_hindsight_used` was false for every acceptance row, and Hindsight `/memories/recall` in-progress stayed at `0`;
