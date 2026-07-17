@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from pathlib import Path
 import sys
 import importlib
@@ -174,6 +175,7 @@ def test_get_l3_uses_configurable_live_hindsight_timeout(monkeypatch, tmp_path: 
     gov_db.write_text("placeholder", encoding="utf-8")
     monkeypatch.setattr(injector, "STATE_DB", tmp_path / "missing-state.db")
     monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_CIRCUIT_PATH", tmp_path / "live-hindsight-circuit.json", raising=False)
     monkeypatch.setattr(injector, "cached_governance_query", lambda *args, **kwargs: [])
     monkeypatch.setattr(injector, "should_use_live_hindsight", lambda query, candidates, top: True)
     monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
@@ -192,6 +194,54 @@ def test_get_l3_uses_configurable_live_hindsight_timeout(monkeypatch, tmp_path: 
     assert live_used is True
     assert live_count == 0
     assert observed["timeout"] == 2.0
+
+
+def test_get_l3_opens_live_hindsight_circuit_after_timeout(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    gov_db.write_text("placeholder", encoding="utf-8")
+    circuit = tmp_path / "live-hindsight-circuit.json"
+    monkeypatch.setattr(injector, "STATE_DB", tmp_path / "missing-state.db")
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_CIRCUIT_PATH", circuit, raising=False)
+    monkeypatch.setattr(injector, "cached_governance_query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(injector, "should_use_live_hindsight", lambda query, candidates, top: True)
+    monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
+
+    def fake_urlopen(request, timeout=0):
+        raise TimeoutError("slow hindsight")
+
+    monkeypatch.setattr(injector.urllib.request, "urlopen", fake_urlopen)
+
+    rows, live_used, live_count = injector.get_l3("agent memory architecture", top=5)
+
+    assert rows == []
+    assert live_used is True
+    assert live_count == 0
+    assert json.loads(circuit.read_text(encoding="utf-8"))["state"] == "open"
+
+
+def test_get_l3_skips_live_hindsight_when_circuit_is_open(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    gov_db.write_text("placeholder", encoding="utf-8")
+    circuit = tmp_path / "live-hindsight-circuit.json"
+    circuit.write_text(json.dumps({"state": "open", "open_until": time.time() + 600}), encoding="utf-8")
+    monkeypatch.setattr(injector, "STATE_DB", tmp_path / "missing-state.db")
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_CIRCUIT_PATH", circuit, raising=False)
+    monkeypatch.setattr(injector, "cached_governance_query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(injector, "should_use_live_hindsight", lambda query, candidates, top: True)
+    monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
+
+    def fail_urlopen(request, timeout=0):
+        raise AssertionError("live Hindsight should be skipped while the circuit is open")
+
+    monkeypatch.setattr(injector.urllib.request, "urlopen", fail_urlopen)
+
+    rows, live_used, live_count = injector.get_l3("agent memory architecture", top=5)
+
+    assert rows == []
+    assert live_used is False
+    assert live_count == 0
 
 
 def test_cached_governance_query_invalidates_when_governance_db_changes(monkeypatch, tmp_path: Path):

@@ -387,3 +387,31 @@ Final verification on the live server after deployment:
 - gbrain status-only: `status=healthy`, `missing_embeddings=0`, `orphan_pages_actual=0`, classifications are info-only;
 - drift check: `healthy`, deployed scripts match the tracked source checkout;
 - operator status: `healthy alerts=0 acceptance=100.0%`.
+
+## 2026-07-17 Live Hindsight Recall Timeout Closure
+
+Follow-up investigation treated the live Hindsight timeout log as an actionable defect rather than a harmless fallback.
+
+Root cause:
+
+- Hindsight `/health`, `/stats`, and `/entities` stayed responsive, but `/v1/default/banks/hermes/memories/recall` timed out for multiple queries even with small payloads.
+- The API ignores unsupported `k` parameters, so shrinking top-k at the caller does not reduce work.
+- Client-side short timeouts do not cancel the server-side recall work immediately. Metrics showed more than twenty `/memories/recall` requests still in progress after timed-out clients disconnected, which can make later live recall attempts slower.
+
+Fix:
+
+- `tiered_context_injector.py` now has a persistent live-Hindsight circuit breaker.
+- On live recall failure or timeout, the circuit writes `$AGENT_HOME/metrics/live-hindsight-circuit.json` and skips new foreground live recall attempts for `MEMORY_LIVE_HINDSIGHT_CIRCUIT_COOLDOWN_S` seconds, default `600`.
+- While the circuit is open, foreground recall continues to use governance, object, hub, knowledge, and `hindsight_cache` candidates. This prevents repeated user-facing requests or acceptance checks from adding more stuck live recall work.
+- A successful future live recall clears the circuit automatically.
+
+Operational guidance:
+
+- If the circuit file exists and `open_until` is still in the future, do not treat skipped live recall as data loss. It is protecting the host while cached Hindsight remains available.
+- If `/memories/recall` remains slow after the cooldown, investigate Hindsight service internals separately: reranker latency, request cancellation behavior, and recall endpoint concurrency. Do not increase foreground timeout as the primary fix.
+- If `hindsight_http_requests_in_progress_requests{endpoint="/v1/default/banks/hermes/memories/recall"}` stays high for multiple minutes, a controlled Hindsight restart can clear abandoned work, but it should remain health-check driven and not tied to swap percentage.
+
+Validation:
+
+- Regression tests cover timeout-triggered circuit opening and circuit-open live recall skipping.
+- Full local suite after the fix: `257 passed, 2 skipped`.
