@@ -1556,6 +1556,7 @@ def test_cron_freshness_uses_artifacts_for_silent_jobs():
 
     assert checks["runtime_drift_check"] == "runtime-drift-latest.json"
     assert checks["alert_queue"] == "health-summary-latest.json"
+    assert checks["storage_cross_check"] == "storage-cross-check-latest.json"
     assert checks["gbrain_stale_refresh"] == "gbrain-stale-latest.json"
 
 

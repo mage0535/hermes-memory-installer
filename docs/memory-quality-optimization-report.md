@@ -538,3 +538,26 @@ Operational guidance:
 
 - If `latest_storage_ok=false` appears again while gbrain stale is healthy, run storage cross-check first and inspect `$AGENT_HOME/metrics/storage-cross-check-latest.json`; do not rely on older LangSmith monitor snapshots.
 - Keep missing-embedding repair targeted by slug. Do not fall back to full-corpus embedding unless the slug query returns no actionable rows and direct database inspection confirms a wider gap.
+
+## 2026-07-17 Closed-Loop Recheck Until No Pending Action
+
+An additional closed-loop recheck was run after the storage and gbrain fixes.
+
+Evidence:
+
+- The current monitor run returned `returncode=0`.
+- `storage-cross-check-latest.json` returned `ok=true`, empty `warnings`, `missing_embeddings=0`, and `orphan_pages_actual=0`.
+- `langsmith-trend-latest.json` returned `latest_storage_ok=true`, `latest_gbrain_missing_embeddings=0`, and `current_acceptance_ok_rate=1.0`.
+- `cron-freshness-latest.json` returned `healthy` with no stale jobs.
+- `alert_queue.py` returned `healthy`; only info-level historical acceptance context remained.
+- `hermes-memory status` returned `healthy alerts=0 acceptance=100.0%`.
+
+Follow-up hardening:
+
+- `cron_freshness.py` now includes `storage_cross_check` and validates `$AGENT_HOME/metrics/storage-cross-check-latest.json` freshness.
+- This closes the remaining observability gap where trend could depend on a stale storage artifact without the freshness layer noticing.
+
+Operational guidance:
+
+- A future stale `storage_cross_check` freshness failure should be treated as an observability problem first. It does not necessarily mean memory recall is broken, but it does mean trend storage fields may be stale.
+- The current known non-action item is `langsmith-trend:historical_acceptance_failures` at `info` severity. It is retained for history and should not page the operator while current acceptance remains 100%.
