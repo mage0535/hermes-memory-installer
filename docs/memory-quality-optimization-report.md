@@ -607,3 +607,11 @@ Verification:
 - Main worktree: `python -m pytest -q` -> 268 passed, 2 skipped.
 - Main worktree: `python bin/hermes-memory audit-repo --format json` -> ok true.
 - Production runtime: task latest status for archive/session/summary reported `business_ok=true`; health summary remained healthy with only historical info alerts.
+
+## 2026-07-21 Three-Way Consistency Recheck
+
+- Local publishable worktree: `941fc258bf26924d7a2fc02d2f2fdf0793cb5e3d`, clean status; full test gate previously recorded as `268 passed, 2 skipped`, privacy audit `ok=true`.
+- GitHub `origin/main`: `941fc258bf26924d7a2fc02d2f2fdf0793cb5e3d`, matching local publishable worktree.
+- Production source/runtime content check: 8 source files and 5 runtime scripts matched the GitHub main SHA256 set; mismatch count `0`.
+- Production source Git metadata remains at older base with dirty production files by design; do not hard reset it unless preserving/relocating production-only continuation notes first. Runtime code content is aligned and should be treated as the operational truth.
+- Current runtime validation should continue to prefer generated health artifacts under `$AGENT_HOME/metrics` plus alert queue output, not stale historical LangSmith aggregates alone.
