@@ -610,8 +610,8 @@ Verification:
 
 ## 2026-07-21 Three-Way Consistency Recheck
 
-- Local publishable worktree: `941fc258bf26924d7a2fc02d2f2fdf0793cb5e3d`, clean status; full test gate previously recorded as `268 passed, 2 skipped`, privacy audit `ok=true`.
-- GitHub `origin/main`: `941fc258bf26924d7a2fc02d2f2fdf0793cb5e3d`, matching local publishable worktree.
+- Local publishable worktree and GitHub `origin/main` matched at verification time; the publishable worktree was clean.
+- Full test gate previously recorded as `268 passed, 2 skipped`; privacy audit was `ok=true`.
 - Production source/runtime content check: 8 source files and 5 runtime scripts matched the GitHub main SHA256 set; mismatch count `0`.
 - Production source Git metadata remains at older base with dirty production files by design; do not hard reset it unless preserving/relocating production-only continuation notes first. Runtime code content is aligned and should be treated as the operational truth.
 - Current runtime validation should continue to prefer generated health artifacts under `$AGENT_HOME/metrics` plus alert queue output, not stale historical LangSmith aggregates alone.
