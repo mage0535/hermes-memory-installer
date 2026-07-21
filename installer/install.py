@@ -704,7 +704,8 @@ def patch_agent_config(agent_home: Path) -> Path | None:
 
 
 def deploy_scripts(src_dir: Path, dest_dir: Path) -> list[str]:
-    missing = [name for name in SUPPORTED_SCRIPT_NAMES if not (src_dir / name).is_file()]
+    script_names = list(dict.fromkeys(SUPPORTED_SCRIPT_NAMES))
+    missing = [name for name in script_names if not (src_dir / name).is_file()]
     if missing:
         raise FileNotFoundError(f"installer source is missing required scripts: {', '.join(missing)}")
 
@@ -715,7 +716,7 @@ def deploy_scripts(src_dir: Path, dest_dir: Path) -> list[str]:
     replaced_targets: list[Path] = []
     backed_up_targets: set[str] = set()
     try:
-        for name in SUPPORTED_SCRIPT_NAMES:
+        for name in script_names:
             src = src_dir / name
             staged = staging_root / name
             try:

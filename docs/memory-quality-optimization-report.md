@@ -593,3 +593,17 @@ Operational guidance:
 - If `embed --stale` returns nonzero chunks, let the bounded maintenance job process them.
 - If `missing_embeddings > 0`, use targeted slug repair first.
 - Avoid unbounded `embed --all` or full `sync_brain()` unless direct evidence shows a database-wide embedding gap.
+
+## 2026-07-21 Pipeline Business-Failure Alerting Hotfix
+
+- Task wrappers now persist local latest business status under `$AGENT_HOME/metrics/langsmith-task-<task>-latest.json` before optional LangSmith publish.
+- `langsmith_trend_report.py` merges local latest task status ahead of remote LangSmith history, so current successful runs can clear action-needed task alerts even if LangSmith ingestion is quota-limited.
+- `alert_queue.py` escalates latest task business failures to `action-needed`; historical task failures remain `info`.
+- `archive_sessions.py` now sets SQLite `busy_timeout` and emits per-session publish progress for intermittent stall diagnosis.
+- `memory_guardian.py` adds `ACTIVE_ARCHIVE=0.78` while preserving overflow grace semantics.
+- Production-specific capacity should be supplied by environment, for example `MEMORY_GUARDIAN_NODE_LIMIT`, not hard-coded into public defaults.
+
+Verification:
+- Main worktree: `python -m pytest -q` -> 268 passed, 2 skipped.
+- Main worktree: `python bin/hermes-memory audit-repo --format json` -> ok true.
+- Production runtime: task latest status for archive/session/summary reported `business_ok=true`; health summary remained healthy with only historical info alerts.
