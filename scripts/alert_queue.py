@@ -198,6 +198,35 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
             )
         )
 
+    task_alerts = {}
+    historical_task_alerts = {}
+    for name, metrics in (trend.get("tasks") or {}).items():
+        if not isinstance(metrics, dict):
+            continue
+        recent_failures = int(metrics.get("recent_business_failure_count") or 0)
+        latest_ok = metrics.get("latest_business_ok")
+        if latest_ok is False or (recent_failures > 0 and latest_ok is not True):
+            task_alerts[name] = {
+                "recent_business_failure_count": recent_failures,
+                "recent_business_success_rate": metrics.get("recent_business_success_rate"),
+                "latest_business_ok": latest_ok,
+                "latest_returncode": metrics.get("latest_returncode"),
+                "recent_window": metrics.get("recent_window"),
+            }
+            continue
+        if int(metrics.get("business_failure_count") or 0) > 0 or recent_failures > 0:
+            historical_task_alerts[name] = {
+                "business_failure_count": metrics.get("business_failure_count"),
+                "business_success_rate": metrics.get("business_success_rate"),
+                "nonzero_returncodes": metrics.get("nonzero_returncodes"),
+                "recent_business_failure_count": recent_failures,
+                "latest_business_ok": latest_ok,
+            }
+    if task_alerts:
+        alerts.append(alert("langsmith-task", "recent_task_business_failures", "action-needed", {"tasks": task_alerts}))
+    elif historical_task_alerts:
+        alerts.append(alert("langsmith-task", "historical_task_business_failures", "info", {"tasks": historical_task_alerts}))
+
     stale_status = stale.get("status")
     if stale_status == "action-needed":
         detail = dict(stale)

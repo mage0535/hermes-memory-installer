@@ -540,6 +540,89 @@ def test_publish_page_with_retry_handles_transient_failure(monkeypatch):
     assert attempts["count"] == 2
 
 
+def test_archive_connect_db_sets_busy_timeout(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / "state.db"
+    db_path.touch()
+    monkeypatch.setattr(archive_sessions, "STATE_DB", str(db_path))
+
+    conn = archive_sessions.connect_db()
+    try:
+        timeout_ms = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert timeout_ms >= 30000
+
+
+def test_archive_publish_sessions_emits_progress_for_each_session(tmp_path: Path, monkeypatch, capsys):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                source TEXT,
+                title TEXT,
+                started_at REAL,
+                ended_at REAL,
+                end_reason TEXT,
+                message_count INTEGER,
+                tool_call_count INTEGER,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                model TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT,
+                role TEXT,
+                content TEXT,
+                timestamp REAL,
+                tool_name TEXT
+            )
+            """
+        )
+        for idx in range(2):
+            session_id = f"s{idx + 1}"
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (session_id, "codex", "Test", 100.0 + idx, 200.0 + idx, "complete", 1, 0, 1, 1, "model"),
+            )
+            conn.execute(
+                "INSERT INTO messages (session_id, role, content, timestamp, tool_name) VALUES (?, ?, ?, ?, ?)",
+                (session_id, "user", "remember this", 110.0 + idx, ""),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(archive_sessions, "STATE_DB", str(db_path))
+    conn = archive_sessions.connect_db()
+    try:
+        sessions = archive_sessions.fetch_sessions(
+            conn,
+            older_than_days=0,
+            watermark=0,
+            batch_size=20,
+            all_sessions=False,
+        )
+        ok, published, max_ts = archive_sessions.publish_sessions(conn, sessions, lambda page: True)
+    finally:
+        conn.close()
+
+    stderr = capsys.readouterr().err
+    assert ok is True
+    assert len(published) == 2
+    assert max_ts == 101.0
+    assert "Publishing session 1/2: session-s1" in stderr
+    assert "Published session 2/2: session-s2" in stderr
+
+
 def test_archive_cursor_does_not_skip_sessions_with_same_timestamp(tmp_path: Path, monkeypatch):
     db_path = tmp_path / "state.db"
     conn = sqlite3.connect(str(db_path))

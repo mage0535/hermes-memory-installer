@@ -30,6 +30,7 @@ HINDSIGHT_AUTH_TOKEN = (
 )
 DEFAULT_MEMORY_LIMIT = 30000  # Shared production node budget unless explicitly overridden.
 WARN = 0.75       # 75% — 开始分类预备
+ACTIVE_ARCHIVE = 0.78  # 78% — proactive archive before the action band
 ACTION = 0.85     # 85% — 执行转移+压缩
 CRITICAL = 0.95   # 95% — 强制紧急处理
 OVERFLOW_GRACE_NODES = max(100, int(os.environ.get("MEMORY_GUARDIAN_OVERFLOW_GRACE_NODES", "500")))
@@ -489,8 +490,10 @@ def monitor(verbose=True):
     pct = round(usage_ratio * 100, 1)
     if usage_ratio < WARN:
         level = 'ok'
-    elif usage_ratio < ACTION:
+    elif usage_ratio < ACTIVE_ARCHIVE:
         level = 'warn'
+    elif usage_ratio < ACTION:
+        level = 'active_archive'
     elif usage_ratio < CRITICAL:
         level = 'action'
     elif nodes <= MEMORY_LIMIT + OVERFLOW_GRACE_NODES and pending <= 0 and failed <= 0:
@@ -657,7 +660,7 @@ def main():
         sys.exit(1)
 
     action = 'force' if args.force else (
-        'full' if cap['level'] in ('action','critical') else
+        'full' if cap['level'] in ('active_archive','action','critical') else
         'classify' if cap['level'] == 'warn' else 'none')
 
     if action == 'none':
