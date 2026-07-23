@@ -1801,7 +1801,7 @@ Implemented changes:
   - `外挂记忆体召回缺陷`
   These are visible in acceptance reports but remain non-blocking for public CI and installs.
 - Added documented production cron for async live-Hindsight refresh:
-  - `*/10 * * * * AGENT_HOME=$AGENT_HOME flock -n /tmp/live-hindsight-refresh.lock /usr/bin/python3 $AGENT_HOME/scripts/live_hindsight_refresh_worker.py --limit 5 --timeout 8 --output $AGENT_HOME/metrics/live-hindsight-refresh-latest.json`
+  - `*/10 * * * * AGENT_HOME=$AGENT_HOME flock -n /tmp/live-hindsight-refresh.lock /usr/bin/python3 $AGENT_HOME/scripts/live_hindsight_refresh_worker.py --limit 5 --timeout 8 --max-attempts 1 --output $AGENT_HOME/metrics/live-hindsight-refresh-latest.json`
 - Added `query_expansion.py` and `live_hindsight_refresh_worker.py` to installer and deploy-audit script inventories.
 
 Local verification:
