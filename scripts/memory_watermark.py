@@ -7,7 +7,7 @@ import os, re, json, math
 from pathlib import Path
 
 AGENT_HOME = Path(
-    os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".agent"))
+    os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
 ).expanduser()
 MEMORY_DIR = AGENT_HOME / "memories"
 
