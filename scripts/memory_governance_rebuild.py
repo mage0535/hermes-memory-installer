@@ -49,6 +49,7 @@ from memory_family_registry import (
     is_system_query_text,
     project_query_mode,
 )
+from query_expansion import expanded_query_terms
 
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 STATE_DB = Path(os.environ.get("MEMORY_STATE_DB_PATH", str(AGENT_HOME / "state.db"))).expanduser()
@@ -362,10 +363,7 @@ LOW_VALUE_OBJECT_MARKERS = (
 
 
 def build_query_terms(query: str) -> list[str]:
-    terms = re.findall(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]{2,}", query or "")
-    if not terms and query and query.strip():
-        return [query.strip()]
-    return terms
+    return expanded_query_terms(query)
 
 
 def build_fts_query(query: str) -> str:

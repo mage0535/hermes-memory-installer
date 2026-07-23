@@ -49,6 +49,30 @@ DEFAULT_SAMPLE_CASES = (
         min_l3=1,
     ),
     RecallSampleCase(
+        query="\u670b\u53cb\u5173\u7cfb",
+        expected_intent="relationship",
+        min_l3=1,
+        required_for_acceptance=False,
+    ),
+    RecallSampleCase(
+        query="\u6211\u7684\u504f\u597d\u662f\u4ec0\u4e48",
+        expected_intent="relationship",
+        min_l3=1,
+        required_for_acceptance=False,
+    ),
+    RecallSampleCase(
+        query="\u6700\u8fd1\u670d\u52a1\u5668\u544a\u8b66",
+        expected_intent="system",
+        min_l3=1,
+        required_for_acceptance=False,
+    ),
+    RecallSampleCase(
+        query="\u5916\u6302\u8bb0\u5fc6\u4f53\u53ec\u56de\u7f3a\u9677",
+        expected_intent="system",
+        min_l3=1,
+        required_for_acceptance=False,
+    ),
+    RecallSampleCase(
         query="favorite breakfast preferences",
         expected_intent="general",
         min_l2=1,

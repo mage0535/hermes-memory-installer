@@ -97,6 +97,7 @@ def install_memory_quality_cron(agent_home: Path) -> None:
     subprocess.run(["crontab", "-"], input=updated, text=True, check=True)
 
 SUPPORTED_SCRIPT_NAMES = [
+    "query_expansion.py",
     "memory_family_registry.py",
     "memory_governance_rebuild.py",
     "memory_guardian.py",
@@ -116,6 +117,7 @@ SUPPORTED_SCRIPT_NAMES = [
     "langsmith_monitor.py",
     "langsmith_task_wrapper.py",
     "langsmith_trend_report.py",
+    "live_hindsight_refresh_worker.py",
     "runtime_drift_check.py",
     "gbrain_stale_maintenance.py",
     "alert_queue.py",

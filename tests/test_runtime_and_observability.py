@@ -17,10 +17,13 @@ import urllib.error
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
+os.environ.setdefault("NO_PROXY", "127.0.0.1,localhost")
+os.environ.setdefault("no_proxy", "127.0.0.1,localhost")
 
 import memory_family_registry as family_registry
 import memory_guardian as guardian
 import recall_samples
+import query_expansion
 import sidecar_acceptance_check as acceptance_check
 import tiered_context_injector as injector
 import alert_queue
@@ -36,6 +39,7 @@ import profile_isolation_soak
 import synthetic_recall_benchmark
 import system_metrics_collector
 import hermes_load_shedder
+import live_hindsight_refresh_worker
 import telegram_language_sync
 import prometheus_alert_bridge
 import sync_embeddings
@@ -265,6 +269,102 @@ def test_recent_query_skips_live_hindsight_when_cached_candidates_are_sufficient
     ]
 
     assert injector.should_use_live_hindsight("recent sessions", candidates, top=5) is False
+
+
+def test_chinese_broad_queries_expand_to_operational_terms():
+    terms = query_expansion.expanded_query_terms("最近服务器告警")
+
+    assert "最近" in terms
+    assert "alert" in terms
+    assert "recent" in terms
+
+
+def test_relationship_and_preference_queries_share_profile_family():
+    assert injector.classify_query_intent("朋友关系") == "relationship"
+    assert injector.classify_query_intent("我的偏好是什么") == "relationship"
+    assert "preference" in injector.build_query_terms("我的偏好是什么")
+
+
+def test_weak_recall_enqueues_async_hindsight_refresh(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "ASYNC_LIVE_HINDSIGHT_REFRESH_ENABLED", True, raising=False)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_ENABLED", False, raising=False)
+    monkeypatch.setattr(injector, "STATE_DB", tmp_path / "missing-state.db")
+    monkeypatch.setattr(injector, "cached_governance_query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
+
+    rows, live_used, live_count = injector.get_l3("朋友关系", top=5)
+
+    assert rows == []
+    assert live_used is False
+    assert live_count == 0
+    conn = sqlite3.connect(str(gov_db))
+    try:
+        queued = conn.execute("SELECT query, reason FROM recall_refresh_queue").fetchone()
+    finally:
+        conn.close()
+    assert queued == ("朋友关系", "foreground_live_disabled")
+
+
+def test_provider_config_objects_are_demoted_for_memory_recall_queries():
+    fused = injector.rrf_fuse(
+        [
+            [
+                {
+                    "session_id": "provider-state",
+                    "slug": "provider-state",
+                    "title": "Provider Model State",
+                    "snippet": "provider model config endpoint",
+                    "layer": "object",
+                    "score": 0.99,
+                },
+                {
+                    "session_id": "memory-recall",
+                    "slug": "memory-recall",
+                    "title": "Hindsight recall defect analysis",
+                    "snippet": "memory recall L3 hindsight gbrain sidecar issue",
+                    "layer": "hindsight_cache",
+                    "score": 0.72,
+                },
+            ]
+        ],
+        query="外挂记忆体召回缺陷",
+    )
+
+    assert fused[0]["data"]["slug"] == "memory-recall"
+
+
+def test_live_hindsight_refresh_worker_caches_results(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    monkeypatch.setattr(live_hindsight_refresh_worker.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    assert injector.enqueue_live_hindsight_refresh("朋友关系", "test", 0) is True
+    monkeypatch.setattr(
+        live_hindsight_refresh_worker,
+        "fetch_live_hindsight",
+        lambda query, timeout_s: [
+            {
+                "id": "m1",
+                "type": "observation",
+                "text": "朋友关系偏好需要温和安慰",
+                "entities": ["朋友"],
+                "tags": ["relationship"],
+            }
+        ],
+    )
+
+    payload = live_hindsight_refresh_worker.run_once(limit=1, timeout_s=0.5)
+
+    conn = sqlite3.connect(str(gov_db))
+    try:
+        cached = conn.execute("SELECT text FROM hindsight_index WHERE memory_id = 'm1'").fetchone()
+        queued = conn.execute("SELECT status, candidate_count FROM recall_refresh_queue").fetchone()
+    finally:
+        conn.close()
+    assert payload == {"ok": True, "processed": 1, "cached": 1, "failed": 0}
+    assert cached == ("朋友关系偏好需要温和安慰",)
+    assert queued == ("done", 1)
 
 
 def test_knowledge_queries_have_dedicated_intent():
@@ -1536,6 +1636,15 @@ def test_server_cron_enables_gbrain_embedding_refresh():
     assert "--refresh-embeddings" in line
     assert "--stale-budget" in line
     assert "--missing-budget 0" in line
+
+
+def test_server_cron_enables_async_live_hindsight_refresh():
+    content = (REPO / "docs" / "ops" / "server-root.cron").read_text(encoding="utf-8")
+    line = next(row for row in content.splitlines() if "live-hindsight-refresh" in row)
+
+    assert "live_hindsight_refresh_worker.py" in line
+    assert "flock -n" in line
+    assert "--output /root/.hermes/metrics/live-hindsight-refresh-latest.json" in line
 
 
 def test_storage_cross_check_filters_generated_gbrain_orphan_indexes(monkeypatch):
