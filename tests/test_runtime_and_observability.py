@@ -285,6 +285,10 @@ def test_relationship_and_preference_queries_share_profile_family():
     assert "preference" in injector.build_query_terms("我的偏好是什么")
 
 
+def test_chinese_alert_queries_are_system_intent():
+    assert injector.classify_query_intent("最近服务器告警") == "system"
+
+
 def test_weak_recall_enqueues_async_hindsight_refresh(monkeypatch, tmp_path: Path):
     gov_db = tmp_path / "memory_governance.db"
     monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
