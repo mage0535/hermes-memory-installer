@@ -10,6 +10,7 @@
 25 */6 * * * LANGSMITH_PUBLISH=false /root/.hermes/scripts/run_langsmith_trend_report.sh >> /var/log/langsmith-trend.log 2>&1 # langsmith-trend
 0 */6 * * * LANGSMITH_PUBLISH=false /root/.hermes/scripts/run_auto_with_langsmith.sh >> /var/log/auto-summary.log 2>&1
 */15 * * * * AGENT_HOME=/root/.hermes flock -n /tmp/memory-governance-rebuild.lock /usr/bin/python3 /root/.hermes/scripts/memory_governance_rebuild.py --quiet >> /var/log/memory-governance-rebuild.log 2>&1 # memory-governance-rebuild
+*/10 * * * * AGENT_HOME=/root/.hermes flock -n /tmp/live-hindsight-refresh.lock /usr/bin/python3 /root/.hermes/scripts/live_hindsight_refresh_worker.py --limit 5 --timeout 8 --output /root/.hermes/metrics/live-hindsight-refresh-latest.json >> /var/log/live-hindsight-refresh.log 2>&1 # live-hindsight-refresh
 30 */6 * * * LANGSMITH_PUBLISH=false /root/.hermes/scripts/run_session_with_langsmith.sh >> /var/log/session-gbrain.log 2>&1
 0 2 * * * LANGSMITH_PUBLISH=false /root/.hermes/scripts/run_archive_with_langsmith.sh >> /var/log/archive-sessions.log 2>&1
 35 */6 * * * /usr/local/bin/hermes-memory drift-check --repo-root /root/hermes-memory-sidecar-source --format json && /usr/local/bin/cron-heartbeat drift-check $? >> /var/log/runtime-drift-check.log 2>&1 # runtime-drift-check

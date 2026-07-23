@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 import memory_governance_rebuild as governance_rebuild
+from query_expansion import expanded_query_terms
 from state_db_schema import detect_state_schema, sql_expr
 from memory_governance_rebuild import (
     query_canonical_semantic,
@@ -80,6 +81,10 @@ LIVE_HINDSIGHT_CIRCUIT_PATH = Path(
         str(AGENT_HOME / "metrics" / "live-hindsight-circuit.json"),
     )
 ).expanduser()
+ASYNC_LIVE_HINDSIGHT_REFRESH_ENABLED = os.environ.get(
+    "MEMORY_ASYNC_LIVE_HINDSIGHT_REFRESH_ENABLED", "true"
+).lower() in {"1", "true", "yes"}
+RECALL_REFRESH_QUEUE_MAX_ROWS = max(100, int(os.environ.get("MEMORY_RECALL_REFRESH_QUEUE_MAX_ROWS", "2000")))
 RECALL_INLINE_GOVERNANCE_REBUILD = os.environ.get("MEMORY_RECALL_INLINE_GOVERNANCE_REBUILD", "").lower() in {
     "1",
     "true",
@@ -93,6 +98,7 @@ _LAST_RECALL_DEBUG = {
     "cache_hits": 0,
     "cache_misses": 0,
     "weak_fallback_suppressed": 0,
+    "async_refresh_enqueued": 0,
 }
 
 
@@ -182,10 +188,7 @@ KNOWLEDGE_QUERY_MARKERS = (
 
 
 def build_query_terms(query: str) -> list[str]:
-    terms = re.findall(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]{2,}", query or "")
-    if not terms and query and query.strip():
-        return [query.strip()]
-    return terms
+    return expanded_query_terms(query)
 
 
 def build_fts_query(query: str) -> str:
@@ -361,6 +364,31 @@ SYSTEM_AUTHORITY_MARKERS = (
     "config",
 )
 
+MEMORY_RECALL_QUERY_MARKERS = (
+    "\u8bb0\u5fc6",
+    "\u8bb0\u5fc6\u4f53",
+    "\u53ec\u56de",
+    "\u5916\u6302",
+    "\u7f3a\u9677",
+    "\u4e09\u7aef",
+    "memory",
+    "recall",
+    "hindsight",
+    "gbrain",
+    "sidecar",
+)
+
+PROVIDER_CONFIG_RESULT_MARKERS = (
+    "provider",
+    "model state",
+    "model",
+    "config",
+    "endpoint",
+    "base_url",
+    "base url",
+    "gateway",
+)
+
 
 def is_authoritative_system_object(row: dict) -> bool:
     layer = row.get("layer") or ""
@@ -379,6 +407,19 @@ def is_authoritative_system_object(row: dict) -> bool:
 
 def has_authoritative_system_object(rows: list[dict]) -> bool:
     return any(is_authoritative_system_object(row) for row in rows)
+
+
+def is_memory_recall_query(query: str) -> bool:
+    return has_any_marker(MEMORY_RECALL_QUERY_MARKERS, query or "")
+
+
+def is_provider_config_result(row: dict) -> bool:
+    data = row.get("data", {}) or {}
+    text = f"{data.get('title', '')} {data.get('snippet', '')} {data.get('object_type', '')}".lower()
+    layer_set = set(row.get("sources", []))
+    return bool(layer_set & {"object", "hindsight_cache", "governance_semantic", "semantic"}) and any(
+        marker in text for marker in PROVIDER_CONFIG_RESULT_MARKERS
+    )
 
 
 def should_use_live_hindsight(query: str, candidates: list[dict], top: int) -> bool:
@@ -467,6 +508,75 @@ def close_live_hindsight_circuit() -> None:
             LIVE_HINDSIGHT_CIRCUIT_PATH.unlink()
     except OSError:
         pass
+
+
+def ensure_recall_refresh_queue_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recall_refresh_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            query_hash TEXT NOT NULL UNIQUE,
+            query TEXT NOT NULL,
+            intent TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            candidate_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_recall_refresh_queue_status ON recall_refresh_queue(status, updated_at)")
+
+
+def prune_recall_refresh_queue(conn: sqlite3.Connection, max_rows: int = RECALL_REFRESH_QUEUE_MAX_ROWS) -> None:
+    conn.execute(
+        """
+        DELETE FROM recall_refresh_queue
+        WHERE id NOT IN (
+            SELECT id FROM recall_refresh_queue ORDER BY id DESC LIMIT ?
+        )
+        """,
+        (max(1, int(max_rows)),),
+    )
+
+
+def enqueue_live_hindsight_refresh(query: str, reason: str, candidate_count: int = 0) -> bool:
+    if not ASYNC_LIVE_HINDSIGHT_REFRESH_ENABLED or not governance_rebuild.GOVERNANCE_DB:
+        return False
+    text = (query or "").strip()
+    if not text:
+        return False
+    query_hash = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+    conn = sqlite3.connect(str(governance_rebuild.GOVERNANCE_DB), timeout=5)
+    try:
+        ensure_recall_refresh_queue_table(conn)
+        now = time.time()
+        conn.execute(
+            """
+            INSERT INTO recall_refresh_queue (
+                created_at, updated_at, query_hash, query, intent, reason, candidate_count, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+            ON CONFLICT(query_hash) DO UPDATE SET
+                updated_at=excluded.updated_at,
+                intent=excluded.intent,
+                reason=excluded.reason,
+                candidate_count=excluded.candidate_count,
+                status='pending'
+            """,
+            (now, now, query_hash, text[:500], classify_query_intent(text), reason[:80], int(candidate_count)),
+        )
+        prune_recall_refresh_queue(conn)
+        conn.commit()
+        _LAST_RECALL_DEBUG["async_refresh_enqueued"] = 1
+        return True
+    except sqlite3.Error as exc:
+        print(f"[tiered_context] async recall refresh enqueue skipped: {exc}", file=sys.stderr)
+        return False
+    finally:
+        conn.close()
 
 
 def governance_cache_token() -> tuple[bool, int, int]:
@@ -675,6 +785,7 @@ def rerank_fused(query: str, fused_rows: list[dict]) -> list[dict]:
     provider_mode = provider_query_mode(query)
     project_mode = project_query_mode(query)
     system_query = is_system_query(query)
+    memory_recall_query = is_memory_recall_query(query)
     has_system_authority = system_query and has_authoritative_system_object(fused_rows)
     system_object_markers = ("model", "usage", "provider", "gateway", "quota", "模型", "用量", "配置", "网关")
     knowledge_query = has_any_marker(
@@ -721,6 +832,13 @@ def rerank_fused(query: str, fused_rows: list[dict]) -> list[dict]:
         data = row.get("data", {}) or {}
         combined_text = f"{data.get('title', '')} {data.get('snippet', '')}".lower()
         session_like_result = is_session_like_title(str(data.get("title", ""))) or is_session_like_title(str(data.get("slug", "")))
+        if memory_recall_query and not is_provider_query(query):
+            if is_provider_config_result(row):
+                score -= 0.15
+            if ("hindsight" in layer_set or "hindsight_cache" in layer_set or "knowledge" in layer_set) and any(
+                marker in combined_text for marker in ("recall", "hindsight", "gbrain", "memory", "sidecar")
+            ):
+                score += 0.08
         if (
             provider_mode == "config"
             and strong_provider_object
@@ -1241,7 +1359,10 @@ def get_l3(query: str, top: int = TOP_K_L3):
     _LAST_RECALL_DEBUG["cache_hits"] = 0
     _LAST_RECALL_DEBUG["cache_misses"] = 0
     _LAST_RECALL_DEBUG["weak_fallback_suppressed"] = 0
+    _LAST_RECALL_DEBUG["async_refresh_enqueued"] = 0
     if not STATE_DB.exists() and not governance_rebuild.GOVERNANCE_DB.exists():
+        if should_use_live_hindsight(query, [], top):
+            enqueue_live_hindsight_refresh(query, "foreground_live_disabled", 0)
         return [], False, 0
     candidates = []
     seen = set()
@@ -1411,7 +1532,8 @@ def get_l3(query: str, top: int = TOP_K_L3):
             }
         )
 
-    if LIVE_HINDSIGHT_ENABLED and should_use_live_hindsight(query, candidates, top) and not live_hindsight_circuit_open():
+    live_hindsight_needed = should_use_live_hindsight(query, candidates, top)
+    if LIVE_HINDSIGHT_ENABLED and live_hindsight_needed and not live_hindsight_circuit_open():
         live_hindsight_used = True
         hindsight_payload = json.dumps(
             {
@@ -1464,8 +1586,13 @@ def get_l3(query: str, top: int = TOP_K_L3):
                 if len(candidates) >= top * 4:
                     break
         except Exception as exc:
+            enqueue_live_hindsight_refresh(query, "foreground_live_failed", len(candidates))
             open_live_hindsight_circuit(str(exc))
             print(f"[tiered_context] live hindsight recall failed: {exc}", file=sys.stderr)
+    elif live_hindsight_needed and live_hindsight_circuit_open():
+        enqueue_live_hindsight_refresh(query, "foreground_live_circuit_open", len(candidates))
+    elif live_hindsight_needed and not LIVE_HINDSIGHT_ENABLED:
+        enqueue_live_hindsight_refresh(query, "foreground_live_disabled", len(candidates))
 
     use_expensive_fallbacks = should_use_expensive_fallbacks(query, candidates, top)
 
@@ -1552,7 +1679,10 @@ def get_l3(query: str, top: int = TOP_K_L3):
             if len(candidates) >= top * 3:
                 break
 
-    return trim_l3_candidates(query, candidates, top), live_hindsight_used, live_hindsight_results
+    trimmed = trim_l3_candidates(query, candidates, top)
+    if live_hindsight_needed and len(trimmed) < max(1, min(top, 3)):
+        enqueue_live_hindsight_refresh(query, "weak_foreground_recall", len(trimmed))
+    return trimmed, live_hindsight_used, live_hindsight_results
 
 
 def ensure_recall_feedback_table(conn: sqlite3.Connection) -> None:

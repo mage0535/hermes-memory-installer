@@ -1773,3 +1773,49 @@ Verified production state after deployment:
 Residual improvement:
 
 - Relationship-style recall still has a weak optional sample (`friends/relationship` can return no candidates and live Hindsight may time out). It is not part of required acceptance, but it should be treated as the next recall-quality tuning target.
+
+## 31. Recall Quality Closure - 2026-07-23
+
+Goal: close the gap between operational health and real natural-language recall quality without re-enabling blocking foreground Hindsight calls.
+
+Implemented changes:
+
+- Added `scripts/query_expansion.py` as a shared query-expansion module for Chinese broad queries and English operational aliases.
+- Wired query expansion into both `tiered_context_injector.py` and `memory_governance_rebuild.py`, so L2/L3 candidate generation and filtering use the same expanded terms.
+- Expanded relationship/profile detection to include standard UTF-8 Chinese terms for friend, relationship, WeChat, comfort, preference, and liking while keeping legacy mojibake markers for old data compatibility.
+- Added weak-recall async refresh queue support in `tiered_context_injector.py`.
+  - Foreground recall still does not call live Hindsight unless `MEMORY_LIVE_HINDSIGHT_ENABLED=true`.
+  - When live Hindsight is disabled, circuit-open, failed, or the foreground result remains weak, the query is queued in the private governance DB.
+- Added `scripts/live_hindsight_refresh_worker.py`.
+  - Processes `recall_refresh_queue`.
+  - Calls live Hindsight in the background with bounded timeout/concurrency.
+  - Writes successful results into `hindsight_index` and `hindsight_index_fts` so later foreground recalls use local cache.
+- Added ranking protection for memory/recall queries.
+  - Provider/model/config objects are demoted unless the query explicitly asks for provider/config.
+  - Hindsight/gbrain/sidecar recall results are boosted for memory-quality questions.
+- Added optional production-oriented recall samples:
+  - `朋友关系`
+  - `我的偏好是什么`
+  - `最近服务器告警`
+  - `外挂记忆体召回缺陷`
+  These are visible in acceptance reports but remain non-blocking for public CI and installs.
+- Added documented production cron for async live-Hindsight refresh:
+  - `*/10 * * * * AGENT_HOME=$AGENT_HOME flock -n /tmp/live-hindsight-refresh.lock /usr/bin/python3 $AGENT_HOME/scripts/live_hindsight_refresh_worker.py --limit 5 --timeout 8 --output $AGENT_HOME/metrics/live-hindsight-refresh-latest.json`
+- Added `query_expansion.py` and `live_hindsight_refresh_worker.py` to installer and deploy-audit script inventories.
+
+Local verification:
+
+- New recall-quality regression tests: passed.
+- Targeted install/smoke/runtime tests: passed.
+- Full test suite: `278 passed, 2 skipped`.
+- Public repo audit: `ok=true`, no private path refs, no secret-like refs, no compile failures.
+
+Operational decision:
+
+- Keep foreground live Hindsight disabled by default.
+- Treat live Hindsight as an async cache refill path, not a user-request path, until the `/recall` endpoint has proven bounded latency under production load.
+
+Follow-up observation target:
+
+- Track `recall_refresh_queue` drain time and `live-hindsight-refresh-latest.json`.
+- If queue age exceeds 15 minutes or failure count rises, investigate Hindsight recall endpoint latency before changing foreground recall behavior.

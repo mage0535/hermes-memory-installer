@@ -23,6 +23,7 @@ LEGACY_KMM_NOTES_REL = Path("knowledge/wiki/wiki")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPO_SCRIPTS_DIR = REPO_ROOT / "scripts"
 CORE_DEPLOY_SCRIPTS = [
+    "query_expansion.py",
     "memory_family_registry.py",
     "session_to_gbrain.py",
     "memory_governance_rebuild.py",
@@ -42,6 +43,7 @@ CORE_DEPLOY_SCRIPTS = [
     "langsmith_monitor.py",
     "langsmith_task_wrapper.py",
     "langsmith_trend_report.py",
+    "live_hindsight_refresh_worker.py",
     "runtime_drift_check.py",
     "gbrain_stale_maintenance.py",
     "alert_queue.py",
