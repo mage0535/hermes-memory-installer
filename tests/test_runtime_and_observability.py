@@ -408,6 +408,17 @@ def test_live_hindsight_refresh_worker_caches_results(monkeypatch, tmp_path: Pat
     assert queued == ("done", 1)
 
 
+def test_live_hindsight_refresh_worker_skips_cleanly_when_governance_db_is_locked(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    sqlite3.connect(str(gov_db)).close()
+    monkeypatch.setattr(live_hindsight_refresh_worker.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(live_hindsight_refresh_worker, "ensure_schema_when_unlocked", lambda conn: False)
+
+    payload = live_hindsight_refresh_worker.run_once(limit=1, timeout_s=0.1)
+
+    assert payload == {"ok": True, "processed": 0, "cached": 0, "failed": 0, "skipped": "database_locked"}
+
+
 def test_knowledge_queries_have_dedicated_intent():
     assert injector.classify_query_intent("agent memory architecture") == "knowledge"
     assert injector.classify_query_intent("retrieval playbook") == "knowledge"

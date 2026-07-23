@@ -13,6 +13,25 @@ import memory_governance_rebuild as governance_rebuild
 import tiered_context_injector as injector
 
 
+def open_governance_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(governance_rebuild.GOVERNANCE_DB), timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=30000")
+    return conn
+
+
+def ensure_schema_when_unlocked(conn: sqlite3.Connection) -> bool:
+    for attempt in range(3):
+        try:
+            governance_rebuild.ensure_schema(conn)
+            return True
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() or attempt >= 2:
+                return False
+            time.sleep(0.5 * (attempt + 1))
+    return False
+
+
 def _json_text(value) -> str:
     if isinstance(value, list):
         return " ".join(str(item) for item in value if item)
@@ -41,7 +60,8 @@ def fetch_live_hindsight(query: str, timeout_s: float) -> list[dict]:
 
 
 def cache_hindsight_results(conn: sqlite3.Connection, query_hash: str, results: list[dict]) -> int:
-    governance_rebuild.ensure_schema(conn)
+    if not ensure_schema_when_unlocked(conn):
+        raise sqlite3.OperationalError("database is locked")
     now = time.time()
     inserted = 0
     for idx, item in enumerate(results):
@@ -99,13 +119,13 @@ def cache_hindsight_results(conn: sqlite3.Connection, query_hash: str, results: 
 
 def run_once(limit: int, timeout_s: float, max_attempts: int = 3) -> dict:
     gov_db = governance_rebuild.GOVERNANCE_DB
-    conn = sqlite3.connect(str(gov_db), timeout=10)
-    conn.row_factory = sqlite3.Row
+    conn = open_governance_connection()
     processed = 0
     cached = 0
     failed = 0
     try:
-        governance_rebuild.ensure_schema(conn)
+        if not ensure_schema_when_unlocked(conn):
+            return {"ok": True, "processed": 0, "cached": 0, "failed": 0, "skipped": "database_locked"}
         injector.ensure_recall_refresh_queue_table(conn)
         rows = conn.execute(
             """
