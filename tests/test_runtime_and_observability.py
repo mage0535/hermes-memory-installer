@@ -43,6 +43,47 @@ import snapshot_compress
 import snapshot_restore
 
 
+def load_script_module(name: str, relative_path: str):
+    spec = importlib.util.spec_from_file_location(name, REPO / relative_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    return module
+
+
+def test_hindsight_service_can_follow_hermes_active_model_config(tmp_path: Path, monkeypatch):
+    (tmp_path / "config.yaml").write_text(
+        """
+model:
+  provider: custom-openai
+  model: generic-model
+custom_providers:
+  - name: custom-openai
+    base_url: https://llm.example.test/v1
+    api_key_env: HERMES_TEST_API_KEY
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HERMES_TEST_API_KEY", "test-secret")
+    service = load_script_module("hindsight_service_test", "scripts/hindsight-service.py")
+
+    active = service.hermes_active_model(tmp_path)
+
+    assert active == {
+        "api_key": "test-secret",
+        "base_url": "https://llm.example.test/v1",
+        "model": "generic-model",
+        "provider": "custom-openai",
+    }
+
+
+def test_hindsight_service_import_is_side_effect_free():
+    service = load_script_module("hindsight_service_import_test", "scripts/hindsight-service.py")
+
+    assert hasattr(service, "main")
+    assert hasattr(service, "HindsightServer") is False
+
+
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
     target = tmp_path / "context.md"
     target.write_text("old\n", encoding="utf-8")

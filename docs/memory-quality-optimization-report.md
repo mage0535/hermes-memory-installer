@@ -615,3 +615,11 @@ Verification:
 - Production source/runtime content check: 8 source files and 5 runtime scripts matched the GitHub main SHA256 set; mismatch count `0`.
 - Production source Git metadata remains at older base with dirty production files by design; do not hard reset it unless preserving/relocating production-only continuation notes first. Runtime code content is aligned and should be treated as the operational truth.
 - Current runtime validation should continue to prefer generated health artifacts under `$AGENT_HOME/metrics` plus alert queue output, not stale historical LangSmith aggregates alone.
+
+## 2026-07-23 Three-Way Runtime Drift Recheck
+
+- Rechecked local publishable worktree, GitHub `origin/main`, production source, and production runtime scripts. Binary hash drift was mostly Windows-vs-Linux line-ending noise; normalized LF comparison reduced source drift to targeted runtime/config files.
+- Public code changes: `hindsight-service.py` now follows the active Hermes model provider configuration at runtime while keeping conservative Hindsight worker/LLM limits; importing the wrapper is side-effect-free for tests. `memory_watermark.py` now defaults to `$HOME/.hermes` when `AGENT_HOME`/`HERMES_HOME` are unset.
+- Production-only drift handling: legacy runtime helpers with hard-coded production paths or personal domain labels should be replaced by the public portable versions during deployment, not copied back into GitHub.
+- Verification before publish: targeted regression tests passed; full local gate reported `270 passed, 2 skipped`; privacy audit returned `ok=true`.
+- Deployment rule: server source and runtime should be synced from GitHub main for code, while production data/config/continuation notes remain server-local.
