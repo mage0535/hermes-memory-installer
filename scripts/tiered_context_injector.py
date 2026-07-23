@@ -1589,9 +1589,9 @@ def get_l3(query: str, top: int = TOP_K_L3):
             enqueue_live_hindsight_refresh(query, "foreground_live_failed", len(candidates))
             open_live_hindsight_circuit(str(exc))
             print(f"[tiered_context] live hindsight recall failed: {exc}", file=sys.stderr)
-    elif live_hindsight_needed and live_hindsight_circuit_open():
+    elif live_hindsight_needed and live_hindsight_circuit_open() and len(candidates) < max(1, min(top, 3)):
         enqueue_live_hindsight_refresh(query, "foreground_live_circuit_open", len(candidates))
-    elif live_hindsight_needed and not LIVE_HINDSIGHT_ENABLED:
+    elif live_hindsight_needed and not LIVE_HINDSIGHT_ENABLED and len(candidates) < max(1, min(top, 3)):
         enqueue_live_hindsight_refresh(query, "foreground_live_disabled", len(candidates))
 
     use_expensive_fallbacks = should_use_expensive_fallbacks(query, candidates, top)
@@ -1679,8 +1679,9 @@ def get_l3(query: str, top: int = TOP_K_L3):
             if len(candidates) >= top * 3:
                 break
 
+    candidate_count_before_trim = len(candidates)
     trimmed = trim_l3_candidates(query, candidates, top)
-    if live_hindsight_needed and len(trimmed) < max(1, min(top, 3)):
+    if live_hindsight_needed and len(trimmed) < max(1, min(top, 3)) and candidate_count_before_trim < max(1, min(top, 3)):
         enqueue_live_hindsight_refresh(query, "weak_foreground_recall", len(trimmed))
     return trimmed, live_hindsight_used, live_hindsight_results
 

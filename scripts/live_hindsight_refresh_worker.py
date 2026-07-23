@@ -97,7 +97,7 @@ def cache_hindsight_results(conn: sqlite3.Connection, query_hash: str, results: 
     return inserted
 
 
-def run_once(limit: int, timeout_s: float) -> dict:
+def run_once(limit: int, timeout_s: float, max_attempts: int = 3) -> dict:
     gov_db = governance_rebuild.GOVERNANCE_DB
     conn = sqlite3.connect(str(gov_db), timeout=10)
     conn.row_factory = sqlite3.Row
@@ -111,11 +111,12 @@ def run_once(limit: int, timeout_s: float) -> dict:
             """
             SELECT id, query_hash, query, attempts
             FROM recall_refresh_queue
-            WHERE status IN ('pending', 'failed')
+            WHERE status = 'pending'
+               OR (status = 'failed' AND attempts < ?)
             ORDER BY updated_at ASC
             LIMIT ?
             """,
-            (max(1, int(limit)),),
+            (max(1, int(max_attempts)), max(1, int(limit))),
         ).fetchall()
         for row in rows:
             processed += 1
@@ -151,10 +152,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Refresh weak recall queries from live Hindsight into the local cache")
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=8.0)
+    parser.add_argument("--max-attempts", type=int, default=3)
     parser.add_argument("--output", help="Optional JSON output path")
     args = parser.parse_args(argv)
 
-    payload = run_once(limit=args.limit, timeout_s=args.timeout)
+    payload = run_once(limit=args.limit, timeout_s=args.timeout, max_attempts=args.max_attempts)
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     if args.output:
         path = Path(args.output).expanduser()
@@ -166,4 +168,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

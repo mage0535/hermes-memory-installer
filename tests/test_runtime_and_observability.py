@@ -307,6 +307,47 @@ def test_weak_recall_enqueues_async_hindsight_refresh(monkeypatch, tmp_path: Pat
     assert queued == ("朋友关系", "foreground_live_disabled")
 
 
+def test_sufficient_cached_relationship_recall_does_not_enqueue_refresh(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    sqlite3.connect(str(gov_db)).close()
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "ASYNC_LIVE_HINDSIGHT_REFRESH_ENABLED", True, raising=False)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_ENABLED", False, raising=False)
+    monkeypatch.setattr(injector, "STATE_DB", tmp_path / "missing-state.db")
+
+    def fake_cached(layer, query, top, fetcher):
+        if layer != "hindsight_cache":
+            return []
+        return [
+                {
+                    "session_id": f"h{idx}",
+                    "title": f"朋友关系偏好 {idx}",
+                    "snippet": f"朋友关系偏好需要温和安慰 {idx}",
+                    "source": "hindsight_cache",
+                "layer": "hindsight_cache",
+                "score": 0.9 - idx * 0.01,
+            }
+            for idx in range(3)
+        ]
+
+    monkeypatch.setattr(injector, "cached_governance_query", fake_cached)
+    monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
+
+    rows, live_used, live_count = injector.get_l3("朋友关系", top=5)
+
+    assert len(rows) >= 1
+    assert live_used is False
+    assert live_count == 0
+    conn = sqlite3.connect(str(gov_db))
+    try:
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recall_refresh_queue'"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert exists is None
+
+
 def test_provider_config_objects_are_demoted_for_memory_recall_queries():
     fused = injector.rrf_fuse(
         [
