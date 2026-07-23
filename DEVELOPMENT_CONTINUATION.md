@@ -1858,3 +1858,35 @@ Verification:
 - Added red-green regression tests for exhausted queue expiry, timeout classification, alert queue consumption, cron freshness coverage, dashboard visibility, and OpenMetrics queue export.
 - Added a regression test for empty dead-letter replay status so the operator summary no longer stays at `dead_letter_replay=unknown` when there is no dead-letter work.
 - `tests/test_runtime_and_observability.py`: passed locally after implementation.
+
+## 33. System Resource Alert Closure - 2026-07-23
+
+Goal: close the observability gap where memory services can be operationally healthy while host swap is already high enough to threaten future latency or restart stability.
+
+Finding:
+
+- A fresh production check showed `hermes-memory status` healthy and all recall/acceptance checks passing, but `system-metrics-latest.json` reported swap usage above 90%.
+- Before this change, swap and disk usage were exported to dashboard/OpenMetrics but were not consumed by `alert_queue.py`, so Hermes would not receive a local memory-system alert for host resource pressure.
+
+Implemented changes:
+
+- `alert_queue.py` now consumes `system-metrics-latest.json`.
+- Default thresholds:
+  - swap `>=85%` -> `system-resources:swap_usage_high` as `degraded`;
+  - swap `>=95%` -> `system-resources:swap_usage_critical` as `action-needed`;
+  - disk `>=85%` -> `system-resources:disk_usage_high` as `degraded`;
+  - disk `>=90%` -> `system-resources:disk_usage_critical` as `action-needed`.
+- Thresholds are environment-configurable through:
+  - `MEMORY_ALERT_SWAP_DEGRADED_PCT`
+  - `MEMORY_ALERT_SWAP_ACTION_PCT`
+  - `MEMORY_ALERT_DISK_DEGRADED_PCT`
+  - `MEMORY_ALERT_DISK_ACTION_PCT`
+
+Operational decision:
+
+- High swap is treated as degraded unless it reaches the critical band.
+- This avoids calling the whole memory stack broken while still making host pressure visible before it causes Hindsight/gateway restart loops.
+
+Verification:
+
+- Added red-green regression tests for degraded swap and critical swap/disk alerting.
