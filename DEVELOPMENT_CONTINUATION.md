@@ -1791,6 +1791,7 @@ Implemented changes:
   - Calls live Hindsight in the background with bounded timeout/concurrency.
   - Writes successful results into `hindsight_index` and `hindsight_index_fts` so later foreground recalls use local cache.
   - Retries failed items only up to `--max-attempts` so a slow `/recall` endpoint does not create an infinite retry loop.
+  - Skips cleanly when the governance DB is locked by another maintenance job; this keeps the cron non-disruptive under normal SQLite contention.
 - Added ranking protection for memory/recall queries.
   - Provider/model/config objects are demoted unless the query explicitly asks for provider/config.
   - Hindsight/gbrain/sidecar recall results are boosted for memory-quality questions.
