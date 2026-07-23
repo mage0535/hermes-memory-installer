@@ -621,5 +621,6 @@ Verification:
 - Rechecked local publishable worktree, GitHub `origin/main`, production source, and production runtime scripts. Binary hash drift was mostly Windows-vs-Linux line-ending noise; normalized LF comparison reduced source drift to targeted runtime/config files.
 - Public code changes: `hindsight-service.py` now follows the active Hermes model provider configuration at runtime while keeping conservative Hindsight worker/LLM limits; importing the wrapper is side-effect-free for tests. `memory_watermark.py` now defaults to `$HOME/.hermes` when `AGENT_HOME`/`HERMES_HOME` are unset.
 - Production-only drift handling: legacy runtime helpers with hard-coded production paths or personal domain labels should be replaced by the public portable versions during deployment, not copied back into GitHub.
-- Verification before publish: targeted regression tests passed; full local gate reported `270 passed, 2 skipped`; privacy audit returned `ok=true`.
+- Runtime drift alert semantics: `repo_dirty` is now `info` when the deploy audit shows no missing or mismatched runtime scripts, so production-only continuation notes do not create false degraded alerts.
+- Verification before publish: targeted regression tests passed; full local gate reported `271 passed, 2 skipped`; privacy audit returned `ok=true`.
 - Deployment rule: server source and runtime should be synced from GitHub main for code, while production data/config/continuation notes remain server-local.

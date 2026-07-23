@@ -363,6 +363,14 @@ def git_status(repo_root: Path) -> dict:
     }
 
 
+def repo_dirty_reason(repo: dict, deploy: dict) -> dict | None:
+    if not repo.get("dirty"):
+        return None
+    deployed_content_clean = not deploy.get("missing_scripts") and not deploy.get("mismatched_scripts")
+    severity = "info" if deployed_content_clean else "degraded"
+    return {"code": "repo_dirty", "severity": severity, "count": len(repo.get("lines") or [])}
+
+
 def build_runtime_drift_report(repo_root: Path) -> dict:
     manifest = build_manifest(repo_root)
     deploy = manifest["deploy_audit"]
@@ -383,13 +391,14 @@ def build_runtime_drift_report(repo_root: Path) -> dict:
         reasons.append({"code": "gbrain_deorphan_unscheduled", "severity": "degraded"})
     if timer.get("active") != "active" or timer.get("enabled") != "enabled":
         reasons.append({"code": "memory_guardian_timer", "severity": "degraded", "value": timer})
-    if repo["dirty"]:
-        reasons.append({"code": "repo_dirty", "severity": "degraded", "count": len(repo["lines"])})
+    dirty_reason = repo_dirty_reason(repo, deploy)
+    if dirty_reason:
+        reasons.append(dirty_reason)
 
     status = "healthy"
     if any(item["severity"] == "action-needed" for item in reasons):
         status = "action-needed"
-    elif reasons:
+    elif any(item["severity"] == "degraded" for item in reasons):
         status = "degraded"
 
     return {

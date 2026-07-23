@@ -51,6 +51,15 @@ def load_script_module(name: str, relative_path: str):
     return module
 
 
+def load_source_file_module(name: str, relative_path: str):
+    loader = importlib.machinery.SourceFileLoader(name, str(REPO / relative_path))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    return module
+
+
 def test_hindsight_service_can_follow_hermes_active_model_config(tmp_path: Path, monkeypatch):
     (tmp_path / "config.yaml").write_text(
         """
@@ -82,6 +91,18 @@ def test_hindsight_service_import_is_side_effect_free():
 
     assert hasattr(service, "main")
     assert hasattr(service, "HindsightServer") is False
+
+
+def test_runtime_drift_repo_dirty_is_info_when_deploy_content_matches():
+    cli = load_source_file_module("hermes_memory_cli_test", "bin/hermes-memory")
+
+    reason = cli.repo_dirty_reason(
+        {"dirty": True, "lines": [" M DEVELOPMENT_CONTINUATION.md"]},
+        {"missing_scripts": [], "mismatched_scripts": []},
+    )
+
+    assert reason["code"] == "repo_dirty"
+    assert reason["severity"] == "info"
 
 
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
