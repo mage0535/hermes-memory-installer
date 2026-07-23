@@ -40,6 +40,7 @@ ARTIFACTS = {
     "webhook_receiver": "webhook-receiver-latest.json",
     "slo_rollup": "slo-rollup-latest.json",
     "cron_freshness": "cron-freshness-latest.json",
+    "live_hindsight_refresh": "live-hindsight-refresh-latest.json",
     "system_metrics": "system-metrics-latest.json",
 }
 
@@ -192,6 +193,19 @@ def render_openmetrics(metrics_dir: Path) -> str:
             if age_s is not None:
                 lines.append(metric_line("hermes_memory_cron_job_age_seconds", float(age_s), {"job": str(job.get("name") or "unknown")}))
             lines.append(metric_line("hermes_memory_cron_job_max_age_seconds", int(job.get("max_age_s") or 0), {"job": str(job.get("name") or "unknown")}))
+
+    live_refresh = payloads["live_hindsight_refresh"]
+    refresh_queue = live_refresh.get("queue") if isinstance(live_refresh.get("queue"), dict) else {}
+    if refresh_queue:
+        lines.extend(
+            [
+                "# HELP hermes_memory_live_hindsight_refresh_queue Live Hindsight async refresh queue rows by state.",
+                "# TYPE hermes_memory_live_hindsight_refresh_queue gauge",
+            ]
+        )
+        for state, value in sorted(refresh_queue.items()):
+            if isinstance(value, (int, float)):
+                lines.append(metric_line("hermes_memory_live_hindsight_refresh_queue", value, {"state": str(state)}))
 
     system_metrics = payloads["system_metrics"]
     memory = system_metrics.get("memory") if isinstance(system_metrics.get("memory"), dict) else {}

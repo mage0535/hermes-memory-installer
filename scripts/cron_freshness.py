@@ -21,6 +21,7 @@ CHECKS = [
     {"name": "archive_sessions", "path": Path("/var/log/archive-sessions.log"), "max_age_s": 30 * 3600},
     {"name": "runtime_drift_check", "path": AGENT_HOME / "metrics" / "runtime-drift-latest.json", "max_age_s": 8 * 3600},
     {"name": "alert_queue", "path": AGENT_HOME / "metrics" / "health-summary-latest.json", "max_age_s": 8 * 3600},
+    {"name": "live_hindsight_refresh", "path": AGENT_HOME / "metrics" / "live-hindsight-refresh-latest.json", "max_age_s": 1800},
     {"name": "storage_cross_check", "path": AGENT_HOME / "metrics" / "storage-cross-check-latest.json", "max_age_s": 8 * 3600},
     {"name": "metrics_dashboard", "path": AGENT_HOME / "metrics" / "dashboard.html", "max_age_s": 8 * 3600},
     {"name": "openmetrics_exporter", "path": AGENT_HOME / "metrics" / "openmetrics.prom", "max_age_s": 8 * 3600},
