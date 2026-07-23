@@ -915,6 +915,56 @@ def test_alert_queue_reports_live_hindsight_refresh_degraded(tmp_path: Path):
     assert alerts[0]["detail"]["failure_buckets"] == {"timeout": 2}
 
 
+def test_alert_queue_reports_system_swap_degraded(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps({"monitor": {"latest_acceptance_ok": True, "acceptance_ok_rate": 1.0, "lag": {"status": "healthy"}}}),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "hindsight-security-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "system-metrics-latest.json").write_text(
+        json.dumps({"memory": {"swap_pct": 90.9, "available_mb": 4076}, "disk": {"pct": 74.4}}),
+        encoding="utf-8",
+    )
+
+    status, alerts = alert_queue.build_alerts(metrics)
+
+    assert status == "degraded"
+    assert [(row["source"], row["code"], row["severity"]) for row in alerts] == [
+        ("system-resources", "swap_usage_high", "degraded")
+    ]
+    assert alerts[0]["detail"]["swap_pct"] == 90.9
+
+
+def test_alert_queue_escalates_critical_system_resources(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps({"monitor": {"latest_acceptance_ok": True, "acceptance_ok_rate": 1.0, "lag": {"status": "healthy"}}}),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "hindsight-security-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "system-metrics-latest.json").write_text(
+        json.dumps({"memory": {"swap_pct": 96.0, "available_mb": 512}, "disk": {"pct": 91.0}}),
+        encoding="utf-8",
+    )
+
+    status, alerts = alert_queue.build_alerts(metrics)
+
+    assert status == "action-needed"
+    assert ("system-resources", "swap_usage_critical", "action-needed") in [
+        (row["source"], row["code"], row["severity"]) for row in alerts
+    ]
+    assert ("system-resources", "disk_usage_critical", "action-needed") in [
+        (row["source"], row["code"], row["severity"]) for row in alerts
+    ]
+
+
 def test_alert_queue_resolves_language_from_locale(monkeypatch):
     monkeypatch.setenv("LANG", "en_US.UTF-8")
 
