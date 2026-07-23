@@ -1790,6 +1790,7 @@ Implemented changes:
   - Processes `recall_refresh_queue`.
   - Calls live Hindsight in the background with bounded timeout/concurrency.
   - Writes successful results into `hindsight_index` and `hindsight_index_fts` so later foreground recalls use local cache.
+  - Retries failed items only up to `--max-attempts` so a slow `/recall` endpoint does not create an infinite retry loop.
 - Added ranking protection for memory/recall queries.
   - Provider/model/config objects are demoted unless the query explicitly asks for provider/config.
   - Hindsight/gbrain/sidecar recall results are boosted for memory-quality questions.
@@ -1814,6 +1815,7 @@ Operational decision:
 
 - Keep foreground live Hindsight disabled by default.
 - Treat live Hindsight as an async cache refill path, not a user-request path, until the `/recall` endpoint has proven bounded latency under production load.
+- Do not enqueue relationship/profile queries when local cached candidates are already sufficient; async refresh is only for genuinely weak foreground recall.
 
 Follow-up observation target:
 
