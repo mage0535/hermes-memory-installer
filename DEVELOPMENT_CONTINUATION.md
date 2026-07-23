@@ -1844,6 +1844,7 @@ Implemented changes:
 - `openmetrics_exporter.py` now exports:
   - `hermes_memory_component_status{component="live_hindsight_refresh"}`;
   - `hermes_memory_live_hindsight_refresh_queue{state=...}`.
+- `slo_rollup.py` now treats an empty dead-letter replay report (`total=0`, `remaining=0`, `failed=0`) as success rate `1.0` instead of `unknown`.
 - Production cron documentation now uses `--max-attempts 3` for async live-Hindsight refresh instead of a single attempt.
 
 Operational decision:
@@ -1855,4 +1856,5 @@ Operational decision:
 Verification:
 
 - Added red-green regression tests for exhausted queue expiry, timeout classification, alert queue consumption, cron freshness coverage, dashboard visibility, and OpenMetrics queue export.
+- Added a regression test for empty dead-letter replay status so the operator summary no longer stays at `dead_letter_replay=unknown` when there is no dead-letter work.
 - `tests/test_runtime_and_observability.py`: passed locally after implementation.
