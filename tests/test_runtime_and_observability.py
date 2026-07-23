@@ -105,6 +105,12 @@ def test_runtime_drift_repo_dirty_is_info_when_deploy_content_matches():
     assert reason["severity"] == "info"
 
 
+def test_cron_freshness_gbrain_stale_threshold_matches_six_hour_schedule():
+    check = next(row for row in cron_freshness.CHECKS if row["name"] == "gbrain_stale_refresh")
+
+    assert check["max_age_s"] >= 8 * 3600
+
+
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
     target = tmp_path / "context.md"
     target.write_text("old\n", encoding="utf-8")
