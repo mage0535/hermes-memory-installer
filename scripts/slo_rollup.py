@@ -54,6 +54,10 @@ def latest_history_row(path: Path) -> dict[str, Any]:
 
 
 def replay_success_rate(payload: dict[str, Any]) -> float | None:
+    total = payload.get("total")
+    remaining = payload.get("remaining")
+    if total == 0 and remaining == 0 and payload.get("failed", 0) == 0:
+        return 1.0
     replayed = payload.get("replayed")
     failed = payload.get("failed")
     if not isinstance(replayed, int) or replayed <= 0:

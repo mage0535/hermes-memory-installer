@@ -1317,6 +1317,20 @@ def test_slo_rollup_summarizes_acceptance_queue_replay_and_recall(tmp_path: Path
     assert payload["recall_latency"]["p95_s"] == 0.45
 
 
+def test_slo_rollup_treats_empty_dead_letter_replay_as_success(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "dead-letter-replay-latest.json").write_text(
+        json.dumps({"ok": True, "total": 0, "replayed": 0, "failed": 0, "remaining": 0}),
+        encoding="utf-8",
+    )
+
+    payload = slo_rollup.build_slo_rollup(metrics)
+
+    assert payload["dead_letter_replay_success_rate"] == 1.0
+    assert payload["status"] == "healthy"
+
+
 def test_slo_rollup_prefers_current_acceptance_window(tmp_path: Path):
     metrics = tmp_path / "metrics"
     metrics.mkdir()
