@@ -12,6 +12,8 @@ from pathlib import Path
 import memory_governance_rebuild as governance_rebuild
 import tiered_context_injector as injector
 
+DEFAULT_MAX_ATTEMPTS = 3
+
 
 def open_governance_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(str(governance_rebuild.GOVERNANCE_DB), timeout=30)
@@ -117,16 +119,94 @@ def cache_hindsight_results(conn: sqlite3.Connection, query_hash: str, results: 
     return inserted
 
 
+def classify_failure(exc: Exception) -> str:
+    text = str(exc).lower()
+    if isinstance(exc, TimeoutError) or "timed out" in text or "timeout" in text:
+        return "timeout"
+    if "connection refused" in text or "connection reset" in text or "connection aborted" in text:
+        return "connection"
+    if "database is locked" in text or "locked" in text:
+        return "database_locked"
+    return "other"
+
+
+def expire_exhausted_failures(conn: sqlite3.Connection, max_attempts: int) -> int:
+    cursor = conn.execute(
+        """
+        UPDATE recall_refresh_queue
+        SET updated_at = ?, status = 'expired', last_error = 'max_attempts_exhausted'
+        WHERE status = 'failed'
+          AND attempts >= ?
+        """,
+        (time.time(), max(1, int(max_attempts))),
+    )
+    return int(cursor.rowcount or 0)
+
+
+def summarize_queue(conn: sqlite3.Connection, max_attempts: int) -> dict:
+    rows = conn.execute(
+        """
+        SELECT status, attempts, COUNT(*) AS count
+        FROM recall_refresh_queue
+        GROUP BY status, attempts
+        """
+    ).fetchall()
+    pending = 0
+    retryable_failed = 0
+    exhausted_failed = 0
+    expired = 0
+    done = 0
+    other = 0
+    max_attempts = max(1, int(max_attempts))
+    for row in rows:
+        status = str(row["status"] or "")
+        attempts = int(row["attempts"] or 0)
+        count = int(row["count"] or 0)
+        if status == "pending":
+            pending += count
+        elif status == "failed" and attempts < max_attempts:
+            retryable_failed += count
+        elif status == "failed":
+            exhausted_failed += count
+        elif status == "expired":
+            expired += count
+        elif status == "done":
+            done += count
+        else:
+            other += count
+    return {
+        "pending": pending,
+        "retryable_failed": retryable_failed,
+        "exhausted_failed": exhausted_failed,
+        "expired": expired,
+        "done": done,
+        "other": other,
+    }
+
+
 def run_once(limit: int, timeout_s: float, max_attempts: int = 3) -> dict:
     gov_db = governance_rebuild.GOVERNANCE_DB
     conn = open_governance_connection()
     processed = 0
     cached = 0
     failed = 0
+    expired = 0
+    failure_buckets: dict[str, int] = {}
     try:
         if not ensure_schema_when_unlocked(conn):
-            return {"ok": True, "processed": 0, "cached": 0, "failed": 0, "skipped": "database_locked"}
+            return {
+                "ok": True,
+                "status": "healthy",
+                "processed": 0,
+                "cached": 0,
+                "failed": 0,
+                "expired": 0,
+                "failure_buckets": {},
+                "queue": {},
+                "skipped": "database_locked",
+            }
         injector.ensure_recall_refresh_queue_table(conn)
+        expired = expire_exhausted_failures(conn, max_attempts)
         rows = conn.execute(
             """
             SELECT id, query_hash, query, attempts
@@ -154,6 +234,8 @@ def run_once(limit: int, timeout_s: float, max_attempts: int = 3) -> dict:
                 )
             except Exception as exc:
                 failed += 1
+                bucket = classify_failure(exc)
+                failure_buckets[bucket] = failure_buckets.get(bucket, 0) + 1
                 conn.execute(
                     """
                     UPDATE recall_refresh_queue
@@ -163,16 +245,31 @@ def run_once(limit: int, timeout_s: float, max_attempts: int = 3) -> dict:
                     (time.time(), str(exc)[:300], row["id"]),
                 )
         conn.commit()
+        queue = summarize_queue(conn, max_attempts)
     finally:
         conn.close()
-    return {"ok": failed == 0, "processed": processed, "cached": cached, "failed": failed}
+    status = "healthy"
+    if queue.get("pending", 0) or queue.get("retryable_failed", 0) or failed:
+        status = "degraded"
+    if queue.get("exhausted_failed", 0):
+        status = "action-needed"
+    return {
+        "ok": status != "action-needed" and failed == 0,
+        "status": status,
+        "processed": processed,
+        "cached": cached,
+        "failed": failed,
+        "expired": expired,
+        "failure_buckets": failure_buckets,
+        "queue": queue,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Refresh weak recall queries from live Hindsight into the local cache")
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=8.0)
-    parser.add_argument("--max-attempts", type=int, default=3)
+    parser.add_argument("--max-attempts", type=int, default=DEFAULT_MAX_ATTEMPTS)
     parser.add_argument("--output", help="Optional JSON output path")
     args = parser.parse_args(argv)
 

@@ -153,6 +153,7 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
     trend = load_json(metrics_dir / "langsmith-trend-latest.json")
     stale = load_json(metrics_dir / "gbrain-stale-latest.json")
     stale = repair_gbrain_stale_if_needed(metrics_dir, stale)
+    live_refresh = load_json(metrics_dir / "live-hindsight-refresh-latest.json")
     security = load_json(metrics_dir / "hindsight-security-latest.json")
     cron_freshness = load_json(metrics_dir / "cron-freshness-latest.json")
 
@@ -243,6 +244,12 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
         ]
         if actionable:
             alerts.append(alert("gbrain-stale", "gbrain_stale_degraded", "degraded", {"classifications": actionable}))
+
+    live_refresh_status = live_refresh.get("status")
+    if live_refresh_status == "action-needed":
+        alerts.append(alert("live-hindsight-refresh", "live_hindsight_refresh_action_needed", "action-needed", live_refresh))
+    elif live_refresh_status == "degraded":
+        alerts.append(alert("live-hindsight-refresh", "live_hindsight_refresh_degraded", "degraded", live_refresh))
 
     if security.get("status") == "action-needed":
         alerts.append(alert("hindsight-security", "hindsight_security_action_needed", "action-needed", security))

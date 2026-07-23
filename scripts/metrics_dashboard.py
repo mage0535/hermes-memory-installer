@@ -27,6 +27,7 @@ ARTIFACTS = {
     "SLO Rollup": "slo-rollup-latest.json",
     "Prometheus Alert Bridge": "prometheus-alert-bridge-latest.json",
     "Cron Freshness": "cron-freshness-latest.json",
+    "Live Hindsight Refresh": "live-hindsight-refresh-latest.json",
     "System Metrics": "system-metrics-latest.json",
 }
 

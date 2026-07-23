@@ -1822,3 +1822,37 @@ Follow-up observation target:
 
 - Track `recall_refresh_queue` drain time and `live-hindsight-refresh-latest.json`.
 - If queue age exceeds 15 minutes or failure count rises, investigate Hindsight recall endpoint latency before changing foreground recall behavior.
+
+## 32. Async Recall Self-Healing Closure - 2026-07-23
+
+Goal: close the remaining gap where foreground recall is healthy, but the async live-Hindsight refill queue can accumulate failed timeout rows without becoming visible in the normal health surfaces.
+
+Implemented changes:
+
+- `live_hindsight_refresh_worker.py` now emits a richer health payload:
+  - `status`, `ok`, `processed`, `cached`, `failed`, `expired`;
+  - `failure_buckets` such as `timeout`, `connection`, `database_locked`, and `other`;
+  - `queue` counts for `pending`, `retryable_failed`, `exhausted_failed`, `expired`, `done`, and `other`.
+- Exhausted failed queue rows are automatically moved to `expired` with `last_error=max_attempts_exhausted`.
+  - This prevents old timeout rows from permanently poisoning health state.
+  - Fresh failures still produce `degraded`, so real current slowdowns remain visible.
+- `alert_queue.py` now consumes `live-hindsight-refresh-latest.json`.
+  - `status=degraded` becomes `live-hindsight-refresh:live_hindsight_refresh_degraded`.
+  - `status=action-needed` becomes `live-hindsight-refresh:live_hindsight_refresh_action_needed`.
+- `cron_freshness.py` now checks the live refresh artifact freshness.
+- `metrics_dashboard.py` now lists `Live Hindsight Refresh` as a first-class component.
+- `openmetrics_exporter.py` now exports:
+  - `hermes_memory_component_status{component="live_hindsight_refresh"}`;
+  - `hermes_memory_live_hindsight_refresh_queue{state=...}`.
+- Production cron documentation now uses `--max-attempts 3` for async live-Hindsight refresh instead of a single attempt.
+
+Operational decision:
+
+- Keep foreground live Hindsight disabled by default.
+- Treat async live-Hindsight timeout failures as a background self-healing issue, not a user-request blocker.
+- A drained or expired queue is healthy; retryable failures are degraded; exhausted non-expired failures are action-needed.
+
+Verification:
+
+- Added red-green regression tests for exhausted queue expiry, timeout classification, alert queue consumption, cron freshness coverage, dashboard visibility, and OpenMetrics queue export.
+- `tests/test_runtime_and_observability.py`: passed locally after implementation.
