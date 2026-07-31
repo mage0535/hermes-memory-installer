@@ -15,6 +15,7 @@ import time
 
 
 INCLUDE_RAW_OUTPUT = os.environ.get("LANGSMITH_INCLUDE_RAW_OUTPUT", "").lower() in {"1", "true", "yes"}
+AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 
 
 def should_publish_langsmith() -> bool:
@@ -110,6 +111,18 @@ def sanitize_task_payload(payload: dict) -> dict:
     return sanitized
 
 
+def write_local_task_status(task_name: str, payload: dict) -> Path:
+    safe_name = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in task_name)
+    metrics_dir = AGENT_HOME / "metrics"
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    path = metrics_dir / f"langsmith-task-{safe_name}-latest.json"
+    path.write_text(
+        json.dumps({"task_name": task_name, "task": sanitize_task_payload(payload)}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return path
+
+
 def publish_langsmith(task_name: str, payload: dict) -> dict:
     from langsmith import traceable
 
@@ -138,6 +151,7 @@ def main() -> int:
         raise SystemExit("command is required")
 
     payload = run_task(command, args.timeout)
+    write_local_task_status(args.task_name, payload)
     published = None
     if should_publish_langsmith():
         published = publish_langsmith(args.task_name, payload)

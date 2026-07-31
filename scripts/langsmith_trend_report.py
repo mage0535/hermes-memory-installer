@@ -19,6 +19,7 @@ AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", 
 DEFAULT_LOCAL_MONITOR = AGENT_HOME / "metrics" / "langsmith-monitor-latest.json"
 DEFAULT_GBRAIN_STALE = AGENT_HOME / "metrics" / "gbrain-stale-latest.json"
 DEFAULT_STORAGE_CROSS_CHECK = AGENT_HOME / "metrics" / "storage-cross-check-latest.json"
+METRICS_DIR = AGENT_HOME / "metrics"
 
 
 class LocalRun:
@@ -306,7 +307,7 @@ def task_metrics(runs: list[Any]) -> dict:
     for name, rows in sorted(tasks.items()):
         elapsed = [value for value in (elapsed_from_run(run) for run in rows) if value is not None]
         failures = sum(1 for run in rows if getattr(run, "status", "") != "success" or bool(getattr(run, "error", None)))
-        business_failures = 0
+        business_ok = []
         returncodes = [
             output_payload(run).get("returncode")
             for run in rows
@@ -314,14 +315,27 @@ def task_metrics(runs: list[Any]) -> dict:
         ]
         for run in rows:
             payload = output_payload(run)
-            if payload.get("business_ok") is False:
-                business_failures += 1
+            if isinstance(payload.get("business_ok"), bool):
+                business_ok.append(bool(payload["business_ok"]))
+            elif isinstance(payload.get("returncode"), int):
+                business_ok.append(payload["returncode"] == 0)
+            else:
+                business_ok.append(getattr(run, "status", "") == "success" and not bool(getattr(run, "error", None)))
+        business_failures = sum(1 for ok in business_ok if not ok)
+        recent_business = business_ok[:RECENT_MONITOR_WINDOW]
+        latest_payload = output_payload(rows[0]) if rows else {}
+        latest_returncode = latest_payload.get("returncode") if isinstance(latest_payload.get("returncode"), int) else None
         out[name] = {
             "count": len(rows),
             "failure_count": failures,
             "success_rate": round((len(rows) - failures) / len(rows), 3) if rows else None,
             "business_failure_count": business_failures,
-            "business_success_rate": round((len(rows) - business_failures) / len(rows), 3) if rows else None,
+            "business_success_rate": round(sum(1 for ok in business_ok if ok) / len(business_ok), 3) if business_ok else None,
+            "recent_business_failure_count": sum(1 for ok in recent_business if not ok),
+            "recent_business_success_rate": round(sum(1 for ok in recent_business if ok) / len(recent_business), 3) if recent_business else None,
+            "recent_window": len(recent_business),
+            "latest_business_ok": business_ok[0] if business_ok else None,
+            "latest_returncode": latest_returncode,
             "latency": summarize_values(elapsed),
             "nonzero_returncodes": sum(1 for code in returncodes if code != 0),
         }
@@ -375,6 +389,27 @@ def load_local_monitor_run(path: str) -> LocalRun | None:
     return LocalRun("memory-sidecar-monitor", payload)
 
 
+def load_local_task_runs(metrics_dir: Path | None = None) -> list[LocalRun]:
+    metrics_dir = metrics_dir or METRICS_DIR
+    if not metrics_dir.exists():
+        return []
+    runs = []
+    for path in sorted(metrics_dir.glob("langsmith-task-*-latest.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        task_name = payload.get("task_name")
+        task_payload = payload.get("task")
+        if isinstance(task_name, str) and isinstance(task_payload, dict):
+            runs.append(LocalRun(task_name, task_payload))
+    return runs
+
+
+def merge_local_task_runs(runs: list[Any], metrics_dir: Path | None = None) -> list[Any]:
+    return [*load_local_task_runs(metrics_dir), *runs]
+
+
 def publish_report(report: dict) -> dict:
     from langsmith import traceable
 
@@ -406,6 +441,7 @@ def main() -> int:
         local_run = load_local_monitor_run(args.local_monitor)
         if local_run:
             runs.insert(0, local_run)
+    runs = merge_local_task_runs(runs)
     report = build_trend_report(runs)
     if args.output:
         Path(args.output).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

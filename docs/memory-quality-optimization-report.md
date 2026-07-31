@@ -593,3 +593,35 @@ Operational guidance:
 - If `embed --stale` returns nonzero chunks, let the bounded maintenance job process them.
 - If `missing_embeddings > 0`, use targeted slug repair first.
 - Avoid unbounded `embed --all` or full `sync_brain()` unless direct evidence shows a database-wide embedding gap.
+
+## 2026-07-21 Pipeline Business-Failure Alerting Hotfix
+
+- Task wrappers now persist local latest business status under `$AGENT_HOME/metrics/langsmith-task-<task>-latest.json` before optional LangSmith publish.
+- `langsmith_trend_report.py` merges local latest task status ahead of remote LangSmith history, so current successful runs can clear action-needed task alerts even if LangSmith ingestion is quota-limited.
+- `alert_queue.py` escalates latest task business failures to `action-needed`; historical task failures remain `info`.
+- `archive_sessions.py` now sets SQLite `busy_timeout` and emits per-session publish progress for intermittent stall diagnosis.
+- `memory_guardian.py` adds `ACTIVE_ARCHIVE=0.78` while preserving overflow grace semantics.
+- Production-specific capacity should be supplied by environment, for example `MEMORY_GUARDIAN_NODE_LIMIT`, not hard-coded into public defaults.
+
+Verification:
+- Main worktree: `python -m pytest -q` -> 268 passed, 2 skipped.
+- Main worktree: `python bin/hermes-memory audit-repo --format json` -> ok true.
+- Production runtime: task latest status for archive/session/summary reported `business_ok=true`; health summary remained healthy with only historical info alerts.
+
+## 2026-07-21 Three-Way Consistency Recheck
+
+- Local publishable worktree and GitHub `origin/main` matched at verification time; the publishable worktree was clean.
+- Full test gate previously recorded as `268 passed, 2 skipped`; privacy audit was `ok=true`.
+- Production source/runtime content check: 8 source files and 5 runtime scripts matched the GitHub main SHA256 set; mismatch count `0`.
+- Production source Git metadata remains at older base with dirty production files by design; do not hard reset it unless preserving/relocating production-only continuation notes first. Runtime code content is aligned and should be treated as the operational truth.
+- Current runtime validation should continue to prefer generated health artifacts under `$AGENT_HOME/metrics` plus alert queue output, not stale historical LangSmith aggregates alone.
+
+## 2026-07-23 Three-Way Runtime Drift Recheck
+
+- Rechecked local publishable worktree, GitHub `origin/main`, production source, and production runtime scripts. Binary hash drift was mostly Windows-vs-Linux line-ending noise; normalized LF comparison reduced source drift to targeted runtime/config files.
+- Public code changes: `hindsight-service.py` now follows the active Hermes model provider configuration at runtime while keeping conservative Hindsight worker/LLM limits; importing the wrapper is side-effect-free for tests. `memory_watermark.py` now defaults to `$HOME/.hermes` when `AGENT_HOME`/`HERMES_HOME` are unset.
+- Production-only drift handling: legacy runtime helpers with hard-coded production paths or personal domain labels should be replaced by the public portable versions during deployment, not copied back into GitHub.
+- Runtime drift alert semantics: `repo_dirty` is now `info` when the deploy audit shows no missing or mismatched runtime scripts, so production-only continuation notes do not create false degraded alerts.
+- Cron freshness semantics: `gbrain_stale_refresh` uses an 8-hour freshness threshold to match its 6-hour production schedule plus operational buffer.
+- Verification before publish: targeted regression tests passed; full local gate reported `272 passed, 2 skipped`; privacy audit returned `ok=true`.
+- Deployment rule: server source and runtime should be synced from GitHub main for code, while production data/config/continuation notes remain server-local.

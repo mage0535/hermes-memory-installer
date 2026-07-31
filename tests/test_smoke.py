@@ -203,6 +203,7 @@ def test_remaining_runtime_scripts_use_agent_home_fallback():
         REPO / "scripts" / "memory_snapshot_backup.py",
         REPO / "scripts" / "memory_reflect.py",
         REPO / "scripts" / "memory_lifecycle.py",
+        REPO / "scripts" / "memory_watermark.py",
     ]:
         content = path.read_text(encoding="utf-8")
         assert ".hermes" in content
