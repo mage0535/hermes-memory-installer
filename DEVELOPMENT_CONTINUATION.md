@@ -1904,12 +1904,12 @@ Verified root causes:
 - Runtime drift was caused by one script copy mismatch plus stale timer state; after synchronization the only remaining repo state is informational dirty-source status pending release sync.
 
 Changes made:
-- `scripts/memory_eval_report.py` now prefers local `/root/.hermes/metrics/langsmith-monitor-latest.json` and merges `/root/.hermes/metrics/langsmith-trend-latest.json` as context. Remote LangSmith no-data no longer zeroes a healthy local monitor.
+- `scripts/memory_eval_report.py` now prefers local `$AGENT_HOME/metrics/langsmith-monitor-latest.json` and merges `$AGENT_HOME/metrics/langsmith-trend-latest.json` as context. Remote LangSmith no-data no longer zeroes a healthy local monitor.
 - `scripts/memory_guardian.py` and `scripts/langsmith_monitor.py` production default node budget moved to `40000`, while `MEMORY_GUARDIAN_NODE_LIMIT` remains the explicit override.
 - `scripts/langsmith_monitor.py` now forces child acceptance checks to inherit the resolved Guardian node limit, avoiding cron/private-env drift.
-- `/root/.hermes/private/memory-sidecar.env` production value updated to `MEMORY_GUARDIAN_NODE_LIMIT=40000`.
+- `$AGENT_HOME/private/memory-sidecar.env` production value updated to `MEMORY_GUARDIAN_NODE_LIMIT=40000`.
 - `/etc/systemd/system/memory-guardian.timer` was corrected to remove the erroneous `Requires=memory-guardian.service` and explicitly trigger `Unit=memory-guardian.service`.
-- Runtime copies under `/root/.hermes/scripts/` were synchronized for the changed scripts.
+- Runtime copies under `$AGENT_HOME/scripts/` were synchronized for the changed scripts.
 
 Verification:
 - Hindsight health: healthy, database connected.
