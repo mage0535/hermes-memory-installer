@@ -28,6 +28,7 @@ MARKER_KEY = "gbrain_archive_watermark"
 def connect_db():
     conn = sqlite3.connect(STATE_DB)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
     return conn
 
 
@@ -234,13 +235,20 @@ def publish_page_with_retry(page, retries=1, delay=2.0):
 def publish_sessions(conn, sessions, publisher=publish_page_with_retry):
     published = []
     max_ts = 0.0
-    for session in sessions:
-        msgs, total = fetch_messages(conn, session["id"])
-        page = build_page(session, msgs, total)
+    total_sessions = len(sessions)
+    for index, session in enumerate(sessions, start=1):
+        msgs, msg_total = fetch_messages(conn, session["id"])
+        page = build_page(session, msgs, msg_total)
+        sys.stderr.write(f"Publishing session {index}/{total_sessions}: {page['slug']}\n")
+        sys.stderr.flush()
         if not publisher(page):
+            sys.stderr.write(f"Publish failed for session {index}/{total_sessions}: {page['slug']}\n")
+            sys.stderr.flush()
             return False, published, 0.0
         published.append(page)
         max_ts = max(max_ts, float(session["started_at"] or 0))
+        sys.stderr.write(f"Published session {index}/{total_sessions}: {page['slug']}\n")
+        sys.stderr.flush()
     return True, published, max_ts
 
 

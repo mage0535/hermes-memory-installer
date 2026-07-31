@@ -1773,3 +1773,152 @@ Verified production state after deployment:
 Residual improvement:
 
 - Relationship-style recall still has a weak optional sample (`friends/relationship` can return no candidates and live Hindsight may time out). It is not part of required acceptance, but it should be treated as the next recall-quality tuning target.
+
+## 31. Recall Quality Closure - 2026-07-23
+
+Goal: close the gap between operational health and real natural-language recall quality without re-enabling blocking foreground Hindsight calls.
+
+Implemented changes:
+
+- Added `scripts/query_expansion.py` as a shared query-expansion module for Chinese broad queries and English operational aliases.
+- Wired query expansion into both `tiered_context_injector.py` and `memory_governance_rebuild.py`, so L2/L3 candidate generation and filtering use the same expanded terms.
+- Expanded relationship/profile detection to include standard UTF-8 Chinese terms for friend, relationship, WeChat, comfort, preference, and liking while keeping legacy mojibake markers for old data compatibility.
+- Added weak-recall async refresh queue support in `tiered_context_injector.py`.
+  - Foreground recall still does not call live Hindsight unless `MEMORY_LIVE_HINDSIGHT_ENABLED=true`.
+  - When live Hindsight is disabled, circuit-open, failed, or the foreground result remains weak, the query is queued in the private governance DB.
+- Added `scripts/live_hindsight_refresh_worker.py`.
+  - Processes `recall_refresh_queue`.
+  - Calls live Hindsight in the background with bounded timeout/concurrency.
+  - Writes successful results into `hindsight_index` and `hindsight_index_fts` so later foreground recalls use local cache.
+  - Retries failed items only up to `--max-attempts` so a slow `/recall` endpoint does not create an infinite retry loop.
+  - Skips cleanly when the governance DB is locked by another maintenance job; this keeps the cron non-disruptive under normal SQLite contention.
+- Added ranking protection for memory/recall queries.
+  - Provider/model/config objects are demoted unless the query explicitly asks for provider/config.
+  - Hindsight/gbrain/sidecar recall results are boosted for memory-quality questions.
+- Added optional production-oriented recall samples:
+  - `朋友关系`
+  - `我的偏好是什么`
+  - `最近服务器告警`
+  - `外挂记忆体召回缺陷`
+  These are visible in acceptance reports but remain non-blocking for public CI and installs.
+- Added documented production cron for async live-Hindsight refresh:
+  - `*/10 * * * * AGENT_HOME=$AGENT_HOME flock -n /tmp/live-hindsight-refresh.lock /usr/bin/python3 $AGENT_HOME/scripts/live_hindsight_refresh_worker.py --limit 5 --timeout 8 --max-attempts 1 --output $AGENT_HOME/metrics/live-hindsight-refresh-latest.json`
+- Added `query_expansion.py` and `live_hindsight_refresh_worker.py` to installer and deploy-audit script inventories.
+
+Local verification:
+
+- New recall-quality regression tests: passed.
+- Targeted install/smoke/runtime tests: passed.
+- Full test suite: `278 passed, 2 skipped`.
+- Public repo audit: `ok=true`, no private path refs, no secret-like refs, no compile failures.
+
+Operational decision:
+
+- Keep foreground live Hindsight disabled by default.
+- Treat live Hindsight as an async cache refill path, not a user-request path, until the `/recall` endpoint has proven bounded latency under production load.
+- Do not enqueue relationship/profile queries when local cached candidates are already sufficient; async refresh is only for genuinely weak foreground recall.
+
+Follow-up observation target:
+
+- Track `recall_refresh_queue` drain time and `live-hindsight-refresh-latest.json`.
+- If queue age exceeds 15 minutes or failure count rises, investigate Hindsight recall endpoint latency before changing foreground recall behavior.
+
+## 32. Async Recall Self-Healing Closure - 2026-07-23
+
+Goal: close the remaining gap where foreground recall is healthy, but the async live-Hindsight refill queue can accumulate failed timeout rows without becoming visible in the normal health surfaces.
+
+Implemented changes:
+
+- `live_hindsight_refresh_worker.py` now emits a richer health payload:
+  - `status`, `ok`, `processed`, `cached`, `failed`, `expired`;
+  - `failure_buckets` such as `timeout`, `connection`, `database_locked`, and `other`;
+  - `queue` counts for `pending`, `retryable_failed`, `exhausted_failed`, `expired`, `done`, and `other`.
+- Exhausted failed queue rows are automatically moved to `expired` with `last_error=max_attempts_exhausted`.
+  - This prevents old timeout rows from permanently poisoning health state.
+  - Fresh failures still produce `degraded`, so real current slowdowns remain visible.
+- `alert_queue.py` now consumes `live-hindsight-refresh-latest.json`.
+  - `status=degraded` becomes `live-hindsight-refresh:live_hindsight_refresh_degraded`.
+  - `status=action-needed` becomes `live-hindsight-refresh:live_hindsight_refresh_action_needed`.
+- `cron_freshness.py` now checks the live refresh artifact freshness.
+- `metrics_dashboard.py` now lists `Live Hindsight Refresh` as a first-class component.
+- `openmetrics_exporter.py` now exports:
+  - `hermes_memory_component_status{component="live_hindsight_refresh"}`;
+  - `hermes_memory_live_hindsight_refresh_queue{state=...}`.
+- `slo_rollup.py` now treats an empty dead-letter replay report (`total=0`, `remaining=0`, `failed=0`) as success rate `1.0` instead of `unknown`.
+- Production cron documentation now uses `--max-attempts 3` for async live-Hindsight refresh instead of a single attempt.
+
+Operational decision:
+
+- Keep foreground live Hindsight disabled by default.
+- Treat async live-Hindsight timeout failures as a background self-healing issue, not a user-request blocker.
+- A drained or expired queue is healthy; retryable failures are degraded; exhausted non-expired failures are action-needed.
+
+Verification:
+
+- Added red-green regression tests for exhausted queue expiry, timeout classification, alert queue consumption, cron freshness coverage, dashboard visibility, and OpenMetrics queue export.
+- Added a regression test for empty dead-letter replay status so the operator summary no longer stays at `dead_letter_replay=unknown` when there is no dead-letter work.
+- `tests/test_runtime_and_observability.py`: passed locally after implementation.
+
+## 33. System Resource Alert Closure - 2026-07-23
+
+Goal: close the observability gap where memory services can be operationally healthy while host swap is already high enough to threaten future latency or restart stability.
+
+Finding:
+
+- A fresh production check showed `hermes-memory status` healthy and all recall/acceptance checks passing, but `system-metrics-latest.json` reported swap usage above 90%.
+- Before this change, swap and disk usage were exported to dashboard/OpenMetrics but were not consumed by `alert_queue.py`, so Hermes would not receive a local memory-system alert for host resource pressure.
+
+Implemented changes:
+
+- `alert_queue.py` now consumes `system-metrics-latest.json`.
+- Default thresholds:
+  - swap `>=85%` -> `system-resources:swap_usage_high` as `degraded`;
+  - swap `>=95%` -> `system-resources:swap_usage_critical` as `action-needed`;
+  - disk `>=85%` -> `system-resources:disk_usage_high` as `degraded`;
+  - disk `>=90%` -> `system-resources:disk_usage_critical` as `action-needed`.
+- Thresholds are environment-configurable through:
+  - `MEMORY_ALERT_SWAP_DEGRADED_PCT`
+  - `MEMORY_ALERT_SWAP_ACTION_PCT`
+  - `MEMORY_ALERT_DISK_DEGRADED_PCT`
+  - `MEMORY_ALERT_DISK_ACTION_PCT`
+
+Operational decision:
+
+- High swap is treated as degraded unless it reaches the critical band.
+- This avoids calling the whole memory stack broken while still making host pressure visible before it causes Hindsight/gateway restart loops.
+
+Verification:
+
+- Added red-green regression tests for degraded swap and critical swap/disk alerting.
+
+## 2026-08-01 - Hindsight LLM channel recovery follow-up and monitor/guardian closure
+
+Context:
+- A scheduled memory evaluation reported `0/100` and `No monitor data` after Hindsight retain failures caused by the auxiliary LLM channel following the active Hermes model provider.
+- Production Hindsight had already been pinned to the stable DeepSeek official endpoint through environment variables, and post-restart logs showed no new `401`, `AuthError`, or `Fact extraction failed` entries.
+
+Verified root causes:
+- `scripts/memory_eval_report.py` only queried remote LangSmith `memory-sidecar-monitor` runs. Local monitor artifacts were healthy, but remote no-data was incorrectly mapped to `0/100`.
+- `memory-guardian.timer` had `Requires=memory-guardian.service`; the oneshot service completion stopped the timer, leaving it `enabled` but `inactive`.
+- Production private sidecar env still set `MEMORY_GUARDIAN_NODE_LIMIT=30000`, while the live Hindsight node count had grown to 25,599. The 30k limit became an outdated soft budget and produced Guardian `action` despite adequate host memory.
+- Runtime drift was caused by one script copy mismatch plus stale timer state; after synchronization the only remaining repo state is informational dirty-source status pending release sync.
+
+Changes made:
+- `scripts/memory_eval_report.py` now prefers local `/root/.hermes/metrics/langsmith-monitor-latest.json` and merges `/root/.hermes/metrics/langsmith-trend-latest.json` as context. Remote LangSmith no-data no longer zeroes a healthy local monitor.
+- `scripts/memory_guardian.py` and `scripts/langsmith_monitor.py` production default node budget moved to `40000`, while `MEMORY_GUARDIAN_NODE_LIMIT` remains the explicit override.
+- `scripts/langsmith_monitor.py` now forces child acceptance checks to inherit the resolved Guardian node limit, avoiding cron/private-env drift.
+- `/root/.hermes/private/memory-sidecar.env` production value updated to `MEMORY_GUARDIAN_NODE_LIMIT=40000`.
+- `/etc/systemd/system/memory-guardian.timer` was corrected to remove the erroneous `Requires=memory-guardian.service` and explicitly trigger `Unit=memory-guardian.service`.
+- Runtime copies under `/root/.hermes/scripts/` were synchronized for the changed scripts.
+
+Verification:
+- Hindsight health: healthy, database connected.
+- Full sidecar acceptance: `ok=true`; Guardian `node_limit=40000`, `usage_pct=64.0`, `level=ok`; L2/L3 recall checks returned candidates.
+- Memory evaluation report: `100/100 HEALTHY`, sources `local_monitor, local_trend`, no issues.
+- Alert queue: `status=healthy`, `alert_count=0`.
+- Runtime drift: `healthy`; mismatch and timer alerts resolved.
+- Tests: `292 passed, 2 skipped`.
+- Privacy audit: `ok=true`, zero issues.
+
+Operational note:
+- Live direct Hindsight recall against the large `hermes` bank can still block the event loop during temporal parsing. Foreground user recall should continue to rely on sidecar cache/fused retrieval and avoid making live Hindsight a hard dependency.

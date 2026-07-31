@@ -41,7 +41,7 @@ def test_langsmith_monitor_defaults_to_full_acceptance_and_production_guardian_l
     env = monitor.child_env()
 
     assert monitor.MONITOR_ACCEPTANCE_MODE == "full"
-    assert env["MEMORY_GUARDIAN_NODE_LIMIT"] == "30000"
+    assert env["MEMORY_GUARDIAN_NODE_LIMIT"] == "40000"
 
 
 def test_langsmith_task_wrapper_exists_and_uses_traceable():
@@ -398,3 +398,13 @@ def test_langsmith_trend_classifies_weak_recalls_by_cause():
     weak = report["monitor"]["latest_weak_recalls"]
     assert weak[0]["reason"] == "retrieval_timeout"
     assert weak[1]["reason"] == "no_seed_data"
+
+
+
+def test_langsmith_monitor_forces_child_guardian_limit(monkeypatch):
+    import langsmith_monitor as monitor
+
+    monkeypatch.setenv("MEMORY_GUARDIAN_NODE_LIMIT", "40000")
+    env = monitor.child_env()
+
+    assert env["MEMORY_GUARDIAN_NODE_LIMIT"] == "40000"

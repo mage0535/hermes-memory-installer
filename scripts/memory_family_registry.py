@@ -66,12 +66,28 @@ PROJECT_EXPLORATION_QUERY_MARKERS = (
 )
 
 RELATIONSHIP_QUERY_MARKERS = (
+    "\u670b\u53cb",
+    "\u5173\u7cfb",
+    "\u5fae\u4fe1",
+    "\u5b89\u6170",
+    "\u504f\u597d",
+    "\u559c\u6b22",
+    "friend",
+    "relationship",
     "朋友",
     "关系",
     "微信",
 )
 
 RELATIONSHIP_TEXT_MARKERS = (
+    "\u670b\u53cb",
+    "\u5173\u7cfb",
+    "\u5fae\u4fe1",
+    "\u5b89\u6170",
+    "\u504f\u597d",
+    "\u559c\u6b22",
+    "friend",
+    "relationship",
     "朋友",
     "关系",
     "微信",
@@ -119,6 +135,10 @@ SYSTEM_QUERY_MARKERS = (
     "cron",
     "system",
     "server",
+    "\u670d\u52a1\u5668",
+    "\u544a\u8b66",
+    "\u62a5\u9519",
+    "\u5f02\u5e38",
     "telegram",
     "endpoint",
     "api",

@@ -17,10 +17,13 @@ import urllib.error
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
+os.environ.setdefault("NO_PROXY", "127.0.0.1,localhost")
+os.environ.setdefault("no_proxy", "127.0.0.1,localhost")
 
 import memory_family_registry as family_registry
 import memory_guardian as guardian
 import recall_samples
+import query_expansion
 import sidecar_acceptance_check as acceptance_check
 import tiered_context_injector as injector
 import alert_queue
@@ -36,11 +39,80 @@ import profile_isolation_soak
 import synthetic_recall_benchmark
 import system_metrics_collector
 import hermes_load_shedder
+import live_hindsight_refresh_worker
 import telegram_language_sync
 import prometheus_alert_bridge
 import sync_embeddings
 import snapshot_compress
 import snapshot_restore
+
+
+def load_script_module(name: str, relative_path: str):
+    spec = importlib.util.spec_from_file_location(name, REPO / relative_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    return module
+
+
+def load_source_file_module(name: str, relative_path: str):
+    loader = importlib.machinery.SourceFileLoader(name, str(REPO / relative_path))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    return module
+
+
+def test_hindsight_service_can_follow_hermes_active_model_config(tmp_path: Path, monkeypatch):
+    (tmp_path / "config.yaml").write_text(
+        """
+model:
+  provider: custom-openai
+  model: generic-model
+custom_providers:
+  - name: custom-openai
+    base_url: https://llm.example.test/v1
+    api_key_env: HERMES_TEST_API_KEY
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HERMES_TEST_API_KEY", "test-secret")
+    service = load_script_module("hindsight_service_test", "scripts/hindsight-service.py")
+
+    active = service.hermes_active_model(tmp_path)
+
+    assert active == {
+        "api_key": "test-secret",
+        "base_url": "https://llm.example.test/v1",
+        "model": "generic-model",
+        "provider": "custom-openai",
+    }
+
+
+def test_hindsight_service_import_is_side_effect_free():
+    service = load_script_module("hindsight_service_import_test", "scripts/hindsight-service.py")
+
+    assert hasattr(service, "main")
+    assert hasattr(service, "HindsightServer") is False
+
+
+def test_runtime_drift_repo_dirty_is_info_when_deploy_content_matches():
+    cli = load_source_file_module("hermes_memory_cli_test", "bin/hermes-memory")
+
+    reason = cli.repo_dirty_reason(
+        {"dirty": True, "lines": [" M DEVELOPMENT_CONTINUATION.md"]},
+        {"missing_scripts": [], "mismatched_scripts": []},
+    )
+
+    assert reason["code"] == "repo_dirty"
+    assert reason["severity"] == "info"
+
+
+def test_cron_freshness_gbrain_stale_threshold_matches_six_hour_schedule():
+    check = next(row for row in cron_freshness.CHECKS if row["name"] == "gbrain_stale_refresh")
+
+    assert check["max_age_s"] >= 8 * 3600
 
 
 def test_atomic_write_text_replaces_complete_file(monkeypatch, tmp_path: Path):
@@ -197,6 +269,216 @@ def test_recent_query_skips_live_hindsight_when_cached_candidates_are_sufficient
     ]
 
     assert injector.should_use_live_hindsight("recent sessions", candidates, top=5) is False
+
+
+def test_chinese_broad_queries_expand_to_operational_terms():
+    terms = query_expansion.expanded_query_terms("最近服务器告警")
+
+    assert "最近" in terms
+    assert "alert" in terms
+    assert "recent" in terms
+
+
+def test_relationship_and_preference_queries_share_profile_family():
+    assert injector.classify_query_intent("朋友关系") == "relationship"
+    assert injector.classify_query_intent("我的偏好是什么") == "relationship"
+    assert "preference" in injector.build_query_terms("我的偏好是什么")
+
+
+def test_chinese_alert_queries_are_system_intent():
+    assert injector.classify_query_intent("最近服务器告警") == "system"
+
+
+def test_weak_recall_enqueues_async_hindsight_refresh(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "ASYNC_LIVE_HINDSIGHT_REFRESH_ENABLED", True, raising=False)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_ENABLED", False, raising=False)
+    monkeypatch.setattr(injector, "STATE_DB", tmp_path / "missing-state.db")
+    monkeypatch.setattr(injector, "cached_governance_query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
+
+    rows, live_used, live_count = injector.get_l3("朋友关系", top=5)
+
+    assert rows == []
+    assert live_used is False
+    assert live_count == 0
+    conn = sqlite3.connect(str(gov_db))
+    try:
+        queued = conn.execute("SELECT query, reason FROM recall_refresh_queue").fetchone()
+    finally:
+        conn.close()
+    assert queued == ("朋友关系", "foreground_live_disabled")
+
+
+def test_sufficient_cached_relationship_recall_does_not_enqueue_refresh(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    sqlite3.connect(str(gov_db)).close()
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector, "ASYNC_LIVE_HINDSIGHT_REFRESH_ENABLED", True, raising=False)
+    monkeypatch.setattr(injector, "LIVE_HINDSIGHT_ENABLED", False, raising=False)
+    monkeypatch.setattr(injector, "STATE_DB", tmp_path / "missing-state.db")
+
+    def fake_cached(layer, query, top, fetcher):
+        if layer != "hindsight_cache":
+            return []
+        return [
+                {
+                    "session_id": f"h{idx}",
+                    "title": f"朋友关系偏好 {idx}",
+                    "snippet": f"朋友关系偏好需要温和安慰 {idx}",
+                    "source": "hindsight_cache",
+                "layer": "hindsight_cache",
+                "score": 0.9 - idx * 0.01,
+            }
+            for idx in range(3)
+        ]
+
+    monkeypatch.setattr(injector, "cached_governance_query", fake_cached)
+    monkeypatch.setattr(injector, "should_use_expensive_fallbacks", lambda query, candidates, top: False)
+
+    rows, live_used, live_count = injector.get_l3("朋友关系", top=5)
+
+    assert len(rows) >= 1
+    assert live_used is False
+    assert live_count == 0
+    conn = sqlite3.connect(str(gov_db))
+    try:
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recall_refresh_queue'"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert exists is None
+
+
+def test_provider_config_objects_are_demoted_for_memory_recall_queries():
+    fused = injector.rrf_fuse(
+        [
+            [
+                {
+                    "session_id": "provider-state",
+                    "slug": "provider-state",
+                    "title": "Provider Model State",
+                    "snippet": "provider model config endpoint",
+                    "layer": "object",
+                    "score": 0.99,
+                },
+                {
+                    "session_id": "memory-recall",
+                    "slug": "memory-recall",
+                    "title": "Hindsight recall defect analysis",
+                    "snippet": "memory recall L3 hindsight gbrain sidecar issue",
+                    "layer": "hindsight_cache",
+                    "score": 0.72,
+                },
+            ]
+        ],
+        query="外挂记忆体召回缺陷",
+    )
+
+    assert fused[0]["data"]["slug"] == "memory-recall"
+
+
+def test_live_hindsight_refresh_worker_caches_results(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    monkeypatch.setattr(live_hindsight_refresh_worker.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    assert injector.enqueue_live_hindsight_refresh("朋友关系", "test", 0) is True
+    monkeypatch.setattr(
+        live_hindsight_refresh_worker,
+        "fetch_live_hindsight",
+        lambda query, timeout_s: [
+            {
+                "id": "m1",
+                "type": "observation",
+                "text": "朋友关系偏好需要温和安慰",
+                "entities": ["朋友"],
+                "tags": ["relationship"],
+            }
+        ],
+    )
+
+    payload = live_hindsight_refresh_worker.run_once(limit=1, timeout_s=0.5)
+
+    conn = sqlite3.connect(str(gov_db))
+    try:
+        cached = conn.execute("SELECT text FROM hindsight_index WHERE memory_id = 'm1'").fetchone()
+        queued = conn.execute("SELECT status, candidate_count FROM recall_refresh_queue").fetchone()
+    finally:
+        conn.close()
+    assert {key: payload[key] for key in ("ok", "status", "processed", "cached", "failed")} == {
+        "ok": True,
+        "status": "healthy",
+        "processed": 1,
+        "cached": 1,
+        "failed": 0,
+    }
+    assert cached == ("朋友关系偏好需要温和安慰",)
+    assert queued == ("done", 1)
+
+
+def test_live_hindsight_refresh_worker_skips_cleanly_when_governance_db_is_locked(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    sqlite3.connect(str(gov_db)).close()
+    monkeypatch.setattr(live_hindsight_refresh_worker.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(live_hindsight_refresh_worker, "ensure_schema_when_unlocked", lambda conn: False)
+
+    payload = live_hindsight_refresh_worker.run_once(limit=1, timeout_s=0.1)
+
+    assert {key: payload[key] for key in ("ok", "status", "processed", "cached", "failed", "skipped")} == {
+        "ok": True,
+        "status": "healthy",
+        "processed": 0,
+        "cached": 0,
+        "failed": 0,
+        "skipped": "database_locked",
+    }
+
+
+def test_live_hindsight_refresh_worker_expires_exhausted_failures(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    monkeypatch.setattr(live_hindsight_refresh_worker.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    assert injector.enqueue_live_hindsight_refresh("stale weak query", "test", 0) is True
+    conn = sqlite3.connect(str(gov_db))
+    try:
+        conn.execute("UPDATE recall_refresh_queue SET status = 'failed', attempts = 3, last_error = 'timed out'")
+        conn.commit()
+    finally:
+        conn.close()
+
+    payload = live_hindsight_refresh_worker.run_once(limit=5, timeout_s=0.1, max_attempts=3)
+
+    conn = sqlite3.connect(str(gov_db))
+    try:
+        row = conn.execute("SELECT status, attempts, last_error FROM recall_refresh_queue").fetchone()
+    finally:
+        conn.close()
+    assert payload["ok"] is True
+    assert payload["status"] == "healthy"
+    assert payload["processed"] == 0
+    assert payload["expired"] == 1
+    assert row == ("expired", 3, "max_attempts_exhausted")
+
+
+def test_live_hindsight_refresh_worker_classifies_timeout_failures(monkeypatch, tmp_path: Path):
+    gov_db = tmp_path / "memory_governance.db"
+    monkeypatch.setattr(live_hindsight_refresh_worker.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    monkeypatch.setattr(injector.governance_rebuild, "GOVERNANCE_DB", gov_db)
+    assert injector.enqueue_live_hindsight_refresh("slow weak query", "test", 0) is True
+
+    def raise_timeout(query, timeout_s):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(live_hindsight_refresh_worker, "fetch_live_hindsight", raise_timeout)
+
+    payload = live_hindsight_refresh_worker.run_once(limit=1, timeout_s=0.1, max_attempts=3)
+
+    assert payload["ok"] is False
+    assert payload["status"] == "degraded"
+    assert payload["failure_buckets"] == {"timeout": 1}
+    assert payload["queue"]["retryable_failed"] == 1
 
 
 def test_knowledge_queries_have_dedicated_intent():
@@ -602,6 +884,87 @@ def test_alert_queue_reports_cron_freshness_action_needed(tmp_path: Path):
     assert alerts[0]["detail"]["jobs"] == [{"name": "cron_freshness", "status": "action-needed", "age_s": 99999}]
 
 
+def test_alert_queue_reports_live_hindsight_refresh_degraded(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps({"monitor": {"latest_acceptance_ok": True, "acceptance_ok_rate": 1.0, "lag": {"status": "healthy"}}}),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "hindsight-security-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "live-hindsight-refresh-latest.json").write_text(
+        json.dumps(
+            {
+                "status": "degraded",
+                "failed": 2,
+                "failure_buckets": {"timeout": 2},
+                "queue": {"pending": 0, "retryable_failed": 2, "expired": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status, alerts = alert_queue.build_alerts(metrics)
+
+    assert status == "degraded"
+    assert [(row["source"], row["code"], row["severity"]) for row in alerts] == [
+        ("live-hindsight-refresh", "live_hindsight_refresh_degraded", "degraded")
+    ]
+    assert alerts[0]["detail"]["failure_buckets"] == {"timeout": 2}
+
+
+def test_alert_queue_reports_system_swap_degraded(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps({"monitor": {"latest_acceptance_ok": True, "acceptance_ok_rate": 1.0, "lag": {"status": "healthy"}}}),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "hindsight-security-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "system-metrics-latest.json").write_text(
+        json.dumps({"memory": {"swap_pct": 90.9, "available_mb": 4076}, "disk": {"pct": 74.4}}),
+        encoding="utf-8",
+    )
+
+    status, alerts = alert_queue.build_alerts(metrics)
+
+    assert status == "degraded"
+    assert [(row["source"], row["code"], row["severity"]) for row in alerts] == [
+        ("system-resources", "swap_usage_high", "degraded")
+    ]
+    assert alerts[0]["detail"]["swap_pct"] == 90.9
+
+
+def test_alert_queue_escalates_critical_system_resources(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "runtime-drift-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "langsmith-trend-latest.json").write_text(
+        json.dumps({"monitor": {"latest_acceptance_ok": True, "acceptance_ok_rate": 1.0, "lag": {"status": "healthy"}}}),
+        encoding="utf-8",
+    )
+    (metrics / "gbrain-stale-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "hindsight-security-latest.json").write_text(json.dumps({"status": "healthy"}), encoding="utf-8")
+    (metrics / "system-metrics-latest.json").write_text(
+        json.dumps({"memory": {"swap_pct": 96.0, "available_mb": 512}, "disk": {"pct": 91.0}}),
+        encoding="utf-8",
+    )
+
+    status, alerts = alert_queue.build_alerts(metrics)
+
+    assert status == "action-needed"
+    assert ("system-resources", "swap_usage_critical", "action-needed") in [
+        (row["source"], row["code"], row["severity"]) for row in alerts
+    ]
+    assert ("system-resources", "disk_usage_critical", "action-needed") in [
+        (row["source"], row["code"], row["severity"]) for row in alerts
+    ]
+
+
 def test_alert_queue_resolves_language_from_locale(monkeypatch):
     monkeypatch.setenv("LANG", "en_US.UTF-8")
 
@@ -847,6 +1210,10 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
         json.dumps({"status": "healthy", "jobs": []}),
         encoding="utf-8",
     )
+    (metrics / "live-hindsight-refresh-latest.json").write_text(
+        json.dumps({"status": "healthy", "queue": {"pending": 0, "retryable_failed": 0, "expired": 0}}),
+        encoding="utf-8",
+    )
     (metrics / "system-metrics-latest.json").write_text(
         json.dumps({"memory": {"available_mb": 2048, "swap_pct": 10.0}, "disk": {"pct": 50.0}, "state_db_size_mb": 100.0}),
         encoding="utf-8",
@@ -871,6 +1238,7 @@ def test_metrics_dashboard_renders_status_cards(tmp_path: Path):
     assert "view=components" in html_en
     payload = metrics_dashboard.build_dashboard_payload(metrics)
     assert payload["artifacts"][0]["name"] == "Runtime Drift"
+    assert any(item["name"] == "Live Hindsight Refresh" for item in payload["artifacts"])
     assert payload["overall_status"] == "healthy"
     assert payload["status_counts"]["healthy"] >= 1
 
@@ -999,6 +1367,20 @@ def test_slo_rollup_summarizes_acceptance_queue_replay_and_recall(tmp_path: Path
     assert payload["recall_latency"]["p95_s"] == 0.45
 
 
+def test_slo_rollup_treats_empty_dead_letter_replay_as_success(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "dead-letter-replay-latest.json").write_text(
+        json.dumps({"ok": True, "total": 0, "replayed": 0, "failed": 0, "remaining": 0}),
+        encoding="utf-8",
+    )
+
+    payload = slo_rollup.build_slo_rollup(metrics)
+
+    assert payload["dead_letter_replay_success_rate"] == 1.0
+    assert payload["status"] == "healthy"
+
+
 def test_slo_rollup_prefers_current_acceptance_window(tmp_path: Path):
     metrics = tmp_path / "metrics"
     metrics.mkdir()
@@ -1045,6 +1427,22 @@ def test_openmetrics_exporter_includes_slo_rollup(tmp_path: Path):
     assert "hermes_memory_slo_alert_queue_growth 2" in text
     assert "hermes_memory_slo_dead_letter_replay_success_rate 1.0" in text
     assert 'hermes_memory_slo_recall_latency_seconds{quantile="0.95"} 0.3' in text
+
+
+def test_openmetrics_exporter_includes_live_hindsight_refresh_queue(tmp_path: Path):
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    (metrics / "live-hindsight-refresh-latest.json").write_text(
+        json.dumps({"status": "degraded", "queue": {"pending": 2, "retryable_failed": 1, "expired": 3}}),
+        encoding="utf-8",
+    )
+
+    text = openmetrics_exporter.render_openmetrics(metrics)
+
+    assert 'hermes_memory_component_status{component="live_hindsight_refresh"} 1' in text
+    assert 'hermes_memory_live_hindsight_refresh_queue{state="pending"} 2' in text
+    assert 'hermes_memory_live_hindsight_refresh_queue{state="retryable_failed"} 1' in text
+    assert 'hermes_memory_live_hindsight_refresh_queue{state="expired"} 3' in text
 
 
 def test_openmetrics_exporter_includes_cron_and_system_metrics(tmp_path: Path):
@@ -1468,6 +1866,22 @@ def test_server_cron_enables_gbrain_embedding_refresh():
     assert "--refresh-embeddings" in line
     assert "--stale-budget" in line
     assert "--missing-budget 0" in line
+
+
+def test_server_cron_enables_async_live_hindsight_refresh():
+    content = (REPO / "docs" / "ops" / "server-root.cron").read_text(encoding="utf-8")
+    line = next(row for row in content.splitlines() if "live-hindsight-refresh" in row)
+
+    assert "live_hindsight_refresh_worker.py" in line
+    assert "flock -n" in line
+    assert "--max-attempts 3" in line
+    assert "--output /root/.hermes/metrics/live-hindsight-refresh-latest.json" in line
+
+
+def test_cron_freshness_checks_live_hindsight_refresh_artifact():
+    checks = {row["name"]: row["path"].name for row in cron_freshness.CHECKS}
+
+    assert checks["live_hindsight_refresh"] == "live-hindsight-refresh-latest.json"
 
 
 def test_storage_cross_check_filters_generated_gbrain_orphan_indexes(monkeypatch):
@@ -2225,8 +2639,8 @@ def test_memory_guardian_uses_production_default_node_limit(monkeypatch):
 
     _, cap = guardian.monitor(verbose=False)
 
-    assert cap["node_limit"] == 30000
-    assert cap["usage_pct"] == 36.9
+    assert cap["node_limit"] == 40000
+    assert cap["usage_pct"] == 27.7
     assert cap["level"] == "ok"
 
 
@@ -2298,3 +2712,49 @@ def test_memory_guardian_node_limit_can_be_overridden_by_env(monkeypatch):
     finally:
         monkeypatch.delenv("MEMORY_GUARDIAN_NODE_LIMIT", raising=False)
         importlib.reload(guardian)
+
+
+
+def test_memory_eval_report_prefers_local_monitor_when_langsmith_has_no_runs(tmp_path: Path):
+    import memory_eval_report as report
+
+    local_monitor = {
+        "acceptance": {
+            "returncode": 0,
+            "payload": {
+                "guardian": {"level": "ok", "hindsight_sync_lag_seconds": 120, "usage_pct": 50.0},
+                "recalls": [
+                    {"l2_count": 2, "l3_count": 3, "timings": {"total_s": 0.5}},
+                ],
+            },
+        }
+    }
+
+    payload = report.build_report([], local_monitor=local_monitor, local_trend={})
+
+    assert payload["data_sources"] == ["local_monitor"]
+    assert payload["health"]["level"] == "healthy"
+    assert payload["health"]["score"] == 100
+    assert payload["monitor"]["source"] == "local_monitor"
+
+
+def test_memory_eval_report_marks_guardian_action_without_zeroing_report(tmp_path: Path):
+    import memory_eval_report as report
+
+    local_monitor = {
+        "acceptance": {
+            "returncode": 0,
+            "payload": {
+                "guardian": {"level": "action", "hindsight_sync_lag_seconds": 900, "usage_pct": 85.3},
+                "recalls": [
+                    {"l2_count": 5, "l3_count": 5, "timings": {"total_s": 0.7}},
+                ],
+            },
+        }
+    }
+
+    payload = report.build_report([], local_monitor=local_monitor, local_trend={})
+
+    assert payload["health"]["level"] == "healthy"
+    assert payload["health"]["score"] == 90
+    assert "Guardian is in action band at 85.3%" in payload["health"]["issues"]

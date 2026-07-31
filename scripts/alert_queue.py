@@ -20,6 +20,10 @@ DEFAULT_ALERTS = METRICS_DIR / "alerts.jsonl"
 DEFAULT_STATUS = METRICS_DIR / "health-summary-latest.json"
 DEFAULT_STATE = METRICS_DIR / "alert-state-latest.json"
 GBRAIN_REPAIR_STATUSES = {"action-needed", "degraded"}
+SWAP_DEGRADED_PCT = float(os.environ.get("MEMORY_ALERT_SWAP_DEGRADED_PCT", "85"))
+SWAP_ACTION_PCT = float(os.environ.get("MEMORY_ALERT_SWAP_ACTION_PCT", "95"))
+DISK_DEGRADED_PCT = float(os.environ.get("MEMORY_ALERT_DISK_DEGRADED_PCT", "85"))
+DISK_ACTION_PCT = float(os.environ.get("MEMORY_ALERT_DISK_ACTION_PCT", "90"))
 
 
 def env_enabled(name: str, default: str = "true") -> bool:
@@ -147,14 +151,37 @@ def resolve_lang() -> str:
     return "zh"
 
 
+def append_system_resource_alerts(alerts: list[dict], payload: dict[str, Any]) -> None:
+    memory = payload.get("memory") if isinstance(payload.get("memory"), dict) else {}
+    disk = payload.get("disk") if isinstance(payload.get("disk"), dict) else {}
+    try:
+        swap_pct = float(memory.get("swap_pct") or 0)
+    except (TypeError, ValueError):
+        swap_pct = 0.0
+    try:
+        disk_pct = float(disk.get("pct") or 0)
+    except (TypeError, ValueError):
+        disk_pct = 0.0
+    if swap_pct >= SWAP_ACTION_PCT:
+        alerts.append(alert("system-resources", "swap_usage_critical", "action-needed", {"swap_pct": swap_pct, "memory": memory}))
+    elif swap_pct >= SWAP_DEGRADED_PCT:
+        alerts.append(alert("system-resources", "swap_usage_high", "degraded", {"swap_pct": swap_pct, "memory": memory}))
+    if disk_pct >= DISK_ACTION_PCT:
+        alerts.append(alert("system-resources", "disk_usage_critical", "action-needed", {"disk_pct": disk_pct, "disk": disk}))
+    elif disk_pct >= DISK_DEGRADED_PCT:
+        alerts.append(alert("system-resources", "disk_usage_high", "degraded", {"disk_pct": disk_pct, "disk": disk}))
+
+
 def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
     alerts: list[dict] = []
     drift = load_json(metrics_dir / "runtime-drift-latest.json")
     trend = load_json(metrics_dir / "langsmith-trend-latest.json")
     stale = load_json(metrics_dir / "gbrain-stale-latest.json")
     stale = repair_gbrain_stale_if_needed(metrics_dir, stale)
+    live_refresh = load_json(metrics_dir / "live-hindsight-refresh-latest.json")
     security = load_json(metrics_dir / "hindsight-security-latest.json")
     cron_freshness = load_json(metrics_dir / "cron-freshness-latest.json")
+    system_metrics = load_json(metrics_dir / "system-metrics-latest.json")
 
     if drift.get("status") == "action-needed":
         for reason in drift.get("reasons", []):
@@ -198,6 +225,35 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
             )
         )
 
+    task_alerts = {}
+    historical_task_alerts = {}
+    for name, metrics in (trend.get("tasks") or {}).items():
+        if not isinstance(metrics, dict):
+            continue
+        recent_failures = int(metrics.get("recent_business_failure_count") or 0)
+        latest_ok = metrics.get("latest_business_ok")
+        if latest_ok is False or (recent_failures > 0 and latest_ok is not True):
+            task_alerts[name] = {
+                "recent_business_failure_count": recent_failures,
+                "recent_business_success_rate": metrics.get("recent_business_success_rate"),
+                "latest_business_ok": latest_ok,
+                "latest_returncode": metrics.get("latest_returncode"),
+                "recent_window": metrics.get("recent_window"),
+            }
+            continue
+        if int(metrics.get("business_failure_count") or 0) > 0 or recent_failures > 0:
+            historical_task_alerts[name] = {
+                "business_failure_count": metrics.get("business_failure_count"),
+                "business_success_rate": metrics.get("business_success_rate"),
+                "nonzero_returncodes": metrics.get("nonzero_returncodes"),
+                "recent_business_failure_count": recent_failures,
+                "latest_business_ok": latest_ok,
+            }
+    if task_alerts:
+        alerts.append(alert("langsmith-task", "recent_task_business_failures", "action-needed", {"tasks": task_alerts}))
+    elif historical_task_alerts:
+        alerts.append(alert("langsmith-task", "historical_task_business_failures", "info", {"tasks": historical_task_alerts}))
+
     stale_status = stale.get("status")
     if stale_status == "action-needed":
         detail = dict(stale)
@@ -215,10 +271,18 @@ def build_alerts(metrics_dir: Path) -> tuple[str, list[dict]]:
         if actionable:
             alerts.append(alert("gbrain-stale", "gbrain_stale_degraded", "degraded", {"classifications": actionable}))
 
+    live_refresh_status = live_refresh.get("status")
+    if live_refresh_status == "action-needed":
+        alerts.append(alert("live-hindsight-refresh", "live_hindsight_refresh_action_needed", "action-needed", live_refresh))
+    elif live_refresh_status == "degraded":
+        alerts.append(alert("live-hindsight-refresh", "live_hindsight_refresh_degraded", "degraded", live_refresh))
+
     if security.get("status") == "action-needed":
         alerts.append(alert("hindsight-security", "hindsight_security_action_needed", "action-needed", security))
     elif security.get("status") == "degraded":
         alerts.append(alert("hindsight-security", "hindsight_security_degraded", "degraded", security))
+
+    append_system_resource_alerts(alerts, system_metrics)
 
     if cron_freshness.get("status") in {"action-needed", "degraded"}:
         stale_jobs = [

@@ -21,6 +21,7 @@ CHECKS = [
     {"name": "archive_sessions", "path": Path("/var/log/archive-sessions.log"), "max_age_s": 30 * 3600},
     {"name": "runtime_drift_check", "path": AGENT_HOME / "metrics" / "runtime-drift-latest.json", "max_age_s": 8 * 3600},
     {"name": "alert_queue", "path": AGENT_HOME / "metrics" / "health-summary-latest.json", "max_age_s": 8 * 3600},
+    {"name": "live_hindsight_refresh", "path": AGENT_HOME / "metrics" / "live-hindsight-refresh-latest.json", "max_age_s": 1800},
     {"name": "storage_cross_check", "path": AGENT_HOME / "metrics" / "storage-cross-check-latest.json", "max_age_s": 8 * 3600},
     {"name": "metrics_dashboard", "path": AGENT_HOME / "metrics" / "dashboard.html", "max_age_s": 8 * 3600},
     {"name": "openmetrics_exporter", "path": AGENT_HOME / "metrics" / "openmetrics.prom", "max_age_s": 8 * 3600},
@@ -28,7 +29,7 @@ CHECKS = [
     {"name": "telegram_lang_sync", "path": Path("/var/log/telegram-lang-sync.log"), "max_age_s": 3600},
     {"name": "prometheus_alert_sync", "path": Path("/var/log/prometheus-alert-sync.log"), "max_age_s": 1800},
     {"name": "system_metrics", "path": AGENT_HOME / "metrics" / "system-metrics-latest.json", "max_age_s": 7200},
-    {"name": "gbrain_stale_refresh", "path": AGENT_HOME / "metrics" / "gbrain-stale-latest.json", "max_age_s": 7200},
+    {"name": "gbrain_stale_refresh", "path": AGENT_HOME / "metrics" / "gbrain-stale-latest.json", "max_age_s": 8 * 3600},
     {"name": "state_db_checkpoint", "path": Path("/var/log/hermes-state-db-checkpoint.log"), "max_age_s": 30 * 3600},
     {"name": "snapshot_retention", "path": Path("/var/log/hermes-snapshot-retention.log"), "max_age_s": 30 * 3600},
 ]
