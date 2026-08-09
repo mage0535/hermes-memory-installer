@@ -2891,3 +2891,44 @@ def test_storage_cross_check_warns_when_failed_consolidation_backlog_is_high(mon
     }
 
     assert cross_check.evaluate(payload) == ["hindsight_failed_consolidation"]
+
+
+
+def test_memory_eval_report_treats_guardian_warn_as_observation():
+    import memory_eval_report as report
+
+    local_monitor = {
+        "acceptance": {
+            "returncode": 0,
+            "payload": {
+                "guardian": {"level": "warn", "hindsight_sync_lag_seconds": 120, "usage_pct": 75.4},
+                "recalls": [{"l2_count": 4, "l3_count": 5, "timings": {"total_s": 0.4}}],
+            },
+        }
+    }
+
+    payload = report.build_report([], local_monitor=local_monitor, local_trend={})
+
+    assert payload["health"]["score"] == 100
+    assert payload["health"]["level"] == "healthy"
+    assert payload["health"]["issues"] == []
+    assert "Guardian is currently in warn observation band" in payload["health"]["strengths"]
+
+
+def test_memory_eval_report_penalizes_guardian_active_archive():
+    import memory_eval_report as report
+
+    local_monitor = {
+        "acceptance": {
+            "returncode": 0,
+            "payload": {
+                "guardian": {"level": "active_archive", "hindsight_sync_lag_seconds": 120, "usage_pct": 79.0},
+                "recalls": [{"l2_count": 4, "l3_count": 5, "timings": {"total_s": 0.4}}],
+            },
+        }
+    }
+
+    payload = report.build_report([], local_monitor=local_monitor, local_trend={})
+
+    assert payload["health"]["score"] == 95
+    assert payload["health"]["issues"] == ["Guardian is currently active_archive"]
