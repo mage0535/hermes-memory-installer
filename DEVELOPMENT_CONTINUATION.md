@@ -1922,3 +1922,33 @@ Verification:
 
 Operational note:
 - Live direct Hindsight recall against the large `hermes` bank can still block the event loop during temporal parsing. Foreground user recall should continue to rely on sidecar cache/fused retrieval and avoid making live Hindsight a hard dependency.
+
+## 2026-08-10 - Runtime hotfix backfill and Guardian warn triage
+
+Context:
+- Scheduled Hindsight memory evaluation reported `95/100 HEALTHY`; the only score issue was Guardian `warn` at about 75.4% usage.
+- A fresh server check found a separate operational issue not shown in the evaluation summary: runtime drift still reported three mismatched scripts.
+
+Verified root causes:
+- Runtime scripts contained valid 2026-08-02/08-06 hotfixes that had not been copied back into the source repository: `sidecar_acceptance_check.py`, `memory_eval_report.py`, and `langsmith_trend_report.py`.
+- `memory_eval_report.py` intended to ignore stale local trend snapshots but referenced `time.time()` without importing `time`; the exception was swallowed, so the stale-trend guard was ineffective.
+- Historical Hindsight failed operations are still present as cumulative counters, but recent failed operations are zero and acceptance remains healthy. The acceptance check should continue to judge recent failure windows, not historical totals.
+
+Changes made:
+- Backfilled the runtime hotfixes into source and redeployed them to `$AGENT_HOME/scripts/`.
+- Added the missing `import time` so stale trend snapshots older than one hour cannot override fresh local monitor data.
+- Kept the 12h lag warning threshold used by trend/eval after the retry strategy increase; this prevents normal post-retry lag from creating false degraded reports.
+- Fixed the failed-operation message to use the actual 6h recency window.
+- Added regression tests for stale-trend isolation and historical failed-operation tolerance.
+
+Verification:
+- Targeted regression tests: passed.
+- Full server test suite: `294 passed, 2 skipped`.
+- Full acceptance: `ok=true`; Guardian `node_limit=40000`, `usage_pct=75.4`, `level=warn`; no errors.
+- Fresh trend: recent acceptance `1.0`; lag `135s`; recall latency p95 about `1.29s`.
+- Fresh eval: `95/100 HEALTHY`; only issue is Guardian `warn`.
+- Fresh alert queue: `status=healthy`, `alert_count=0`.
+- Fresh runtime drift: `healthy`; only repo dirty info remained before release commit.
+
+Operational note:
+- Guardian warn is a capacity early warning, not a service fault. Do not raise the node limit just to clear the score. The next real optimization is a measured Hindsight memory consolidation policy that reduces low-value or duplicate nodes, then proves recall quality is unchanged or improved.

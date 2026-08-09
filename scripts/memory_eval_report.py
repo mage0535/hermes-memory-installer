@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
@@ -138,6 +139,17 @@ def merge_trend_context(monitor: dict[str, Any], trend: dict[str, Any]) -> dict[
     trend_monitor = trend.get("monitor") if isinstance(trend.get("monitor"), dict) else {}
     if not trend_monitor:
         return monitor
+    # 2026-08-06 修复：trend 快照过期（>1h）时不覆盖新鲜的 local_monitor 数据。
+    # 背景：LangSmith token 失效后 trend 文件停留在旧快照（acceptance 0%），
+    # 无条件覆盖导致已恢复的服务被误判为 degraded。1h 内生成的 trend 才可信。
+    captured = trend.get("captured_at")
+    if isinstance(captured, str):
+        try:
+            captured_ts = datetime.fromisoformat(captured.replace("Z", "+00:00")).timestamp()
+            if time.time() - captured_ts > 3600:
+                return monitor
+        except Exception:
+            pass
     merged = dict(monitor)
     for key in (
         "acceptance_ok_rate",
@@ -188,7 +200,7 @@ def evaluate_health(monitor: dict[str, Any], tasks: dict[str, Any]) -> dict[str,
         strengths.append("Current acceptance window is healthy")
 
     lag = monitor.get("hindsight_lag", {}).get("latest_s")
-    if isinstance(lag, (int, float)) and lag > 3600:
+    if isinstance(lag, (int, float)) and lag > 43200:
         score -= 10
         issues.append(f"Hindsight sync lag is {lag:.0f}s")
     elif isinstance(lag, (int, float)):
