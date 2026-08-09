@@ -123,7 +123,9 @@ def evaluate(payload: dict) -> list[str]:
         warnings.append("hindsight_unreachable")
     if not payload["gbrain"].get("ok"):
         warnings.append("gbrain_health_failed")
-    if int(payload["hindsight"].get("failed_consolidation") or 0) > 0:
+    failed_consolidation = int(payload["hindsight"].get("failed_consolidation") or 0)
+    pending_consolidation = int(payload["hindsight"].get("pending_consolidation") or 0)
+    if failed_consolidation > 0 and pending_consolidation >= int(os.environ.get("MEMORY_STORAGE_PENDING_CONSOLIDATION_WARN", "20")):
         warnings.append("hindsight_failed_consolidation")
     if int(payload["gbrain"].get("missing_embeddings") or 0) > 0:
         warnings.append("gbrain_missing_embeddings")

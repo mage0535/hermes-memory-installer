@@ -1952,3 +1952,27 @@ Verification:
 
 Operational note:
 - Guardian warn is a capacity early warning, not a service fault. Do not raise the node limit just to clear the score. The next real optimization is a measured Hindsight memory consolidation policy that reduces low-value or duplicate nodes, then proves recall quality is unchanged or improved.
+
+## 2026-08-10 - Storage cross-check historical failure noise fix
+
+Context:
+- After the runtime hotfix backfill, fresh health and alert queue were healthy, but `langsmith-trend-latest.json` still exposed `latest_storage_ok=false`.
+- The storage cross-check warning was `hindsight_failed_consolidation` even though acceptance was healthy and no recent failed operations were present.
+
+Root cause:
+- `memory_storage_cross_check.py` treated cumulative `failed_consolidation > 0` as a live storage fault.
+- Hindsight keeps historical failed consolidation counters, so recovered provider incidents could keep storage health false indefinitely.
+
+Change:
+- Storage cross-check now warns on failed consolidation only when it is paired with a current consolidation backlog at or above `MEMORY_STORAGE_PENDING_CONSOLIDATION_WARN` (default `20`).
+- Historical low-backlog failed consolidation counts remain visible in the payload but no longer force `ok=false`.
+
+Verification:
+- Full server tests: `296 passed, 2 skipped`.
+- Fresh storage cross-check: `ok=true`, `warnings=[]`.
+- Fresh trend: `latest_storage_ok=true`, recent acceptance `1.0`, lag about `330s`.
+- Fresh eval: `95/100 HEALTHY`; only issue remains Guardian `warn` at about `75.4%`.
+- Fresh alert queue: `status=healthy`, `alert_count=0`.
+
+Remaining optimization:
+- Guardian warn is still a capacity early-warning. The next safe improvement should be a measured consolidation/merge policy for low-value Hindsight nodes, not another node-limit increase.
