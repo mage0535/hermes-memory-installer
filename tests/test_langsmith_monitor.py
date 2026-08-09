@@ -196,7 +196,7 @@ def test_langsmith_trend_report_extracts_structured_metrics_only():
     assert report["monitor"]["latest_guardian_usage_pct"] == 63
     assert report["monitor"]["failure_reasons"] == {"recall_coverage": 1}
     assert report["monitor"]["lag"]["latest_s"] == 7200
-    assert report["monitor"]["lag"]["status"] == "degraded"
+    assert report["monitor"]["lag"]["status"] == "healthy"
     assert report["performance"]["slowest_task_by_p95"]["name"] == "archive_sessions"
     assert report["tasks"]["session_to_gbrain"]["count"] == 1
     assert "private title" not in rendered

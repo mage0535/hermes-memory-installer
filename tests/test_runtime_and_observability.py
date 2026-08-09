@@ -2758,3 +2758,108 @@ def test_memory_eval_report_marks_guardian_action_without_zeroing_report(tmp_pat
     assert payload["health"]["level"] == "healthy"
     assert payload["health"]["score"] == 90
     assert "Guardian is in action band at 85.3%" in payload["health"]["issues"]
+
+
+
+def test_memory_eval_report_ignores_stale_local_trend(monkeypatch):
+    import memory_eval_report as report
+
+    local_monitor = {
+        "acceptance": {
+            "returncode": 0,
+            "payload": {
+                "guardian": {"level": "ok", "hindsight_sync_lag_seconds": 120, "usage_pct": 50.0},
+                "recalls": [{"l2_count": 2, "l3_count": 3, "timings": {"total_s": 0.5}}],
+            },
+        }
+    }
+    stale_trend = {
+        "captured_at": "2026-01-01T00:00:00+00:00",
+        "monitor": {"current_acceptance_ok_rate": 0.0, "latest_guardian_level": "critical"},
+    }
+    monkeypatch.setattr(report.time, "time", lambda: 1786322400.0)
+
+    payload = report.build_report([], local_monitor=local_monitor, local_trend=stale_trend)
+
+    assert payload["health"]["score"] == 100
+    assert payload["monitor"]["current_acceptance_ok_rate"] == 1.0
+    assert payload["monitor"]["guardian_levels"]["latest"] == "ok"
+
+
+def test_acceptance_check_ignores_historical_failed_operations(monkeypatch):
+    import sidecar_acceptance_check as acceptance
+
+    monkeypatch.setattr(acceptance, "_recent_failed_operations", lambda hours=6: 0)
+    system_query = next(case.query for case in recall_samples.DEFAULT_SAMPLE_CASES if case.expected_intent == "system")
+    relationship_query = next(case.query for case in recall_samples.DEFAULT_SAMPLE_CASES if case.expected_intent == "relationship")
+    payload = {
+        "guardian": {"level": "ok", "failed_operations": 154},
+        "recalls": [
+            {
+                "query": "agent memory architecture",
+                "intent": "knowledge",
+                "l2_count": 2,
+                "l3_count": 3,
+                "knowledge_hit": True,
+                "knowledge_top_title": "Agent Memory Architecture",
+                "top_titles": ["Agent Memory Architecture"],
+                "top_sources": [["knowledge"]],
+            },
+            {
+                "query": system_query,
+                "intent": "system",
+                "l2_count": 1,
+                "l3_count": 1,
+                "knowledge_hit": False,
+                "knowledge_top_title": None,
+                "top_titles": ["Provider And Gateway Configuration"],
+                "top_sources": [["object"]],
+            },
+            {
+                "query": "github script deploy",
+                "intent": "project",
+                "l2_count": 1,
+                "l3_count": 1,
+                "knowledge_hit": False,
+                "knowledge_top_title": None,
+                "top_titles": ["Deployment Playbook"],
+                "top_sources": [["hub"]],
+            },
+            {
+                "query": "recent sessions",
+                "intent": "recent",
+                "l2_count": 1,
+                "l3_count": 1,
+                "knowledge_hit": False,
+                "knowledge_top_title": None,
+                "top_titles": ["Recent session summary"],
+                "top_sources": [["governance"]],
+            },
+            {
+                "query": relationship_query,
+                "intent": "relationship",
+                "l2_count": 0,
+                "l3_count": 1,
+                "knowledge_hit": False,
+                "knowledge_top_title": None,
+                "top_titles": ["Relationship summary"],
+                "top_sources": [["object"]],
+            },
+            {
+                "query": "favorite breakfast preferences",
+                "intent": "general",
+                "l2_count": 1,
+                "l3_count": 1,
+                "knowledge_hit": False,
+                "knowledge_top_title": None,
+                "top_titles": ["Breakfast preferences"],
+                "top_sources": [["hub"]],
+            },
+        ],
+    }
+
+    ok, errors = acceptance.evaluate_payload(payload)
+
+    assert ok is True
+    assert errors == []
+    assert payload["recovered_from_historical_failures"] is True

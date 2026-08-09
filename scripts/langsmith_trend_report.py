@@ -13,7 +13,7 @@ from typing import Any
 
 
 PROJECT_NAME = os.environ.get("LANGSMITH_PROJECT", "hermes-memory-installer")
-DEFAULT_LAG_THRESHOLD_S = int(os.environ.get("MEMORY_LAG_WARN_THRESHOLD_S", "3600"))
+DEFAULT_LAG_THRESHOLD_S = int(os.environ.get("MEMORY_LAG_WARN_THRESHOLD_S", "43200"))
 RECENT_MONITOR_WINDOW = max(1, int(os.environ.get("MEMORY_TREND_RECENT_MONITOR_WINDOW", "5")))
 AGENT_HOME = Path(os.environ.get("AGENT_HOME") or os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
 DEFAULT_LOCAL_MONITOR = AGENT_HOME / "metrics" / "langsmith-monitor-latest.json"

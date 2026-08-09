@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from recall_samples import DEFAULT_SAMPLE_CASES, evaluate_recall_samples
@@ -148,13 +149,50 @@ def _row_counts_as_knowledge(row: dict) -> bool:
     return (row.get("query") or "").lower() == "agent memory architecture" and _knowledge_like_text(text)
 
 
+def _recent_failed_operations(hours: int = 6) -> int | None:
+    """查询最近 hours 小时内新增的 failed operations。
+
+    历史累计 failed（服务恢复后计数不重置）不判红灯，只有窗口内有新增失败才算真实故障。
+    窗口 6h：敏感度足以捕获 provider 通道故障，同时允许过夜/重启后的自然恢复（08-05 失败日教训）。
+    返回 None 表示无法查询（保守：按未知处理，不阻断判定）。
+    """
+    try:
+        ops = guardian.hs("GET", "/operations?status=failed&limit=50", timeout=10)
+        if not isinstance(ops, dict) or not ops.get("operations"):
+            return 0
+        cutoff = time.time() - hours * 3600
+        recent = 0
+        for op in ops["operations"]:
+            for key in ("updated_at", "created_at"):
+                ts = op.get(key)
+                if not ts:
+                    continue
+                try:
+                    t = datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    continue
+                if t >= cutoff:
+                    recent += 1
+                    break
+        return recent
+    except Exception:
+        return None
+
+
 def evaluate_payload(payload: dict, mode: str = "full") -> tuple[bool, list[str]]:
     errors = []
     guardian_status = payload.get("guardian") or {}
     if guardian_status.get("level") == "critical":
         errors.append("guardian level is critical")
-    if int(guardian_status.get("failed_operations") or 0) > 0:
-        errors.append("guardian failed_operations is non-zero")
+    failed_ops = int(guardian_status.get("failed_operations") or 0)
+    if failed_ops > 0:
+        recent_failed = _recent_failed_operations()
+        if recent_failed is None:
+            errors.append("guardian failed_operations is non-zero (cannot verify recency)")
+        elif recent_failed > 0:
+            errors.append(f"guardian failed_operations is non-zero ({recent_failed} new in last 6h)")
+        else:
+            payload.setdefault("recovered_from_historical_failures", True)
 
     recalls = payload.get("recalls") or []
     if not recalls:
