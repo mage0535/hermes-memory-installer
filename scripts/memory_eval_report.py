@@ -217,9 +217,11 @@ def evaluate_health(monitor: dict[str, Any], tasks: dict[str, Any]) -> dict[str,
             issues.append(f"Guardian is in action band at {usage:.1f}%")
         else:
             issues.append("Guardian is in action band")
-    elif latest_guardian in {"active_archive", "warn"}:
+    elif latest_guardian == "active_archive":
         score -= 5
-        issues.append(f"Guardian is currently {latest_guardian}")
+        issues.append("Guardian is currently active_archive")
+    elif latest_guardian == "warn":
+        strengths.append("Guardian is currently in warn observation band")
     else:
         strengths.append("Guardian is currently within capacity")
 

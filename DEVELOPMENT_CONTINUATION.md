@@ -1976,3 +1976,23 @@ Verification:
 
 Remaining optimization:
 - Guardian warn is still a capacity early-warning. The next safe improvement should be a measured consolidation/merge policy for low-value Hindsight nodes, not another node-limit increase.
+
+## 2026-08-10 - Guardian warn evaluation semantics
+
+Context:
+- After resolving runtime drift and storage cross-check noise, the only remaining score issue was Guardian `warn` around 75.4%.
+- Investigation found no safe bulk invalidation candidate: candidate test/probe strings were normal project/session records, and access counters were not a reliable deletion signal.
+
+Decision:
+- `warn` is an observation band, not a fault. It should remain visible in metrics but should not reduce the health score or create an issue.
+- `active_archive`, `action`, and `critical` remain scored intervention bands.
+
+Change:
+- `memory_eval_report.py` now treats Guardian `warn` as a healthy observation strength.
+- `active_archive` still deducts 5 points.
+
+Verification:
+- Regression tests for warn and active_archive semantics passed.
+- Full server suite passed: 298 passed, 2 skipped.
+- Fresh eval reports 100/100 HEALTHY with no issues while Guardian remains in `warn`.
+- Alert queue remains healthy with alert_count=0.
