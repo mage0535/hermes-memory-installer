@@ -2863,3 +2863,31 @@ def test_acceptance_check_ignores_historical_failed_operations(monkeypatch):
     assert ok is True
     assert errors == []
     assert payload["recovered_from_historical_failures"] is True
+
+
+
+def test_storage_cross_check_allows_historical_failed_consolidation_with_low_pending():
+    import memory_storage_cross_check as cross_check
+
+    payload = {
+        "state_db": {"exists": True},
+        "governance_db": {"exists": True},
+        "hindsight": {"ok": True, "failed_consolidation": 6, "pending_consolidation": 6},
+        "gbrain": {"ok": True, "missing_embeddings": 0, "orphan_pages_actual": 0},
+    }
+
+    assert cross_check.evaluate(payload) == []
+
+
+def test_storage_cross_check_warns_when_failed_consolidation_backlog_is_high(monkeypatch):
+    import memory_storage_cross_check as cross_check
+
+    monkeypatch.setenv("MEMORY_STORAGE_PENDING_CONSOLIDATION_WARN", "20")
+    payload = {
+        "state_db": {"exists": True},
+        "governance_db": {"exists": True},
+        "hindsight": {"ok": True, "failed_consolidation": 6, "pending_consolidation": 20},
+        "gbrain": {"ok": True, "missing_embeddings": 0, "orphan_pages_actual": 0},
+    }
+
+    assert cross_check.evaluate(payload) == ["hindsight_failed_consolidation"]
